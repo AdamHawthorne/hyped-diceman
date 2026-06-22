@@ -29,7 +29,7 @@ from PIL import Image, ImageDraw, ImageFont
 # ---------------- CONFIG ----------------
 
 TZ = ZoneInfo("Europe/Stockholm")
-BOT_NAME = "#RollF"
+BOT_NAME = "RollF"
 DB_PATH = "bot.db"
 
 BOTLIST_COMMANDS = [
@@ -439,12 +439,20 @@ def get_user_stats(user_id: int):
             (user_id,)
         ).fetchone()[0]
 
+        first_roll = con.execute("""
+            SELECT MIN(rolled_at)
+            FROM rolls
+            WHERE user_id = ?
+            AND actor_type = 'user'
+        """, (user_id,)).fetchone()[0]
+
     return {
         "rolls": total[0] or 0,
         "score": total[1] or 0,
         "best": total[2] or 0,
         "avg": float(total[3]) if total[3] else 0.0,
         "avg10": float(last10) if last10 else 0.0,
+        "first_roll": first_roll,
         "rank": rank
     }
 
@@ -714,6 +722,59 @@ def render_leaderboard_png(
     buffer.seek(0)
 
     return buffer
+
+def get_bot_stats():
+
+    with db() as con:
+
+        today_roll = con.execute("""
+            SELECT value
+            FROM rolls
+            WHERE actor_type = 'bot'
+            AND roll_date = ?
+            LIMIT 1
+        """, (
+            datetime.now(TZ).date().isoformat(),
+        )).fetchone()
+
+        total = con.execute("""
+            SELECT
+                COUNT(*) AS rolls,
+                SUM(value) AS score,
+                MAX(value) AS best,
+                MIN(value) AS worst,
+                AVG(value) AS avg
+            FROM rolls
+            WHERE actor_type = 'bot'
+        """).fetchone()
+
+        first_roll = con.execute("""
+            SELECT MIN(rolled_at)
+            FROM rolls
+            WHERE actor_type = 'bot'
+        """).fetchone()[0]
+
+        last10 = con.execute("""
+             SELECT AVG(value)
+                FROM (
+                SELECT value
+                FROM rolls
+                WHERE actor_type = 'bot'
+                ORDER BY rolled_at DESC
+                LIMIT 10
+            )
+        """).fetchone()[0]
+
+    return {
+        "rolls": total[0] or 0,
+        "score": total[1] or 0,
+        "today_roll": today_roll[0] if today_roll else None,
+        "best": total[2] or 0,
+        "worst": total[3] or 0,
+        "avg": float(total[4]) if total[4] else 0.0,
+        "first_roll": first_roll,
+        "avg10": float(last10) if last10 else 0.0
+    }    
     
 # ---------------- BOT SETUP ----------------
 
@@ -933,7 +994,17 @@ async def stats(
     log_command(interaction, "/stats")
 
     target = user or interaction.user
-    stats = get_user_stats(target.id)
+
+    is_bot_stats = (
+        user is not None
+        and user.id == bot.user.id
+    )
+
+    if is_bot_stats:
+        stats = get_bot_stats()
+    else:
+        stats = get_user_stats(target.id)
+
     start, end = today_range()
 
     week_start = now = datetime.now(TZ)
@@ -987,6 +1058,78 @@ async def stats(
             "No statistics exists for this user.",
             ephemeral=True
         )
+        return
+
+    if is_bot_stats:
+
+        embed = discord.Embed(
+            title=f"{BOT_NAME} Statistics",
+            color=discord.Color.dark_gray()
+        )
+
+        embed.set_thumbnail(
+            url=bot.user.display_avatar.url
+        )
+
+        started = "Unknown"
+
+        if stats["first_roll"]:
+            started = datetime.fromtimestamp(
+                stats["first_roll"],
+                TZ
+            ).strftime("%b %d, %Y")
+
+        if stats["today_roll"] is not None:
+            today_value = f"Roll: {stats['today_roll']}"
+        else:
+            today_value = "No roll yet."
+
+        embed.add_field(
+            name="Today",
+            value=today_value,
+            inline=True
+        )
+
+        embed.add_field(
+            name="Best roll",
+            value=str(stats["best"]),
+            inline=True
+        )
+
+        embed.add_field(
+            name="Worst roll",
+            value=str(stats["worst"]),
+            inline=True
+        )
+
+        embed.add_field(
+            name="Averages",
+            value=(
+                f"All-time: {stats['avg']:.1f}\n"
+                f"Last 10: {stats['avg10']:.1f}"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="All-time",
+            value=(
+                f"Rolls: {stats['rolls']:,}\n"
+                f"Score: {stats['score']:,}"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="Playing since",
+            value=started,
+            inline=True
+        )
+
+        await interaction.response.send_message(
+            embed=embed
+        )
+
         return
 
     embed = discord.Embed(
@@ -1062,6 +1205,20 @@ async def stats(
             f"Rank: #{stats['rank']}\n"
             f"Best: {stats['best']}"
         ),
+        inline=True
+    )
+
+    playing_since = "Unknown"
+
+    if stats["first_roll"]:
+        playing_since = datetime.fromtimestamp(
+            stats["first_roll"],
+            TZ
+        ).strftime("%b %d, %Y")
+
+    embed.add_field(
+        name="Playing Since",
+        value=playing_since,
         inline=True
     )
 
@@ -1472,7 +1629,7 @@ async def leaderboards(
 
     reset_text = None
 
-    if period_value in ("today", "week", "month"):
+    if period_value in ("today", "week", "month", "year"):
         if period_value == "today":
             reset_point = datetime(now.year, now.month, now.day, tzinfo=TZ) + timedelta(days=1)
 
@@ -1487,6 +1644,14 @@ async def leaderboards(
             else:
                 reset_point = datetime(now.year, now.month + 1, 1, tzinfo=TZ)
 
+        elif period_value == "year":
+            reset_point = datetime(
+                now.year + 1,
+                1,
+                1,
+                tzinfo=TZ
+            )
+
         remaining = max(0, int((reset_point - now).total_seconds()))
 
         if remaining < 3600:
@@ -1498,8 +1663,14 @@ async def leaderboards(
             time_left = f"{hours}h"
 
         else:
-            days = remaining // 86400
-            time_left = f"{days}d"
+
+            if period_value == "year":
+                weeks = remaining // (86400 * 7)
+                time_left = f"{weeks}w"
+
+            else:
+                days = remaining // 86400
+                time_left = f"{days}d"
 
         reset_text = f"Next reset in {time_left} • CET/CEST"
 
