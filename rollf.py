@@ -23,6 +23,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from aiohttp import web
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -46,8 +47,62 @@ ENABLE_COMMAND_LOGGING = (
     os.getenv("ENABLE_COMMAND_LOGGING", "false").lower()
     == "true"
 )
+TOPGG_WEBHOOK_AUTH = os.getenv("TOPGG_WEBHOOK_AUTH")
 LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
+
+VOTE_COLORS = [
+    # Pink
+    (255, 189, 189),
+    (255, 199, 206),
+    (255, 210, 219),
+    (255, 221, 230),
+    (255, 232, 242),
+
+    # Peach
+    (255, 205, 185),
+    (255, 214, 194),
+    (255, 224, 204),
+    (255, 233, 214),
+    (255, 242, 224),
+
+    # Yellow
+    (255, 234, 179),
+    (255, 241, 194),
+    (255, 247, 209),
+    (255, 252, 224),
+
+    # Green
+    (212, 255, 201),
+    (199, 248, 210),
+    (189, 255, 222),
+    (204, 255, 230),
+    (219, 255, 239),
+
+    # Cyan
+    (189, 245, 255),
+    (199, 239, 255),
+    (209, 233, 255),
+    (219, 242, 255),
+
+    # Blue
+    (189, 225, 255),
+    (199, 219, 255),
+    (209, 214, 255),
+    (220, 224, 255),
+
+    # Purple
+    (210, 199, 255),
+    (220, 209, 255),
+    (230, 219, 255),
+    (240, 229, 255),
+
+    # Rose
+    (255, 204, 235),
+    (255, 214, 240),
+    (255, 224, 245),
+    (255, 234, 250),
+]
 
 # ---------------- ADMIN ----------------
 
@@ -75,23 +130,25 @@ async def post_bot_stats():
 
         if BOTLIST_TOKEN:
             try:
-                await session.post(
+                async with session.post(
                     f"https://discordbotlist.com/api/v1/bots/{bot_id}/stats",
                     json={"guilds": guild_count},
                     headers={"Authorization": BOTLIST_TOKEN},
                     timeout=aiohttp.ClientTimeout(total=10)
-                )
+                ) as resp:
+                    await resp.read()
             except Exception:
                 log_error("BOTLIST STATS UPDATE FAILED")
 
         if TOPGG_TOKEN:
             try:
-                await session.post(
+                async with session.post(
                     f"https://top.gg/api/bots/{bot_id}/stats",
                     json={"server_count": guild_count},
                     headers={"Authorization": TOPGG_TOKEN},
                     timeout=aiohttp.ClientTimeout(total=10)
-                )
+                ) as resp:
+                    await resp.read()
             except Exception:
                 log_error("TOPGG STATS UPDATE FAILED")
 
@@ -104,16 +161,89 @@ async def post_botlist_commands():
 
     async with aiohttp.ClientSession() as session:
         try:
-            await session.post(
+            async with session.post(
                 f"https://discordbotlist.com/api/v1/bots/{bot_id}/commands",
                 json=BOTLIST_COMMANDS,
                 headers={"Authorization": BOTLIST_TOKEN},
                 timeout=aiohttp.ClientTimeout(total=10)
-            )
+            ) as resp:
+                await resp.read()
         except Exception:
             log_error(
                 "BOTLIST COMMAND UPDATE FAILED"
             )
+
+async def topgg_webhook(request):
+
+    auth = request.headers.get("Authorization")
+
+    if auth != TOPGG_WEBHOOK_AUTH:
+        return web.Response(status=401)
+
+    data = await request.json()
+
+    user_id = int(data["user"])
+
+    valid_until = int(time.time()) + (12 * 60 * 60)
+
+    with db() as con:
+
+        old = con.execute("""
+            SELECT color_index
+            FROM topgg_votes
+            WHERE user_id = ?
+        """, (user_id,)).fetchone()
+
+        old_index = old["color_index"] if old else None
+
+        available = list(range(len(VOTE_COLORS)))
+
+        if old_index is not None and old_index in available:
+            available.remove(old_index)
+
+        color_index = secrets.choice(available)
+
+        con.execute("""
+            INSERT INTO topgg_votes
+                (user_id, valid_until, color_index)
+            VALUES (?, ?, ?)
+
+            ON CONFLICT(user_id)
+            DO UPDATE SET
+                valid_until=excluded.valid_until,
+                color_index=excluded.color_index
+        """, (
+            user_id,
+            valid_until,
+            color_index
+        ))
+
+    log_event(
+        f"TOPGG VOTE user={user_id} color={color_index}"
+    )
+
+    return web.Response(text="OK")
+
+async def start_webhook():
+
+    app = web.Application()
+
+    app.router.add_post(
+        "/topgg",
+        topgg_webhook
+    )
+
+    runner = web.AppRunner(app)
+
+    await runner.setup()
+
+    site = web.TCPSite(
+        runner,
+        "0.0.0.0",
+        8080
+    )
+
+    await site.start()
 
 def ensure_schema():
 
@@ -138,6 +268,14 @@ def ensure_schema():
             score INTEGER NOT NULL,
             rolls INTEGER NOT NULL,
             PRIMARY KEY(user_id, roll_date)
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS topgg_votes (
+            user_id INTEGER PRIMARY KEY,
+            valid_until INTEGER NOT NULL,
+            color_index INTEGER NOT NULL
         )
         """)
 
@@ -351,6 +489,20 @@ def setup_logging():
     )
 
     handler.suffix = "%Y%m%d"
+
+    def custom_log_namer(default_name):
+        base = os.path.basename(default_name)
+
+        if ".log." in base:
+            date_part = base.split(".log.")[1]
+            return os.path.join(
+                "logs",
+                f"rollf_{date_part}.log"
+            )
+
+        return default_name
+
+    handler.namer = custom_log_namer
 
     formatter = logging.Formatter(
         "[%(asctime)s] %(message)s",
@@ -637,6 +789,11 @@ def render_leaderboard_png(
 
     for pos, (username, score, uid) in enumerate(rows, start=1):
 
+        username_color = get_vote_color(uid)
+
+        if username_color is None:
+            username_color = (255, 255, 255)
+
         if pos % 2 == 0:
             draw.rectangle(
                 (
@@ -658,7 +815,7 @@ def render_leaderboard_png(
         draw.text(
             (USER_X, y),
             trim(username, 20),
-            fill=(255, 255, 255),
+            fill=username_color,
             font=body_font
         )
 
@@ -775,7 +932,25 @@ def get_bot_stats():
         "first_roll": first_roll,
         "avg10": float(last10) if last10 else 0.0
     }    
-    
+
+def get_vote_color(user_id):
+
+    now = int(time.time())
+
+    with db() as con:
+
+        row = con.execute("""
+            SELECT color_index
+            FROM topgg_votes
+            WHERE user_id=?
+              AND valid_until>?
+        """, (user_id, now)).fetchone()
+
+    if row is None:
+        return None
+
+    return VOTE_COLORS[row["color_index"]]
+
 # ---------------- BOT SETUP ----------------
 
 intents = discord.Intents.default()
@@ -901,6 +1076,7 @@ async def on_ready():
     if DAILY_ROLL_TASK is None or DAILY_ROLL_TASK.done():
         DAILY_ROLL_TASK = asyncio.create_task(bot_daily_roll())
 
+    await start_webhook()
     print(f"{BOT_NAME} online & ready.")
 
 # ---------------- DAILY BOT ROLL ----------------
@@ -1248,7 +1424,12 @@ async def help_cmd(interaction: discord.Interaction):
             "• `/roll` — Roll your daily number\n"
             "• `/leaderboards` — View rankings\n"
             "• `/stats` — View detailed statistics\n"
-            "• `/setchannel` — Configure daily rolls"
+            "• `/setchannel` — Configure daily rolls\n\n"
+            "**Support RollF**\n"
+            "If you enjoy RollF, you can vote on top.gg:\n"
+            "https://top.gg/bot/1409207722783543347/vote\n\n"
+            "Reward:\n"
+            "• Random pastel-colored username on the leaderboards for 12 hours."
         ),
         color=discord.Color.dark_grey()
     )

@@ -36,6 +36,7 @@ The source code for the bot is available here on GitHub.
   - All Time
   - Longest Streaks
 - PNG-rendered leaderboards with integrated reset timers
+- Cosmetic top.gg voter reward (random pastel username for 12 hours)
 - Historical streak leaderboards
 - Admin user lookup by Discord User ID
 - Streak tracking (current and best)
@@ -89,13 +90,17 @@ Owner-only (optional, requires ADMIN_MODE=true):
 
 ## Try RollF
 
-Use the invite button at the top of this page to add RollF to your server.
+RollF is also listed on:
 
-RollF is also available on top.gg:
-https://top.gg/bot/1409207722783543347
+- top.gg
+  https://top.gg/bot/1409207722783543347
 
-...and on discordbotlist.com:
-https://discordbotlist.com/bots/rollf
+- Discord Bot List
+  https://discordbotlist.com/bots/rollf
+
+If you enjoy RollF, consider voting on top.gg.
+
+Voting rewards you with a random pastel-colored username on the global leaderboards for **12 hours**.
 
 ---
 
@@ -170,7 +175,7 @@ ADMIN_GUILD_ID=your_server_id_here
 - Uses SQLite (WAL mode recommended)
 - Compatible with systemd service deployment
 - Supports automated compressed database backups
-- Optional rotating operation logs with automatic retention
+- Optional rotating operation logs with automatic retention and command usage logging
 
 RollF performs automatic schema migrations on startup,
 including backfilling roll_date for historical roll records.
