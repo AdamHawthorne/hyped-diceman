@@ -100,7 +100,36 @@ RollF is also listed on:
 
 If you enjoy RollF, consider voting on top.gg.
 
-Voting rewards you with a random pastel-colored username on the global leaderboards for **12 hours**.
+Voting unlocks a randomly selected pastel-colored username on the global leaderboards for 12 hours.
+
+The reward is cosmetic only and does not affect gameplay.
+
+---
+
+## Optional: top.gg Integration
+
+RollF can optionally integrate with top.gg.
+
+Features include:
+
+- Automatic server count updates
+- Cosmetic voting rewards
+- Random pastel-colored usernames on leaderboards for 12 hours after a vote
+
+To enable voting rewards:
+
+1. Create a webhook in your top.gg bot settings.
+2. Point the webhook to:
+
+```
+http://your-domain-or-ip:8080/topgg
+```
+
+3. Forward the webhook port in your router.
+4. Allow the port through your firewall.
+
+Without this configuration, RollF works normally. Only the cosmetic voting reward is disabled.
+
 
 ---
 
@@ -133,17 +162,26 @@ Dependencies are installed via `requirements.txt` and include:
 
 Create a .env file in the project root:
 ```env
-DISCORD_TOKEN=your_token_here
+# Required
+DISCORD_TOKEN=your_discord_bot_token
+
+# Optional
 ADMIN_MODE=true
 ENABLE_COMMAND_LOGGING=true
-OWNER_ID=your_user_id_here
-ADMIN_GUILD_ID=your_server_id_here
+
+OWNER_ID=your_discord_user_id
+ADMIN_GUILD_ID=your_admin_guild_id
+
+# Optional bot listing integrations
+BOTLIST_TOKEN=your_discordbotlist_token
+TOPGG_TOKEN=your_topgg_api_token
 ```
 
 Run the bot:
 ```
 python rollf.py
 ```
+
 ---
 
 ## Admin Mode (Optional)
@@ -158,14 +196,39 @@ Admin commands are:
 
 If `ADMIN_MODE=false`, admin commands are not registered at all.
 
-Example `.env`:
+Example:
+
 ```env
-DISCORD_TOKEN=your_token_here
-ADMIN_MODE=false
-ENABLE_COMMAND_LOGGING=true
-OWNER_ID=your_user_id_here
-ADMIN_GUILD_ID=your_server_id_here
+ADMIN_MODE=true
+OWNER_ID=your_discord_user_id
+ADMIN_GUILD_ID=your_admin_guild_id
 ```
+
+---
+
+## top.gg Voting Rewards (Optional)
+
+RollF can optionally reward users who vote on top.gg.
+
+When enabled:
+
+- Random pastel-colored username on the global leaderboards.
+- Reward lasts until the vote expires (normally 12 hours).
+- Purely cosmetic — gameplay is unaffected.
+
+To enable this feature:
+
+1. Create a webhook in your top.gg bot settings.
+2. Point it to:
+
+```
+http://your-domain-or-ip:8080/topgg
+```
+
+3. Forward port `8080` to the machine running RollF.
+4. Allow the port through your firewall.
+
+If this integration is not configured, RollF continues to function normally. Only the cosmetic voting reward is unavailable.
 
 ---
 

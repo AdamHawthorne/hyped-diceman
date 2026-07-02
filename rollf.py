@@ -175,16 +175,20 @@ async def post_botlist_commands():
 
 async def topgg_webhook(request):
 
-    auth = request.headers.get("Authorization")
-
-    if auth != TOPGG_WEBHOOK_AUTH:
-        return web.Response(status=401)
-
     data = await request.json()
 
-    user_id = int(data["user"])
+    event_type = data.get("type")
 
-    valid_until = int(time.time()) + (12 * 60 * 60)
+    if event_type != "vote.create":
+        log_event(f"TOPGG EVENT {event_type}")
+        return web.Response(text="OK")
+
+    user_id = int(data["data"]["user"]["platform_id"])
+
+    expires = datetime.fromisoformat(
+        data["data"]["expires_at"]
+    )
+    valid_until = int(expires.timestamp())
 
     with db() as con:
 
@@ -207,23 +211,15 @@ async def topgg_webhook(request):
             INSERT INTO topgg_votes
                 (user_id, valid_until, color_index)
             VALUES (?, ?, ?)
-
             ON CONFLICT(user_id)
             DO UPDATE SET
                 valid_until=excluded.valid_until,
                 color_index=excluded.color_index
-        """, (
-            user_id,
-            valid_until,
-            color_index
-        ))
+        """, (user_id, valid_until, color_index))
 
-    log_event(
-        f"TOPGG VOTE user={user_id} color={color_index}"
-    )
+    log_event(f"TOPGG VOTE user={user_id} color={color_index}")
 
     return web.Response(text="OK")
-
 async def start_webhook():
 
     app = web.Application()
