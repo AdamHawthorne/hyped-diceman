@@ -17,6 +17,9 @@ import io
 import os
 import discord
 import logging
+import json
+import hmac
+import hashlib
 from logging.handlers import TimedRotatingFileHandler
 from discord import app_commands
 from discord.ext import commands
@@ -47,7 +50,6 @@ ENABLE_COMMAND_LOGGING = (
     os.getenv("ENABLE_COMMAND_LOGGING", "false").lower()
     == "true"
 )
-TOPGG_WEBHOOK_AUTH = os.getenv("TOPGG_WEBHOOK_AUTH")
 LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
 
@@ -112,6 +114,7 @@ ADMIN_GUILD_ID = int(os.getenv("ADMIN_GUILD_ID", "0"))
 TOKEN = os.getenv("DISCORD_TOKEN")
 BOTLIST_TOKEN = os.getenv("BOTLIST_TOKEN")
 TOPGG_TOKEN = os.getenv("TOPGG_TOKEN")
+TOPGG_WEBHOOK_SECRET = os.getenv("TOPGG_WEBHOOK_SECRET")
 
 ONBOARDING_TEXT = (
     "**Thanks for adding RollF!**\n\n"
@@ -175,19 +178,81 @@ async def post_botlist_commands():
 
 async def topgg_webhook(request):
 
-    data = await request.json()
+    raw_body = await request.text()
+
+    signature = request.headers.get("X-Topgg-Signature")
+    
+    if not TOPGG_WEBHOOK_SECRET:
+        log_error("TOPGG_WEBHOOK_SECRET is missing")
+        return web.Response(
+            status=500,
+            text="Server configuration error"
+        )
+
+    if not signature:
+        log_event("TOPGG MISSING SIGNATURE")
+        return web.Response(
+            status=401,
+            text="Unauthorized"
+        )
+
+    try:
+        parts = dict(
+            item.split("=", 1)
+            for item in signature.split(",")
+        )
+
+        timestamp = parts["t"]
+        received_sig = parts["v1"]
+
+    except Exception:
+        log_event("TOPGG BAD SIGNATURE HEADER")
+        return web.Response(
+            status=401,
+            text="Unauthorized"
+        )
+
+    expected_sig = hmac.new(
+        TOPGG_WEBHOOK_SECRET.encode(),
+        f"{timestamp}.{raw_body}".encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected_sig, received_sig):
+        log_event(
+            f"TOPGG INVALID SIGNATURE ip={request.remote}"
+        )
+        return web.Response(
+            status=401,
+            text="Unauthorized"
+        )
+        
+    if abs(time.time() - int(timestamp)) > 300:
+        log_event(f"TOPGG EXPIRED SIGNATURE ip={request.remote}")
+        return web.Response(
+           status=401,
+           text="Unauthorized"
+        )
+
+    data = json.loads(raw_body)
 
     event_type = data.get("type")
 
+    if event_type == "webhook.test":
+        return web.Response(text="OK")
+
     if event_type != "vote.create":
-        log_event(f"TOPGG EVENT {event_type}")
+        log_event(f"TOPGG UNKNOWN EVENT {event_type}")
         return web.Response(text="OK")
 
     user_id = int(data["data"]["user"]["platform_id"])
 
-    expires = datetime.fromisoformat(
-        data["data"]["expires_at"]
+    expires = (
+        datetime.fromisoformat(
+            data["data"]["expires_at"]
+        ) + timedelta(hours=12)
     )
+
     valid_until = int(expires.timestamp())
 
     with db() as con:
@@ -220,9 +285,15 @@ async def topgg_webhook(request):
     log_event(f"TOPGG VOTE user={user_id} color={color_index}")
 
     return web.Response(text="OK")
+    
 async def start_webhook():
 
     app = web.Application()
+
+    async def remove_server_header(request, response):
+        response.headers.pop("Server", None)
+
+    app.on_response_prepare.append(remove_server_header)
 
     app.router.add_post(
         "/topgg",
@@ -235,7 +306,7 @@ async def start_webhook():
 
     site = web.TCPSite(
         runner,
-        "0.0.0.0",
+        "127.0.0.1",
         8080
     )
 
@@ -550,10 +621,11 @@ def get_user_stats(user_id: int):
                 COUNT(*) AS rolls,
                 SUM(value) AS score,
                 MAX(value) AS best,
-                AVG(value) AS avg
+                AVG(value) AS avg,
+                SUM(CASE WHEN value = 100 THEN 1 ELSE 0 END) AS perfects
             FROM rolls
             WHERE user_id = ?
-              AND actor_type = 'user'
+            AND actor_type = 'user'
             """,
             (user_id,)
         ).fetchone()
@@ -599,6 +671,7 @@ def get_user_stats(user_id: int):
         "score": total[1] or 0,
         "best": total[2] or 0,
         "avg": float(total[3]) if total[3] else 0.0,
+        "perfects": total[4] or 0,
         "avg10": float(last10) if last10 else 0.0,
         "first_roll": first_roll,
         "rank": rank
@@ -896,7 +969,8 @@ def get_bot_stats():
                 SUM(value) AS score,
                 MAX(value) AS best,
                 MIN(value) AS worst,
-                AVG(value) AS avg
+                AVG(value) AS avg,
+                SUM(CASE WHEN value = 100 THEN 1 ELSE 0 END) AS perfects
             FROM rolls
             WHERE actor_type = 'bot'
         """).fetchone()
@@ -925,9 +999,10 @@ def get_bot_stats():
         "best": total[2] or 0,
         "worst": total[3] or 0,
         "avg": float(total[4]) if total[4] else 0.0,
+        "perfects": total[5] or 0,
         "first_roll": first_roll,
         "avg10": float(last10) if last10 else 0.0
-    }    
+    }
 
 def get_vote_color(user_id):
 
@@ -1262,9 +1337,14 @@ async def stats(
             inline=True
         )
 
+        best_text = str(stats["best"])
+
+        if stats["best"] == 100 and stats["perfects"] > 0:
+            best_text = f"100 (×{stats['perfects']})"
+
         embed.add_field(
             name="Best roll",
-            value=str(stats["best"]),
+            value=best_text,
             inline=True
         )
 
@@ -1369,13 +1449,18 @@ async def stats(
         inline=True
     )
 
+    best_text = str(stats["best"])
+
+    if stats["best"] == 100 and stats["perfects"] > 0:
+        best_text = f"100 (×{stats['perfects']})"
+
     embed.add_field(
         name="All-time",
         value=(
             f"Rolls: {stats['rolls']}\n"
             f"Score: {stats['score']:,}\n"
             f"Rank: #{stats['rank']}\n"
-            f"Best: {stats['best']}"
+            f"Best: {best_text}"
         ),
         inline=True
     )
@@ -1425,7 +1510,7 @@ async def help_cmd(interaction: discord.Interaction):
             "If you enjoy RollF, you can vote on top.gg:\n"
             "https://top.gg/bot/1409207722783543347/vote\n\n"
             "Reward:\n"
-            "• Random pastel-colored username on the leaderboards for 12 hours."
+            "• Random pastel-colored username on the leaderboards for 24 hours."
         ),
         color=discord.Color.dark_grey()
     )

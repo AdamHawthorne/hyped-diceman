@@ -36,7 +36,7 @@ The source code for the bot is available here on GitHub.
   - All Time
   - Longest Streaks
 - PNG-rendered leaderboards with integrated reset timers
-- Cosmetic top.gg voter reward (random pastel username for 12 hours)
+- Cosmetic top.gg voter reward (random pastel username for 24 hours)
 - Historical streak leaderboards
 - Admin user lookup by Discord User ID
 - Streak tracking (current and best)
@@ -100,7 +100,7 @@ RollF is also listed on:
 
 If you enjoy RollF, consider voting on top.gg.
 
-Voting unlocks a randomly selected pastel-colored username on the global leaderboards for 12 hours.
+Voting unlocks a randomly selected pastel-colored username on the global leaderboards for 24 hours.
 
 The reward is cosmetic only and does not affect gameplay.
 
@@ -114,7 +114,7 @@ Features include:
 
 - Automatic server count updates
 - Cosmetic voting rewards
-- Random pastel-colored usernames on leaderboards for 12 hours after a vote
+- Random pastel-colored usernames on leaderboards for 24 hours after a vote
 
 To enable voting rewards:
 
@@ -213,7 +213,7 @@ RollF can optionally reward users who vote on top.gg.
 When enabled:
 
 - Random pastel-colored username on the global leaderboards.
-- Reward lasts until the vote expires (normally 12 hours).
+- Reward lasts until the vote expires (normally 24 hours).
 - Purely cosmetic — gameplay is unaffected.
 
 To enable this feature:

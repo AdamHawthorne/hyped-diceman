@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
+trap 'log "Backup failed"' ERR
 
 PROJECT_DIR="/opt/bots/rollf-bot"
 DB_FILE="$PROJECT_DIR/bot.db"
@@ -28,9 +29,6 @@ cp "$DB_FILE" "$TMP_BACKUP"
 
 # Compress backup
 gzip "$TMP_BACKUP"
-
-echo "[$(date '+%F %T')] DB BACKUP EXECUTED" \
->> /opt/bots/rollf-bot/logs/rollf.log
 
 # Verify archive integrity
 gzip -t "$FINAL_BACKUP"
