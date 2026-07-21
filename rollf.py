@@ -763,7 +763,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
         "rolls": total[0] or 0,
         "score": total[1] or 0,
         "best": total[2] or 0,
-        "rank": rank
+        "rank": None if (total[0] or 0) == 0 else rank
     }
 
 def format_score(n: int) -> str:
@@ -1148,6 +1148,11 @@ async def on_ready():
         DAILY_ROLL_TASK = asyncio.create_task(bot_daily_roll())
 
     await start_webhook()
+
+    log_event(
+        f"BOT READY guilds={len(bot.guilds)}"
+    )
+
     print(f"{BOT_NAME} online & ready.")
 
 # ---------------- DAILY BOT ROLL ----------------
@@ -1216,7 +1221,10 @@ async def bot_daily_roll():
                     continue
 
             try:
-                await channel.send(f"{BOT_NAME} rolled **{value}** 🎲")
+                if value == 100:
+                    await channel.send(f"{BOT_NAME} rolled 💯 🎲")
+                else:
+                    await channel.send(f"{BOT_NAME} rolled **{value}** 🎲")
             except discord.Forbidden:
                 try:
                     guild = bot.get_guild(guild_id)
@@ -1391,15 +1399,16 @@ async def stats(
 
     embed.set_thumbnail(url=target.display_avatar.url)
 
-    # Row 1
     if today_row:
         today_value = (
             f"Roll: {today_row[0]}\n"
-            f"Rank: #{today_rank}" if today_rank else
-            f"Roll: {today_row[0]}"
+            f"Rank: #{today_rank}"
         )
     else:
-        today_value = "No roll yet."
+        today_value = (
+            "Roll: —\n"
+            "Rank: —"
+        )
 
     embed.add_field(
         name="Today",
@@ -1426,25 +1435,48 @@ async def stats(
         inline=True
     )
 
+    week_rank = (
+        f"#{week_stats['rank']}"
+        if week_stats["rank"] is not None
+        else "—"
+    )
+
+    week_best = (
+        str(week_stats["best"])
+        if week_stats["rolls"] > 0
+        else "—"
+    )
+
     embed.add_field(
         name="This Week",
         value=(
             f"Rolls: {week_stats['rolls']}\n"
             f"Score: {week_stats['score']:,}\n"
-            f"Rank: #{week_stats['rank']}\n"
-            f"Best: {week_stats['best']}"
+            f"Rank: {week_rank}\n"
+            f"Best: {week_best}"
         ),
         inline=True
     )
 
-    # Row 3
+    month_rank = (
+        f"#{month_stats['rank']}"
+        if month_stats["rank"] is not None
+        else "—"
+    )
+
+    month_best = (
+        str(month_stats["best"])
+        if month_stats["rolls"] > 0
+        else "—"
+    )
+
     embed.add_field(
         name="This Month",
         value=(
             f"Rolls: {month_stats['rolls']}\n"
             f"Score: {month_stats['score']:,}\n"
-            f"Rank: #{month_stats['rank']}\n"
-            f"Best: {month_stats['best']}"
+            f"Rank: {month_rank}\n"
+            f"Best: {month_best}"
         ),
         inline=True
     )
