@@ -610,7 +610,7 @@ def log_error(message: str):
     if LOGGER:
         LOGGER.exception(message)
 
-def trim(name, max_len=20):
+def trim(name, max_len=18):
     return name[:max_len-1] + "…" if len(name) > max_len else name
     
 def get_user_stats(user_id: int):
@@ -767,9 +767,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
     }
 
 def format_score(n: int) -> str:
-    if n >= 1000:
-        return f"{n / 1000:.1f}k"
-    return str(n)
+    return f"{n:,}"
 
 def render_leaderboard_png(
     title,
@@ -883,7 +881,7 @@ def render_leaderboard_png(
 
         draw.text(
             (USER_X, y),
-            trim(username, 20),
+            trim(username, 18),
             fill=username_color,
             font=body_font
         )
@@ -1143,11 +1141,11 @@ async def on_ready():
     if cleaned > 0:
         print(f"Cleaned {cleaned} stale guild entries")
 
-    # -------- Start daily roll task --------
     if DAILY_ROLL_TASK is None or DAILY_ROLL_TASK.done():
         DAILY_ROLL_TASK = asyncio.create_task(bot_daily_roll())
 
-    await start_webhook()
+    if os.getenv("ENABLE_WEBHOOK") == "true":
+        await start_webhook()
 
     log_event(
         f"BOT READY guilds={len(bot.guilds)}"
@@ -1711,6 +1709,7 @@ async def roll(interaction: discord.Interaction):
     app_commands.Choice(name="Year", value="year"),
     app_commands.Choice(name="All Time", value="alltime"),
     app_commands.Choice(name="Streak", value="streak"),
+    app_commands.Choice(name="100 Rolls", value="100s"),
 ])
 async def leaderboards(
     interaction: discord.Interaction,
@@ -1725,11 +1724,54 @@ async def leaderboards(
     rows = []
     ranking = []
     stats_row = (0, 0)
+    
+    # =========================
+    # 100 ROLLS LEADERBOARD
+    # =========================
+    if period_value == "100s":
+
+        with db() as con:
+            rows = con.execute("""
+                SELECT
+                    COALESCE(u.username, 'Unknown'),
+                    COUNT(*) AS perfects,
+                    r.user_id
+                FROM rolls r
+                LEFT JOIN users u ON u.user_id = r.user_id
+                WHERE r.actor_type = 'user'
+                  AND r.value = 100
+                GROUP BY r.user_id
+                ORDER BY perfects DESC
+                LIMIT 10
+            """).fetchall()
+
+            ranking = con.execute("""
+                SELECT
+                    user_id,
+                    COUNT(*) AS perfects
+                FROM rolls
+                WHERE actor_type = 'user'
+                  AND value = 100
+                GROUP BY user_id
+                ORDER BY perfects DESC
+                LIMIT 100
+            """).fetchall()
+
+            stats_row = con.execute("""
+                SELECT
+                    COUNT(DISTINCT user_id),
+                    COUNT(*)
+                FROM rolls
+                WHERE actor_type = 'user'
+                  AND value = 100
+            """).fetchone()
+
+        title_suffix = "100 Rolls"
 
     # =========================
     # STREAK LEADERBOARD
     # =========================
-    if period_value == "streak":
+    elif period_value == "streak":
 
         with db() as con:
             all_dates = con.execute("""
@@ -1916,6 +1958,8 @@ async def leaderboards(
 
     if period_value == "streak":
         score_label = "DAYS"
+    elif period_value == "100s":
+        score_label = "100s"
 
     # =========================
     # RESET TIMER
