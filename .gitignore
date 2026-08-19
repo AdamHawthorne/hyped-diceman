@@ -14,6 +14,9 @@ backup/
 *.bak
 *.log
 
+# Local backup scripts
+scripts/backup_rollf.sh
+
 # Python
 __pycache__/
 *.pyc
