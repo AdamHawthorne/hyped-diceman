@@ -1,0 +1,14 @@
+services:
+  rollf:
+    image: rollf-bot:latest
+    container_name: rollf-bot
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./bot.db:/app/bot.db
+      - ./.env:/app/.env:ro
+      - ./assets:/app/assets:ro

@@ -146,6 +146,42 @@ Daily bot rolls are posted in the configured channel using `/setchannel`.
 
 ---
 
+## Docker
+
+RollF can be run as a Docker container.
+
+### Build and start
+
+```bash
+docker compose up -d --build
+```
+
+### Stop
+
+```bash
+docker compose down
+```
+
+### View logs
+
+```bash
+docker compose logs -f
+```
+
+The container uses:
+
+- ```bot.db``` for persistent SQLite storage
+- ```assets/``` for static assets
+- ```.env``` for runtime configuration and secrets
+
+The SQLite database and ```.env``` file are intentionally excluded from Git.
+
+The included ```compose.yml``` exposes the optional webhook endpoint on:
+
+```127.0.0.1:8080```
+
+---
+
 ## Setup
 
 ```bash
@@ -234,17 +270,20 @@ If this integration is not configured, RollF continues to function normally. Onl
 
 ## Production Notes
 
-- Designed for long-term unattended operation
-- Uses SQLite (WAL mode recommended)
-- Compatible with systemd service deployment
-- Supports automated compressed database backups
-- Optional rotating operation logs with automatic retention and command usage logging
+RollF is designed for long-term unattended operation.
 
-RollF performs automatic schema migrations on startup,
-including backfilling roll_date for historical roll records.
+The bot:
 
-The bot is intentionally minimal and avoids complex state mutations.
-All statistics are derived directly from stored roll history.
+- Uses persistent SQLite storage
+- Performs automatic schema migrations on startup
+- Supports Docker deployment
+- Supports optional operational logging
+- Supports slash command usage logging
+- Supports automated database backups
+
+RollF performs automatic schema migrations on startup, including backfilling `roll_date` for historical roll records.
+
+Statistics are derived directly from stored roll history.
 
 ---
 
@@ -252,7 +291,8 @@ All statistics are derived directly from stored roll history.
 
 RollF is open source under the MIT license.
 
-However, the name **"RollF"** and the official public bot instance are maintained by the original author. 
+However, the name **"RollF"** and the official public bot instance are maintained by the original author.
+
 Forks and modified versions are welcome, but please do not present them as the official RollF bot.
 
 If you run your own instance, please use a different bot name to avoid confusion with the official deployment.
