@@ -306,7 +306,7 @@ async def start_webhook():
 
     site = web.TCPSite(
         runner,
-        "127.0.0.1",
+        "0.0.0.0",
         8080
     )
 
@@ -1182,12 +1182,15 @@ async def bot_daily_roll():
             continue
 
         value = secrets.randbelow(100) + 1
-        insert_roll(0, BOT_NAME, value, "bot")
 
-
-        log_event(
-            f"BOT ROLL value={value}"
-        )
+        if insert_roll(0, BOT_NAME, value, "bot"):
+            log_event(
+                f"BOT ROLL value={value}"
+            )
+        else:
+            log_error(
+                f"BOT ROLL FAILED value={value}"
+            )
 
         with db() as con:
             rows = con.execute(

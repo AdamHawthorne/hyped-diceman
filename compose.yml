@@ -8,7 +8,12 @@ services:
       - "127.0.0.1:8080:8080"
     env_file:
       - .env
+    environment:
+      TZ: Europe/Stockholm
     volumes:
       - ./bot.db:/app/bot.db
+      - ./bot.db-wal:/app/bot.db-wal
+      - ./bot.db-shm:/app/bot.db-shm
       - ./.env:/app/.env:ro
       - ./assets:/app/assets:ro
+      - ./logs:/app/logs
