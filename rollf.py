@@ -1634,10 +1634,15 @@ async def roll(interaction: discord.Interaction):
             )
             return
 
-        await interaction.response.send_message(
-            f"{interaction.user.mention} rolled **{value}** 🎲"
-        )
-        return
+            if value == 100:
+                await interaction.response.send_message(
+                    f"{interaction.user.mention} rolled 💯 🎲"
+                )
+            else:
+                await interaction.response.send_message(
+                    f"{interaction.user.mention} rolled **{value}** 🎲"
+                )
+            return
 
     await interaction.response.send_message(
         f"{interaction.user.mention} rolling..."
