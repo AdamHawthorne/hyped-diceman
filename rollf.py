@@ -181,7 +181,7 @@ async def topgg_webhook(request):
     raw_body = await request.text()
 
     signature = request.headers.get("X-Topgg-Signature")
-    
+
     if not TOPGG_WEBHOOK_SECRET:
         log_error("TOPGG_WEBHOOK_SECRET is missing")
         return web.Response(
@@ -226,7 +226,7 @@ async def topgg_webhook(request):
             status=401,
             text="Unauthorized"
         )
-        
+
     if abs(time.time() - int(timestamp)) > 300:
         log_event(f"TOPGG EXPIRED SIGNATURE ip={request.remote}")
         return web.Response(
@@ -285,7 +285,7 @@ async def topgg_webhook(request):
     log_event(f"TOPGG VOTE user={user_id} color={color_index}")
 
     return web.Response(text="OK")
-    
+
 async def start_webhook():
 
     app = web.Application()
@@ -488,7 +488,7 @@ def bot_rolled_today():
             (start, end)
         )
         return cur.fetchone() is not None
-        
+
 def upsert_user(user_id: int, username: str):
     now = int(time.time())
     with db() as con:
@@ -612,7 +612,7 @@ def log_error(message: str):
 
 def trim(name, max_len=18):
     return name[:max_len-1] + "…" if len(name) > max_len else name
-    
+
 def get_user_stats(user_id: int):
     with db() as con:
         total = con.execute(
@@ -1002,6 +1002,32 @@ def get_bot_stats():
         "avg10": float(last10) if last10 else 0.0
     }
 
+def get_time_left():
+    now = datetime.now(TZ)
+    midnight = datetime(
+        now.year, now.month, now.day, tzinfo=TZ
+    ) + timedelta(days=1)
+
+    remaining = max(
+        0, int((midnight - now).total_seconds())
+    )
+
+    if remaining < 3600:
+        minutes = -(-remaining // 60)
+        return f"{minutes}m"
+
+    hours = remaining // 3600
+    minutes = -(- (remaining % 3600) // 60)
+
+    if minutes == 60:
+        hours += 1
+        minutes = 0
+
+    if minutes == 0:
+        return f"{hours}h"
+
+    return f"{hours}h {minutes}m"
+
 def get_vote_color(user_id):
 
     now = int(time.time())
@@ -1066,7 +1092,7 @@ async def on_guild_remove(guild: discord.Guild):
     with db() as con:
         con.execute("DELETE FROM guild_channels WHERE guild_id = ?", (guild.id,))
         con.execute("DELETE FROM guild_meta WHERE guild_id = ?", (guild.id,))
-    
+
     await post_bot_stats()
 
 @bot.event
@@ -1081,7 +1107,7 @@ async def on_ready():
 
     ensure_schema()
     ensure_indexes()
-    
+
     await post_botlist_commands()
     await post_bot_stats()
 
@@ -1578,28 +1604,7 @@ async def roll(interaction: discord.Interaction):
 
     if row:
         value = row[0]
-
-        now = datetime.now(TZ)
-        midnight = datetime(now.year, now.month, now.day, tzinfo=TZ) + timedelta(days=1)
-        remaining = max(0, int((midnight - now).total_seconds()))
-
-        if remaining < 3600:
-            # under 1h → ceil minutes
-            minutes = -(-remaining // 60)
-            time_left = f"{minutes}m"
-
-        else:
-            hours = remaining // 3600
-            minutes = -(- (remaining % 3600) // 60)
-
-            if minutes == 60:
-                hours += 1
-                minutes = 0
-
-            if minutes == 0:
-                time_left = f"{hours}h"
-            else:
-                time_left = f"{hours}h {minutes}m"
+        time_left = get_time_left()
 
         await interaction.response.send_message(
             f"{interaction.user.mention}\n"
@@ -1628,21 +1633,39 @@ async def roll(interaction: discord.Interaction):
         success = insert_roll(interaction.user.id, interaction.user.name, value, "user")
 
         if not success:
-            await interaction.response.send_message(
-                "You already rolled today.",
-                ephemeral=True
-            )
+            with db() as con:
+                row = con.execute(
+                    """
+                    SELECT value
+                    FROM rolls
+                    WHERE user_id = ?
+                      AND actor_type = 'user'
+                      AND rolled_at BETWEEN ? AND ?
+                    LIMIT 1
+                    """,
+                    (interaction.user.id, start, end)
+                ).fetchone()
+
+            if row:
+                existing_value = row[0]
+                time_left = get_time_left()
+
+                await interaction.response.send_message(
+                    f"{interaction.user.mention}\n"
+                    f"You already rolled **{existing_value}** today.\n"
+                    f"Try again in {time_left}."
+                )
             return
 
-            if value == 100:
-                await interaction.response.send_message(
-                    f"{interaction.user.mention} rolled 💯 🎲"
-                )
-            else:
-                await interaction.response.send_message(
-                    f"{interaction.user.mention} rolled **{value}** 🎲"
-                )
-            return
+        if value == 100:
+            await interaction.response.send_message(
+                f"{interaction.user.mention} rolled 💯 🎲"
+            )
+        else:
+            await interaction.response.send_message(
+                f"{interaction.user.mention} rolled **{value}** 🎲"
+            )
+        return
 
     await interaction.response.send_message(
         f"{interaction.user.mention} rolling..."
@@ -1672,9 +1695,30 @@ async def roll(interaction: discord.Interaction):
     success = insert_roll(interaction.user.id, interaction.user.name, value, "user")
 
     if not success:
-        await msg.edit(
-            content=f"{interaction.user.mention}\nYou already rolled today."
-        )
+        with db() as con:
+            row = con.execute(
+                """
+                SELECT value
+                FROM rolls
+                WHERE user_id = ?
+                  AND actor_type = 'user'
+                  AND rolled_at BETWEEN ? AND ?
+                LIMIT 1
+                """,
+                (interaction.user.id, start, end)
+            ).fetchone()
+
+        if row:
+            existing_value = row[0]
+            time_left = get_time_left()
+
+            await msg.edit(
+                content=(
+                    f"{interaction.user.mention}\n"
+                    f"You already rolled **{existing_value}** today.\n"
+                    f"Try again in {time_left}."
+                )
+            )
         return
 
     current_streak, _ = calculate_streaks(interaction.user.id)
@@ -1732,7 +1776,7 @@ async def leaderboards(
     rows = []
     ranking = []
     stats_row = (0, 0)
-    
+
     # =========================
     # 100 ROLLS LEADERBOARD
     # =========================
@@ -2151,7 +2195,7 @@ if ADMIN_MODE:
             files=[guild_file, stats_file],
             ephemeral=True
         )
-    
+
     @bot.tree.command(
         name="user",
         description="Admin view of a user's roll data",
