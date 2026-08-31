@@ -1003,7 +1003,12 @@ def get_vote_color(user_id):
     if row is None:
         return None
 
-    return VOTE_COLORS[row["color_index"]]
+    color_index = row["color_index"]
+
+    if color_index >= len(VOTE_COLORS):
+        color_index %= len(VOTE_COLORS)
+
+    return VOTE_COLORS[color_index]
 
 # ---------------- BOT SETUP ----------------
 
