@@ -259,6 +259,21 @@ async def start_webhook():
         topgg_webhook
     )
 
+    app.router.add_get(
+        "/privacy",
+        lambda request: web.FileResponse("web/privacy.html")
+    )
+
+    app.router.add_get(
+        "/terms",
+        lambda request: web.FileResponse("web/terms.html")
+    )
+
+    app.router.add_get(
+        "/static/rollf.css",
+        lambda request: web.FileResponse("web/rollf.css")
+    )
+
     runner = web.AppRunner(app)
 
     await runner.setup()
@@ -1156,7 +1171,7 @@ async def bot_daily_roll():
             await asyncio.sleep((tomorrow - now).total_seconds())
             continue
 
-        if now.hour >= 10:
+        if now.hour >= 22:
             tomorrow = (now + timedelta(days=1)).replace(hour=5, minute=55, second=0, microsecond=0)
             await asyncio.sleep((tomorrow - now).total_seconds())
             continue
@@ -1165,7 +1180,7 @@ async def bot_daily_roll():
             target = now.replace(hour=6, minute=0, second=0, microsecond=0)
             await asyncio.sleep((target - now).total_seconds())
 
-        delay = secrets.randbelow(4 * 60 * 60)
+        delay = secrets.randbelow(16 * 60 * 60)
         await asyncio.sleep(delay)
 
         if bot_rolled_today():

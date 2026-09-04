@@ -1,0 +1,10 @@
+:root{--bg:#0b0b0b;--panel:#111;--text:#d8d8d8;--muted:#777;--border:#2a2a2a;--accent:#f0f0f0;--max:780px}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:var(--bg);color:var(--text);font-family:Consolas,"Liberation Mono",Menlo,monospace;line-height:1.7}
+main{width:min(calc(100% - 32px),var(--max));margin:auto;padding:56px 0 72px}
+header{border-bottom:1px solid var(--border);padding-bottom:24px;margin-bottom:42px}
+.logo{color:var(--accent);font-size:1.15rem;font-weight:700;letter-spacing:.12em}.logo:before{content:"> ";color:var(--muted)}
+h1{color:var(--accent);font-size:clamp(1.7rem,5vw,2.2rem);line-height:1.2;margin:0 0 12px}
+h2{color:var(--accent);font-size:1rem;margin:38px 0 12px}p,li{font-size:.92rem}.meta{color:var(--muted);font-size:.78rem}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:3px}a:hover{opacity:.75}
+nav{margin-top:24px;display:flex;gap:18px;flex-wrap:wrap}footer{border-top:1px solid var(--border);margin-top:48px;padding-top:22px;color:var(--muted);font-size:.75rem}ul{padding-left:22px}
+@media(max-width:600px){main{padding-top:36px}p,li{font-size:.88rem}}
