@@ -1398,9 +1398,10 @@ async def on_ready():
     if CROWN_RESET_TASK is None or CROWN_RESET_TASK.done():
         CROWN_RESET_TASK = asyncio.create_task(crown_reset_loop())
 
-    # Catch up a just-missed reset after a restart/deploy shortly after midnight.
+    # Catch up a just-missed reset after a restart/deploy during the first hour
+    # of the new day.
     now_local = datetime.now(TZ)
-    if now_local.hour == 0 and now_local.minute < 15:
+    if now_local.hour == 0:
         await post_daily_reset_message()
 
     await post_botlist_commands()
