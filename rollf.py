@@ -1109,7 +1109,7 @@ async def remove_crown_from_user(guild: discord.Guild, role: discord.Role, user_
     except (discord.Forbidden, discord.HTTPException):
         log_error(f"CROWN REMOVE FAILED user={user_id}")
 
-async def clear_high_roller_role():
+async def clear_high_roller_role(extra_user_id: int | None = None):
     if not HYPED_GUILD_ID or not HIGH_ROLLER_ROLE_ID:
         return
 
@@ -1128,8 +1128,19 @@ async def clear_high_roller_role():
             (HYPED_GUILD_ID,)
         ).fetchone()
 
+    # Normally crown_state identifies the holder. Also remove the role from any
+    # cached holder and, for a manual reset, the invoking owner. This handles a
+    # stale Discord role left behind when moving to a fresh database.
+    user_ids = {member.id for member in role.members}
+
     if state:
-        await remove_crown_from_user(guild, role, state["user_id"])
+        user_ids.add(state["user_id"])
+
+    if extra_user_id:
+        user_ids.add(extra_user_id)
+
+    for user_id in user_ids:
+        await remove_crown_from_user(guild, role, user_id)
 
     with db() as con:
         con.execute(
@@ -2447,10 +2458,18 @@ if ADMIN_MODE:
             await interaction.response.send_message("No.", ephemeral=True)
             return
 
-        await interaction.response.send_message(
+        await interaction.response.defer()
+
+        # Treat a manual post as a manual daily reset. Passing the owner's ID
+        # also clears a stale role left over from the pre-Fly/local database.
+        await clear_high_roller_role(extra_user_id=interaction.user.id)
+
+        await interaction.followup.send(
             embed=build_daily_reset_embed(),
             view=DailyRollView()
         )
+
+        log_event(f"MANUAL DAILY RESET user={interaction.user.id}")
 
     @bot.tree.command(
         name="export",
