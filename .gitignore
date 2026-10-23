@@ -15,7 +15,7 @@ backup/
 *.log
 
 # Local backup scripts
-scripts/backup_rollf.sh
+scripts/backup_diceman.sh
 
 # Python
 __pycache__/
