@@ -1477,6 +1477,10 @@ async def stats(
 ):
     log_command(interaction, "/stats")
 
+    # Discord interactions must be acknowledged within a few seconds.
+    # Defer immediately, then send the completed statistics as a follow-up.
+    await interaction.response.defer()
+
     target = user or interaction.user
 
     is_bot_stats = (
@@ -1538,7 +1542,7 @@ async def stats(
                 break
 
     if stats["rolls"] == 0:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "No statistics exists for this user.",
             ephemeral=True
         )
@@ -1615,7 +1619,7 @@ async def stats(
             inline=True
         )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             embed=embed
         )
 
@@ -1740,7 +1744,7 @@ async def stats(
         inline=True
     )
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(
     name="help",
@@ -1760,7 +1764,7 @@ async def help_cmd(interaction: discord.Interaction):
             "• `/leaderboards` — View Hyped rankings\n"
             "• `/stats` — View detailed statistics\n\n"
             "The current daily leader automatically receives the "
-            "**👑 High Roller** role. A tied roll does not take the crown."
+            "**🎲 Highest Daily Roller** role. A tied roll does not take the crown."
         ),
         color=discord.Color.dark_grey()
     )
