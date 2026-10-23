@@ -341,6 +341,14 @@ def ensure_schema():
         )
         """)
 
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS daily_reset_posts (
+            roll_date TEXT PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL
+        )
+        """)
+
         cols = con.execute("PRAGMA table_info(rolls)").fetchall()
         names = {c[1] for c in cols}
 
@@ -1219,6 +1227,83 @@ async def sync_high_roller_role():
 
     log_event(f"CROWN HOLDER user={champion_id} score={champion_score}")
 
+class DailyRollView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Roll",
+        emoji="🎲",
+        style=discord.ButtonStyle.primary,
+        custom_id="hyped_diceman_daily_roll"
+    )
+    async def roll_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        log_command(interaction, "daily-roll-button")
+        await perform_roll(interaction)
+
+
+async def post_daily_reset_message():
+    channel = bot.get_channel(ROLL_CHANNEL_ID)
+
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            log_event("DAILY RESET CHANNEL NOT FOUND")
+            return
+
+    today = datetime.now(TZ).date().isoformat()
+
+    with db() as con:
+        existing = con.execute(
+            "SELECT message_id FROM daily_reset_posts WHERE roll_date = ?",
+            (today,)
+        ).fetchone()
+
+    if existing:
+        return
+
+    embed = discord.Embed(
+        title="Hyped Rolls - Daily Reset",
+        description=(
+            "Simple competitive rolling for fun.\n\n"
+            "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
+            "`/leaderboards` - top rollers\n"
+            "`/stats` - your stats\n\n"
+            "**Highest roll wins (nothing)!**"
+        ),
+        color=0xD19A3B
+    )
+
+    if bot.user:
+        embed.set_thumbnail(url=bot.user.display_avatar.url)
+
+    try:
+        message = await channel.send(
+            embed=embed,
+            view=DailyRollView()
+        )
+    except (discord.Forbidden, discord.HTTPException):
+        log_error("DAILY RESET POST FAILED")
+        return
+
+    with db() as con:
+        con.execute(
+            """
+            INSERT OR REPLACE INTO daily_reset_posts
+                (roll_date, channel_id, message_id)
+            VALUES (?, ?, ?)
+            """,
+            (today, channel.id, message.id)
+        )
+
+    log_event(f"DAILY RESET POST message={message.id}")
+
+
 async def crown_reset_loop():
     await bot.wait_until_ready()
 
@@ -1232,6 +1317,8 @@ async def crown_reset_loop():
 
         await clear_high_roller_role()
         log_event("CROWN RESET")
+
+        await post_daily_reset_message()
 
 # ---------------- EVENTS ----------------
 
@@ -1294,6 +1381,8 @@ async def on_ready():
 
     ensure_schema()
     ensure_indexes()
+
+    bot.add_view(DailyRollView())
 
     await post_botlist_commands()
     await post_bot_stats()
@@ -1758,7 +1847,8 @@ async def help_cmd(interaction: discord.Interaction):
         title=BOT_NAME,
         description=(
             "**Daily Roll**\n"
-            "Use `/roll` once per day and pray. Rolls reset at midnight UK time.\n\n"
+            "Use the daily **🎲 Roll** button or `/roll` once per day. "
+            "Rolls reset at midnight UK time.\n\n"
             "**Commands**\n"
             "• `/roll` — Roll your daily number\n"
             "• `/leaderboards` — View Hyped rankings\n"
@@ -1774,14 +1864,7 @@ async def help_cmd(interaction: discord.Interaction):
         ephemeral=True
     )
 
-@bot.tree.command(
-    name="roll",
-    description="Roll a number between 1 and 100 (once per day)"
-)
-async def roll(interaction: discord.Interaction):
-
-    log_command(interaction, "/roll")
-
+async def perform_roll(interaction: discord.Interaction):
     start, end = today_range()
 
     with db() as con:
@@ -1947,6 +2030,15 @@ async def roll(interaction: discord.Interaction):
             )
 
     await sync_high_roller_role()
+
+
+@bot.tree.command(
+    name="roll",
+    description="Roll a number between 1 and 100 (once per day)"
+)
+async def roll(interaction: discord.Interaction):
+    log_command(interaction, "/roll")
+    await perform_roll(interaction)
 
 @bot.tree.command(
     name="leaderboards",
