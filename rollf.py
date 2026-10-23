@@ -2437,11 +2437,11 @@ async def setchannel(interaction: discord.Interaction, channel: discord.TextChan
 if ADMIN_MODE:
 
     @bot.tree.command(
-        name="testreset",
-        description="Owner-only preview of the daily reset panel",
+        name="postroll",
+        description="Owner-only post of the daily roll panel",
         guild=discord.Object(id=ADMIN_GUILD_ID)
     )
-    async def testreset_admin(interaction: discord.Interaction):
+    async def postroll_admin(interaction: discord.Interaction):
 
         if interaction.user.id != OWNER_ID:
             await interaction.response.send_message("No.", ephemeral=True)
