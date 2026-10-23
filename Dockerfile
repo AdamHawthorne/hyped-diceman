@@ -9,9 +9,9 @@ COPY rollf.py .
 COPY assets ./assets
 COPY web ./web
 
-RUN useradd --create-home --uid 1000 rollf \
-    && chown -R rollf:rollf /app
+RUN useradd --create-home --uid 1000 diceman \
+    && chown -R diceman:diceman /app
 
-USER rollf
+USER diceman
 
 CMD ["python", "rollf.py"]
