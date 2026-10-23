@@ -1265,7 +1265,7 @@ def build_daily_reset_embed():
             "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
             "`/leaderboards` - top rollers\n"
             "`/stats` - your stats\n\n"
-            "**Claim the Luckiest Gamer (today) 🎲 rank!**"
+            "**Are you the 🎲 Luckiest Gamer (today)?**"
         ),
         color=0xD19A3B
     )
