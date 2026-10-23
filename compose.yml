@@ -1,7 +1,7 @@
 services:
-  rollf:
-    image: rollf-bot:latest
-    container_name: rollf-bot
+  diceman:
+    image: hyped-diceman:latest
+    container_name: hyped-diceman
     restart: unless-stopped
     working_dir: /app
     ports:
@@ -9,7 +9,7 @@ services:
     env_file:
       - .env
     environment:
-      TZ: Europe/Stockholm
+      TZ: Europe/London
     volumes:
       - ./bot.db:/app/bot.db
       - ./bot.db-wal:/app/bot.db-wal
