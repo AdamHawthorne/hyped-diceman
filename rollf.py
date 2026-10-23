@@ -1254,7 +1254,7 @@ def build_daily_reset_embed():
             "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
             "`/leaderboards` - top rollers\n"
             "`/stats` - your stats\n\n"
-            "**Highest roll wins (nothing)!**"
+            "**Claim the 🎲 Highest Daily Roller rank!**"
         ),
         color=0xD19A3B
     )
