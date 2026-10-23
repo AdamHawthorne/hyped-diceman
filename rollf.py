@@ -1246,6 +1246,25 @@ class DailyRollView(discord.ui.View):
         await perform_roll(interaction)
 
 
+def build_daily_reset_embed():
+    embed = discord.Embed(
+        title="Hyped Rolls - Daily Reset",
+        description=(
+            "Simple competitive rolling for fun.\n\n"
+            "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
+            "`/leaderboards` - top rollers\n"
+            "`/stats` - your stats\n\n"
+            "**Highest roll wins (nothing)!**"
+        ),
+        color=0xD19A3B
+    )
+
+    if bot.user:
+        embed.set_thumbnail(url=bot.user.display_avatar.url)
+
+    return embed
+
+
 async def post_daily_reset_message():
     channel = bot.get_channel(ROLL_CHANNEL_ID)
 
@@ -1267,20 +1286,7 @@ async def post_daily_reset_message():
     if existing:
         return
 
-    embed = discord.Embed(
-        title="Hyped Rolls - Daily Reset",
-        description=(
-            "Simple competitive rolling for fun.\n\n"
-            "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
-            "`/leaderboards` - top rollers\n"
-            "`/stats` - your stats\n\n"
-            "**Highest roll wins (nothing)!**"
-        ),
-        color=0xD19A3B
-    )
-
-    if bot.user:
-        embed.set_thumbnail(url=bot.user.display_avatar.url)
+    embed = build_daily_reset_embed()
 
     try:
         message = await channel.send(
@@ -2421,6 +2427,22 @@ async def setchannel(interaction: discord.Interaction, channel: discord.TextChan
 # ---------------- ADMIN COMMANDS ----------------
 
 if ADMIN_MODE:
+
+    @bot.tree.command(
+        name="testreset",
+        description="Owner-only preview of the daily reset panel",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def testreset_admin(interaction: discord.Interaction):
+
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            embed=build_daily_reset_embed(),
+            view=DailyRollView()
+        )
 
     @bot.tree.command(
         name="export",
