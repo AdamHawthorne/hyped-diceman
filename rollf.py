@@ -1,9 +1,10 @@
 # -----------------------------------------
-# RollF – Minimal daily roll Discord bot
+# Hyped Diceman – daily roll Discord bot for the Hyped community
+# Derived from RollF by hegernat/plutonium87
+# Original source: https://github.com/hegernat/rollf-bot
 # Copyright (c) 2026 hegernat/plutonium87
-# Licensed under the MIT License
-#
-# Source: https://github.com/hegernat/rollf-bot
+# Modifications Copyright (c) 2026 AdamHawthorne
+# Licensed under the MIT License. See LICENSE.
 # -----------------------------------------
 
 import threading
@@ -32,9 +33,15 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ---------------- CONFIG ----------------
 
-TZ = ZoneInfo("Europe/Stockholm")
-BOT_NAME = "RollF"
-DB_PATH = "bot.db"
+load_dotenv()
+
+TZ = ZoneInfo(os.getenv("BOT_TIMEZONE", "Europe/London"))
+BOT_NAME = os.getenv("BOT_NAME", "Hyped Diceman")
+DB_PATH = os.getenv("DB_PATH", "bot.db")
+
+HYPED_GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
+ROLL_CHANNEL_ID = int(os.getenv("ROLL_CHANNEL_ID", "0"))
+HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -44,14 +51,13 @@ BOTLIST_COMMANDS = [
     {"command": "help", "description": "Show setup instructions"}
 ]
 
-load_dotenv()
-
 ENABLE_COMMAND_LOGGING = (
     os.getenv("ENABLE_COMMAND_LOGGING", "false").lower()
     == "true"
 )
 LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
+CROWN_RESET_TASK = None
 
 VOTE_COLORS = [
     (255, 255, 204),  # Pale Yellow
@@ -76,9 +82,9 @@ TOPGG_TOKEN = os.getenv("TOPGG_TOKEN")
 TOPGG_WEBHOOK_SECRET = os.getenv("TOPGG_WEBHOOK_SECRET")
 
 ONBOARDING_TEXT = (
-    "**Thanks for adding RollF!**\n\n"
-    "Run `/setchannel` to enable daily bot rolls.\n"
-    "Use `/help` for setup and commands."
+    "**Hyped Diceman is ready.**\n\n"
+    "Use `/roll` once per day, `/leaderboards` for rankings, "
+    "and `/stats` for your roll history."
 )
 
 # ---------------- DB ----------------
@@ -289,6 +295,51 @@ async def start_webhook():
 def ensure_schema():
 
     with db() as con:
+
+        # Upstream RollF deployments may already have these tables in bot.db.
+        # Creating them here makes a fresh clone safe to start from an empty DB.
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS rolls (
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            value INTEGER NOT NULL,
+            rolled_at INTEGER NOT NULL,
+            actor_type TEXT NOT NULL,
+            roll_date TEXT
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS guild_channels (
+            guild_id INTEGER PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            set_at INTEGER NOT NULL
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS guild_meta (
+            guild_id INTEGER PRIMARY KEY,
+            onboarding_sent INTEGER NOT NULL DEFAULT 0
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS crown_state (
+            guild_id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            score INTEGER NOT NULL,
+            roll_date TEXT NOT NULL
+        )
+        """)
 
         cols = con.execute("PRAGMA table_info(rolls)").fetchall()
         names = {c[1] for c in cols}
@@ -1028,12 +1079,169 @@ def get_vote_color(user_id):
 # ---------------- BOT SETUP ----------------
 
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="rollf_", intents=intents)
+bot = commands.Bot(command_prefix="diceman_", intents=intents)
+
+async def fetch_guild_member(guild: discord.Guild, user_id: int):
+    member = guild.get_member(user_id)
+    if member is not None:
+        return member
+
+    try:
+        return await guild.fetch_member(user_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        return None
+
+async def remove_crown_from_user(guild: discord.Guild, role: discord.Role, user_id: int):
+    member = await fetch_guild_member(guild, user_id)
+    if member is None or role not in member.roles:
+        return
+
+    try:
+        await member.remove_roles(role, reason="Daily High Roller reset")
+    except (discord.Forbidden, discord.HTTPException):
+        log_error(f"CROWN REMOVE FAILED user={user_id}")
+
+async def clear_high_roller_role():
+    if not HYPED_GUILD_ID or not HIGH_ROLLER_ROLE_ID:
+        return
+
+    guild = bot.get_guild(HYPED_GUILD_ID)
+    if guild is None:
+        return
+
+    role = guild.get_role(HIGH_ROLLER_ROLE_ID)
+    if role is None:
+        log_event("CROWN ROLE NOT FOUND")
+        return
+
+    with db() as con:
+        state = con.execute(
+            "SELECT user_id FROM crown_state WHERE guild_id = ?",
+            (HYPED_GUILD_ID,)
+        ).fetchone()
+
+    if state:
+        await remove_crown_from_user(guild, role, state["user_id"])
+
+    with db() as con:
+        con.execute(
+            "DELETE FROM crown_state WHERE guild_id = ?",
+            (HYPED_GUILD_ID,)
+        )
+
+async def sync_high_roller_role():
+    if not HYPED_GUILD_ID or not HIGH_ROLLER_ROLE_ID:
+        return
+
+    guild = bot.get_guild(HYPED_GUILD_ID)
+    if guild is None:
+        return
+
+    role = guild.get_role(HIGH_ROLLER_ROLE_ID)
+    if role is None:
+        log_event("CROWN ROLE NOT FOUND")
+        return
+
+    start, end = today_range()
+    today = datetime.now(TZ).date().isoformat()
+
+    with db() as con:
+        champion = con.execute(
+            """
+            SELECT user_id, value
+            FROM rolls
+            WHERE actor_type = 'user'
+              AND rolled_at BETWEEN ? AND ?
+            ORDER BY value DESC, rolled_at ASC
+            LIMIT 1
+            """,
+            (start, end)
+        ).fetchone()
+
+        state = con.execute(
+            """
+            SELECT user_id, score, roll_date
+            FROM crown_state
+            WHERE guild_id = ?
+            """,
+            (HYPED_GUILD_ID,)
+        ).fetchone()
+
+    if champion is None:
+        if state is not None:
+            await remove_crown_from_user(guild, role, state["user_id"])
+            with db() as con:
+                con.execute(
+                    "DELETE FROM crown_state WHERE guild_id = ?",
+                    (HYPED_GUILD_ID,)
+                )
+        return
+
+    champion_id = champion["user_id"]
+    champion_score = champion["value"]
+
+    if (
+        state is not None
+        and state["roll_date"] == today
+        and state["user_id"] == champion_id
+        and state["score"] == champion_score
+    ):
+        return
+
+    if state is not None and state["user_id"] != champion_id:
+        await remove_crown_from_user(guild, role, state["user_id"])
+
+    champion_member = await fetch_guild_member(guild, champion_id)
+    if champion_member is None:
+        log_event(f"CROWN MEMBER NOT FOUND user={champion_id}")
+        return
+
+    if role not in champion_member.roles:
+        try:
+            await champion_member.add_roles(role, reason="Current Daily High Roller")
+        except (discord.Forbidden, discord.HTTPException):
+            log_error(f"CROWN ADD FAILED user={champion_id}")
+            return
+
+    with db() as con:
+        con.execute(
+            """
+            INSERT INTO crown_state (guild_id, user_id, score, roll_date)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                user_id = excluded.user_id,
+                score = excluded.score,
+                roll_date = excluded.roll_date
+            """,
+            (HYPED_GUILD_ID, champion_id, champion_score, today)
+        )
+
+    log_event(f"CROWN HOLDER user={champion_id} score={champion_score}")
+
+async def crown_reset_loop():
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
+        now = datetime.now(TZ)
+        tomorrow = (
+            now + timedelta(days=1)
+        ).replace(hour=0, minute=0, second=2, microsecond=0)
+
+        await asyncio.sleep(max(1, (tomorrow - now).total_seconds()))
+
+        await clear_high_roller_role()
+        log_event("CROWN RESET")
 
 # ---------------- EVENTS ----------------
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
+
+    if HYPED_GUILD_ID and guild.id != HYPED_GUILD_ID:
+        log_event(f"UNAUTHORISED GUILD JOIN guild={guild.id}")
+        await guild.leave()
+        return
 
     with db() as con:
         row = con.execute(
@@ -1082,13 +1290,23 @@ async def on_ready():
             f"BOT STARTED ({BOT_NAME})"
         )
 
-    global DAILY_ROLL_TASK
+    global DAILY_ROLL_TASK, CROWN_RESET_TASK
 
     ensure_schema()
     ensure_indexes()
 
     await post_botlist_commands()
     await post_bot_stats()
+
+    if HYPED_GUILD_ID and ROLL_CHANNEL_ID:
+        with db() as con:
+            con.execute(
+                """
+                INSERT OR IGNORE INTO guild_channels (guild_id, channel_id, set_at)
+                VALUES (?, ?, ?)
+                """,
+                (HYPED_GUILD_ID, ROLL_CHANNEL_ID, int(time.time()))
+            )
 
     print(f"{BOT_NAME} logging in...")
 
@@ -1148,6 +1366,11 @@ async def on_ready():
 
     if DAILY_ROLL_TASK is None or DAILY_ROLL_TASK.done():
         DAILY_ROLL_TASK = asyncio.create_task(bot_daily_roll())
+
+    if CROWN_RESET_TASK is None or CROWN_RESET_TASK.done():
+        CROWN_RESET_TASK = asyncio.create_task(crown_reset_loop())
+
+    await sync_high_roller_role()
 
     if os.getenv("ENABLE_WEBHOOK") == "true":
         await start_webhook()
@@ -1217,7 +1440,7 @@ async def bot_daily_roll():
                             await guild.owner.send(
                                 f"RollF could not access the configured channel on **{guild.name}**.\n"
                                 f"Reason: missing permissions or role conflicts.\n"
-                                f"Fix: give RollF explicit permissions in the selected channel "
+                                f"Fix: give {BOT_NAME} explicit permissions in the selected channel "
                                 f"(View Channel, Send Messages, Embed Links) and check category denies."
                             )
                     except Exception:
@@ -1236,7 +1459,7 @@ async def bot_daily_roll():
                     guild = bot.get_guild(guild_id)
                     if guild and guild.owner:
                         await guild.owner.send(
-                            f"RollF failed to send its daily roll in **{guild.name}**.\n"
+                            f"{BOT_NAME} failed to send its daily roll in **{guild.name}**.\n"
                             f"Please check channel permissions."
                         )
                 except Exception:
@@ -1528,27 +1751,16 @@ async def help_cmd(interaction: discord.Interaction):
     log_command(interaction, "/help")
 
     embed = discord.Embed(
-        title="RollF",
+        title=BOT_NAME,
         description=(
-            "**Official Discord Server**\n"
-            "https://discord.gg/Jp58N2Sr5b\n\n"
-            "**Getting Started**\n"
-            "RollF can post one daily roll automatically, "
-            "but needs a channel to be configured first.\n\n"
-            "**To enable daily rolls:**\n"
-            "• Run `/setchannel`\n"
-            "• Choose the channel where RollF should post\n"
-            "• Make sure RollF has permission to send messages\n\n"
-            "**Available commands:**\n"
+            "**Daily Roll**\n"
+            "Use `/roll` once per day and pray. Rolls reset at midnight UK time.\n\n"
+            "**Commands**\n"
             "• `/roll` — Roll your daily number\n"
-            "• `/leaderboards` — View rankings\n"
-            "• `/stats` — View detailed statistics\n"
-            "• `/setchannel` — Configure daily rolls\n\n"
-            "**Support RollF**\n"
-            "If you enjoy RollF, you can vote on top.gg:\n"
-            "https://top.gg/bot/1409207722783543347/vote\n\n"
-            "Reward:\n"
-            "• Random pastel-colored username on the leaderboards for 24 hours."
+            "• `/leaderboards` — View Hyped rankings\n"
+            "• `/stats` — View detailed statistics\n\n"
+            "The current daily leader automatically receives the "
+            "**👑 High Roller** role. A tied roll does not take the crown."
         ),
         color=discord.Color.dark_grey()
     )
@@ -1644,6 +1856,8 @@ async def roll(interaction: discord.Interaction):
             await interaction.response.send_message(
                 f"{interaction.user.mention} rolled **{value}** 🎲"
             )
+
+        await sync_high_roller_role()
         return
 
     await interaction.response.send_message(
@@ -1727,6 +1941,8 @@ async def roll(interaction: discord.Interaction):
             await msg.edit(
                 content=f"{interaction.user.mention} rolled **{display_value:,}** 🎲"
             )
+
+    await sync_high_roller_role()
 
 @bot.tree.command(
     name="leaderboards",
@@ -2041,7 +2257,7 @@ async def leaderboards(
                 days = remaining // 86400
                 time_left = f"{days}d"
 
-        reset_text = f"Next reset in {time_left} • CET/CEST"
+        reset_text = f"Next reset in {time_left} • UK time"
 
     elif period_value == "alltime":
 
@@ -2260,7 +2476,21 @@ if ADMIN_MODE:
         )
 
 # ---------------- RUN ----------------
-if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN is missing")
+required_config = {
+    "DISCORD_TOKEN": TOKEN,
+    "HYPED_GUILD_ID": HYPED_GUILD_ID,
+    "ROLL_CHANNEL_ID": ROLL_CHANNEL_ID,
+    "HIGH_ROLLER_ROLE_ID": HIGH_ROLLER_ROLE_ID,
+}
+
+missing_config = [
+    name for name, value in required_config.items()
+    if not value
+]
+
+if missing_config:
+    raise RuntimeError(
+        "Missing required configuration: " + ", ".join(missing_config)
+    )
 
 bot.run(TOKEN)
