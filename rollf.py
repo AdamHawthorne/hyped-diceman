@@ -1390,6 +1390,19 @@ async def on_ready():
 
     bot.add_view(DailyRollView())
 
+    # Start time-sensitive background tasks immediately. Global Discord command
+    # syncing can occasionally take long enough to cross midnight.
+    if DAILY_ROLL_TASK is None or DAILY_ROLL_TASK.done():
+        DAILY_ROLL_TASK = asyncio.create_task(bot_daily_roll())
+
+    if CROWN_RESET_TASK is None or CROWN_RESET_TASK.done():
+        CROWN_RESET_TASK = asyncio.create_task(crown_reset_loop())
+
+    # Catch up a just-missed reset after a restart/deploy shortly after midnight.
+    now_local = datetime.now(TZ)
+    if now_local.hour == 0 and now_local.minute < 15:
+        await post_daily_reset_message()
+
     await post_botlist_commands()
     await post_bot_stats()
 
@@ -1458,12 +1471,6 @@ async def on_ready():
 
     if cleaned > 0:
         print(f"Cleaned {cleaned} stale guild entries")
-
-    if DAILY_ROLL_TASK is None or DAILY_ROLL_TASK.done():
-        DAILY_ROLL_TASK = asyncio.create_task(bot_daily_roll())
-
-    if CROWN_RESET_TASK is None or CROWN_RESET_TASK.done():
-        CROWN_RESET_TASK = asyncio.create_task(crown_reset_loop())
 
     await sync_high_roller_role()
 
