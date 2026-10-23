@@ -1,0 +1,22 @@
+app = "hyped-diceman"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  BOT_NAME = "Hyped Diceman"
+  BOT_TIMEZONE = "Europe/London"
+  DB_PATH = "/data/bot.db"
+  ADMIN_MODE = "true"
+  ENABLE_COMMAND_LOGGING = "true"
+  ENABLE_WEBHOOK = "false"
+
+[[mounts]]
+  source = "diceman_data"
+  destination = "/data"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"
