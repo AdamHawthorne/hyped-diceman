@@ -11,3 +11,4 @@ propcache==0.4.1
 python-dotenv==1.2.1
 typing_extensions==4.15.0
 yarl==1.22.0
+tzdata==2025.2
