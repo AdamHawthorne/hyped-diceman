@@ -23,6 +23,7 @@ __pycache__/
 
 # Python virtualenv
 venv/
+.venv/
 
 # OS / editor
 .DS_Store
