@@ -1261,11 +1261,11 @@ def build_daily_reset_embed():
     embed = discord.Embed(
         title="Hyped Rolls - Daily Reset",
         description=(
-            "Simple competitive rolling for fun.\n\n"
+            "Competitive rolling for fun.\n\n"
             "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
             "`/leaderboards` - top rollers\n"
             "`/stats` - your stats\n\n"
-            "**Claim the 🎲 Highest Daily Roller rank!**"
+            "**Claim the Luckiest Gamer (today) 🎲 rank!**"
         ),
         color=0xD19A3B
     )
