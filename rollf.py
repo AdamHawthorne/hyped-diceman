@@ -444,6 +444,15 @@ def ensure_indexes():
         """)
 
         con.execute("""
+        CREATE TABLE IF NOT EXISTS user_scores (
+            user_id INTEGER PRIMARY KEY,
+            score INTEGER NOT NULL DEFAULT 0,
+            rolls INTEGER NOT NULL DEFAULT 0,
+            best INTEGER NOT NULL DEFAULT 0
+        )
+        """)
+
+        con.execute("""
         CREATE INDEX IF NOT EXISTS idx_user_scores_score
         ON user_scores(score DESC)
         """)
@@ -468,15 +477,6 @@ def ensure_indexes():
         CREATE INDEX IF NOT EXISTS idx_rolls_user_date
         ON rolls(user_id, roll_date)
         WHERE actor_type='user'
-        """)
-
-        con.execute("""
-        CREATE TABLE IF NOT EXISTS user_scores (
-            user_id INTEGER PRIMARY KEY,
-            score INTEGER NOT NULL DEFAULT 0,
-            rolls INTEGER NOT NULL DEFAULT 0,
-            best INTEGER NOT NULL DEFAULT 0
-        )
         """)
 
         count = con.execute("SELECT COUNT(*) FROM user_scores").fetchone()[0]
