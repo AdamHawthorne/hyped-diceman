@@ -63,6 +63,8 @@ LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
 CROWN_RESET_TASK = None
 DAILY_POST_TASK = None
+# Serialise reaction updates so the same source cannot be posted twice concurrently.
+FLAMEBOARD_SYNC_LOCK = asyncio.Lock()
 
 VOTE_COLORS = [
     (255, 255, 204),  # Pale Yellow
@@ -1549,6 +1551,11 @@ def get_flameboard_video_url(message: discord.Message):
 
 
 async def sync_flameboard_message(channel_id: int, message_id: int):
+    async with FLAMEBOARD_SYNC_LOCK:
+        await _sync_flameboard_message_locked(channel_id, message_id)
+
+
+async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
     if not FLAMEBOARD_CHANNEL_ID:
         return
 
@@ -1639,14 +1646,20 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                         embed=embed
                     )
             else:
-                cast_file = await get_flameboard_cast_file()
-                board_message = await flameboard_channel.send(
-                    embed=embed,
-                    file=cast_file
-                )
+                try:
+                    cast_file = await get_flameboard_cast_file()
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
+                    log_error(f"FLAMEBOARD CAST IMAGE UNAVAILABLE; posting embed without cast: {exc!r}")
+                    board_message = await flameboard_channel.send(embed=embed)
+                else:
+                    try:
+                        board_message = await flameboard_channel.send(embed=embed, file=cast_file)
+                    except discord.HTTPException as exc:
+                        log_error(f"FLAMEBOARD CAST UPLOAD FAILED; retrying embed only: {exc!r}")
+                        board_message = await flameboard_channel.send(embed=embed)
 
-        except (discord.Forbidden, discord.HTTPException):
-            log_error("FLAMEBOARD POST FAILED")
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"FLAMEBOARD POST FAILED source={message_id}: {exc!r}")
             return
 
         with db() as con:
