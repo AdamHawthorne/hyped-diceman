@@ -1320,9 +1320,9 @@ class ForeverRoleView(discord.ui.View):
                 await interaction.response.send_message(
                     (
                         "**Forever** role added. By taking the role, you agree to:\n"
-                        "• keep the atmosphere positive and enjoyable "
-                        "• show up prepared and focused "
-                        "• be reliable and communicate clearly "
+                        "• keep the atmosphere positive and enjoyable\n"
+                        "• show up prepared and focused\n"
+                        "• be reliable and communicate clearly\n"
                         "• no racism or hate of any kind"
                     ),
                     ephemeral=True
