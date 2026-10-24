@@ -1454,7 +1454,6 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     channel_name = getattr(message.channel, "name", "channel")
 
     embed = discord.Embed(
-        title="🔥 Flameboard",
         description=content,
         color=0xD35400,
         timestamp=message.created_at
@@ -2833,8 +2832,7 @@ if ADMIN_MODE:
             return
 
         embed = discord.Embed(
-            title="🔥 Flameboard",
-            description=(
+                description=(
                 "This is a preview of how a normal message will look once it "
                 f"reaches {FLAMEBOARD_THRESHOLD} qualifying reactions."
             ),
@@ -2891,8 +2889,7 @@ if ADMIN_MODE:
             return
 
         embed = discord.Embed(
-            title="🔥 Flameboard",
-            description="Example media post on the Flameboard.",
+                description="Example media post on the Flameboard.",
             color=0xD35400,
             timestamp=datetime.now(TZ)
         )
