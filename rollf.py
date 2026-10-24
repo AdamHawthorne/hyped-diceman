@@ -1467,7 +1467,7 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     embed.set_thumbnail(url=message.author.display_avatar.url)
 
     embed.add_field(
-        name="Source",
+        name="\u200b",
         value=f"#{channel_name} • [Jump to message]({message.jump_url})",
         inline=False
     )
@@ -2851,7 +2851,7 @@ if ADMIN_MODE:
 
         channel_name = getattr(interaction.channel, "name", "channel")
         embed.add_field(
-            name="Source",
+            name="\u200b",
             value=f"#{channel_name} • [Jump to message]({interaction.channel.jump_url if hasattr(interaction.channel, 'jump_url') else 'https://discord.com'})",
             inline=False
         )
@@ -2904,7 +2904,7 @@ if ADMIN_MODE:
 
         channel_name = getattr(interaction.channel, "name", "channel")
         embed.add_field(
-            name="Source",
+            name="\u200b",
             value=f"#{channel_name} • Preview",
             inline=False
         )
