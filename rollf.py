@@ -46,6 +46,7 @@ FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
 FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "3"))
 FLAMEBOARD_CAST_URL = "https://i.vgy.me/nS4L0z.png"
+FLAMEBOARD_MEDIA_IMAGE_URL = "https://i.vgy.me/Cm1ZTF.png"
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1524,12 +1525,13 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     embed.set_author(name=message.author.display_name)
     embed.set_thumbnail(url=message.author.display_avatar.url)
 
-    for attachment in message.attachments:
-        content_type = attachment.content_type or ""
-        if content_type.startswith("image/"):
-            embed.set_image(url=attachment.url)
-            break
+    has_media = any(
+        (attachment.content_type or "").startswith(("image/", "video/"))
+        for attachment in message.attachments
+    )
 
+    if has_media:
+        embed.set_image(url=FLAMEBOARD_MEDIA_IMAGE_URL)
 
     return embed
 
@@ -1616,25 +1618,25 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                 return
 
         try:
-            video_attachment = next(
+            media_attachment = next(
                 (
                     attachment
                     for attachment in message.attachments
-                    if (attachment.content_type or "").startswith("video/")
+                    if (attachment.content_type or "").startswith(("image/", "video/"))
                 ),
                 None
             )
 
-            if video_attachment is not None:
+            if media_attachment is not None:
                 try:
-                    video_file = await video_attachment.to_file()
+                    media_file = await media_attachment.to_file()
                     board_message = await flameboard_channel.send(
                         embed=embed,
-                        file=video_file
+                        file=media_file
                     )
                 except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
-                        content=video_attachment.url,
+                        content=media_attachment.url,
                         embed=embed
                     )
             else:
@@ -2974,24 +2976,21 @@ if ADMIN_MODE:
 
         embed.set_author(name=interaction.user.display_name)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_image(url=FLAMEBOARD_MEDIA_IMAGE_URL)
 
-        if content_type.startswith("image/"):
-            embed.set_image(url=media.url)
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.defer()
+        await interaction.response.defer()
 
-            try:
-                video_file = await media.to_file()
-                await interaction.followup.send(
-                    embed=embed,
-                    file=video_file
-                )
-            except (discord.HTTPException, discord.NotFound):
-                await interaction.followup.send(
-                    content=media.url,
-                    embed=embed
-                )
+        try:
+            media_file = await media.to_file()
+            await interaction.followup.send(
+                embed=embed,
+                file=media_file
+            )
+        except (discord.HTTPException, discord.NotFound):
+            await interaction.followup.send(
+                content=media.url,
+                embed=embed
+            )
 
         log_event(
             f"FLAMEBOARD MEDIA PREVIEW user={interaction.user.id} "
