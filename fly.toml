@@ -11,6 +11,7 @@ primary_region = "lhr"
   ADMIN_MODE = "true"
   ENABLE_COMMAND_LOGGING = "true"
   ENABLE_WEBHOOK = "false"
+  FOREVER_ROLE_ID = "1563364290658967593"
 
 [[mounts]]
   source = "diceman_data"
