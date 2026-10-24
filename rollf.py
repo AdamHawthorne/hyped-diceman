@@ -1592,7 +1592,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                         embed=embed,
                         files=[cast_file, video_file]
                     )
-                except (discord.HTTPException, discord.NotFound):
+                except (aiohttp.ClientError, asyncio.TimeoutError, discord.HTTPException, discord.NotFound):
                     cast_file = await get_flameboard_cast_file()
                     board_message = await flameboard_channel.send(
                         content=video_attachment.url,
@@ -2869,10 +2869,20 @@ if ADMIN_MODE:
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
-        await interaction.response.send_message(
-            embed=embed,
-            file=make_flameboard_cast_file()
-        )
+        await interaction.response.defer()
+
+        try:
+            cast_file = await get_flameboard_cast_file()
+            await interaction.followup.send(
+                embed=embed,
+                file=cast_file
+            )
+        except (aiohttp.ClientError, asyncio.TimeoutError, discord.HTTPException) as exc:
+            log_error(f"FLAMEBOARD PREVIEW FAILED: {exc}")
+            await interaction.followup.send(
+                "Flameboard preview failed to load the casting image.",
+                ephemeral=True
+            )
 
         log_event(
             f"FLAMEBOARD PREVIEW user={interaction.user.id} channel={interaction.channel_id}"
@@ -2918,24 +2928,36 @@ if ADMIN_MODE:
 
         if content_type.startswith("image/"):
             embed.set_image(url=media.url)
-            await interaction.response.send_message(
-                embed=embed,
-                file=make_flameboard_cast_file()
-            )
+            await interaction.response.defer()
+
+            try:
+                cast_file = await get_flameboard_cast_file()
+                await interaction.followup.send(
+                    embed=embed,
+                    file=cast_file
+                )
+            except (aiohttp.ClientError, asyncio.TimeoutError, discord.HTTPException) as exc:
+                log_error(f"FLAMEBOARD MEDIA PREVIEW FAILED: {exc}")
+                await interaction.followup.send(
+                    "Flameboard preview failed to load the casting image.",
+                    ephemeral=True
+                )
         else:
             await interaction.response.defer()
 
             try:
                 video_file = await media.to_file()
+                cast_file = await get_flameboard_cast_file()
                 await interaction.followup.send(
                     embed=embed,
-                    files=[make_flameboard_cast_file(), video_file]
+                    files=[cast_file, video_file]
                 )
             except (discord.HTTPException, discord.NotFound):
+                cast_file = await get_flameboard_cast_file()
                 await interaction.followup.send(
                     content=media.url,
                     embed=embed,
-                    file=make_flameboard_cast_file()
+                    file=cast_file
                 )
 
         log_event(
