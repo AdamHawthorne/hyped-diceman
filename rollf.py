@@ -1443,6 +1443,20 @@ async def crown_reset_loop():
 
         await post_daily_reset_message()
 
+async def get_flameboard_cast_file():
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(FLAMEBOARD_CAST_URL) as response:
+            response.raise_for_status()
+            image_bytes = await response.read()
+
+    return discord.File(
+        io.BytesIO(image_bytes),
+        filename="hyped_ogre_flame.png"
+    )
+
+
 def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, int]):
     content = message.content.strip()
 
@@ -1466,16 +1480,11 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     embed.set_author(name=message.author.display_name)
     embed.set_thumbnail(url=message.author.display_avatar.url)
 
-    image_set = False
     for attachment in message.attachments:
         content_type = attachment.content_type or ""
         if content_type.startswith("image/"):
             embed.set_image(url=attachment.url)
-            image_set = True
             break
-
-    if not image_set:
-        embed.set_image(url=FLAMEBOARD_CAST_URL)
 
     footer_parts = []
     if reaction_counts.get("🔥", 0):
@@ -1577,18 +1586,25 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
 
             if video_attachment is not None:
                 try:
+                    cast_file = await get_flameboard_cast_file()
                     video_file = await video_attachment.to_file()
                     board_message = await flameboard_channel.send(
                         embed=embed,
-                        file=video_file
+                        files=[cast_file, video_file]
                     )
                 except (discord.HTTPException, discord.NotFound):
+                    cast_file = await get_flameboard_cast_file()
                     board_message = await flameboard_channel.send(
                         content=video_attachment.url,
-                        embed=embed
+                        embed=embed,
+                        file=cast_file
                     )
             else:
-                board_message = await flameboard_channel.send(embed=embed)
+                cast_file = await get_flameboard_cast_file()
+                board_message = await flameboard_channel.send(
+                    embed=embed,
+                    file=cast_file
+                )
 
         except (discord.Forbidden, discord.HTTPException):
             log_error("FLAMEBOARD POST FAILED")
