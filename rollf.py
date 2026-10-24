@@ -44,7 +44,7 @@ ROLL_CHANNEL_ID = int(os.getenv("ROLL_CHANNEL_ID", "0"))
 HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
 FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
-FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "4"))
+FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "3"))
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1442,7 +1442,7 @@ async def crown_reset_loop():
 
         await post_daily_reset_message()
 
-def build_flameboard_embed(message: discord.Message, flame_count: int):
+def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, int]):
     content = message.content.strip()
 
     if not content:
@@ -1474,7 +1474,12 @@ def build_flameboard_embed(message: discord.Message, flame_count: int):
             embed.set_image(url=attachment.url)
             break
 
-    embed.set_footer(text=f"🔥 {flame_count}")
+    footer_parts = []
+    if reaction_counts.get("🔥", 0):
+        footer_parts.append(f"🔥 {reaction_counts['🔥']}")
+    if reaction_counts.get("😂", 0):
+        footer_parts.append(f"😂 {reaction_counts['😂']}")
+    embed.set_footer(text=" • ".join(footer_parts))
 
     return embed
 
@@ -1499,12 +1504,14 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         return
 
-    flame_count = 0
+    reaction_counts = {"🔥": 0, "😂": 0}
 
     for reaction in message.reactions:
-        if str(reaction.emoji) == "🔥":
-            flame_count = reaction.count
-            break
+        emoji = str(reaction.emoji)
+        if emoji in reaction_counts:
+            reaction_counts[emoji] = reaction.count
+
+    qualifying_count = sum(reaction_counts.values())
 
     flameboard_channel = bot.get_channel(FLAMEBOARD_CHANNEL_ID)
 
@@ -1525,8 +1532,8 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
             (message_id,)
         ).fetchone()
 
-    if flame_count >= FLAMEBOARD_THRESHOLD:
-        embed = build_flameboard_embed(message, flame_count)
+    if qualifying_count >= FLAMEBOARD_THRESHOLD:
+        embed = build_flameboard_embed(message, reaction_counts)
 
         if existing:
             try:
@@ -1562,7 +1569,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
             )
 
         log_event(
-            f"FLAMEBOARD POST source={message_id} board={board_message.id} flames={flame_count}"
+            f"FLAMEBOARD POST source={message_id} board={board_message.id} reactions={qualifying_count}"
         )
 
     elif existing:
@@ -1584,7 +1591,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
             )
 
         log_event(
-            f"FLAMEBOARD REMOVED source={message_id} flames={flame_count}"
+            f"FLAMEBOARD REMOVED source={message_id} reactions={qualifying_count}"
         )
 
 
@@ -1593,7 +1600,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.guild_id != HYPED_GUILD_ID:
         return
 
-    if str(payload.emoji) != "🔥":
+    if str(payload.emoji) not in ("🔥", "😂"):
         return
 
     await sync_flameboard_message(payload.channel_id, payload.message_id)
@@ -1604,7 +1611,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     if payload.guild_id != HYPED_GUILD_ID:
         return
 
-    if str(payload.emoji) != "🔥":
+    if str(payload.emoji) not in ("🔥", "😂"):
         return
 
     await sync_flameboard_message(payload.channel_id, payload.message_id)
@@ -2792,7 +2799,7 @@ if ADMIN_MODE:
         embed = discord.Embed(
             description=(
                 "This is a preview of how a message will look once it reaches "
-                f"{FLAMEBOARD_THRESHOLD} 🔥 reactions."
+                f"{FLAMEBOARD_THRESHOLD} qualifying reactions (🔥 or 😂)."
             ),
             color=0xD35400,
             timestamp=datetime.now(TZ)
@@ -2809,7 +2816,7 @@ if ADMIN_MODE:
             inline=False
         )
 
-        embed.set_footer(text=f"🔥 {FLAMEBOARD_THRESHOLD}")
+        embed.set_footer(text=f"🔥 2 • 😂 1")
 
         await interaction.response.send_message(embed=embed)
 
