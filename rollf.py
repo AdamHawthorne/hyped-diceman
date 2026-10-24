@@ -8,6 +8,7 @@
 # -----------------------------------------
 
 import threading
+import base64
 import aiohttp
 import asyncio
 import sqlite3
@@ -22,6 +23,7 @@ import json
 import hmac
 import hashlib
 from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -45,7 +47,6 @@ HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
 FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
 FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "3"))
-FLAMEBOARD_CAST_URL = "https://i.vgy.me/xZwlcA.png"
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1443,10 +1444,27 @@ async def crown_reset_loop():
 
         await post_daily_reset_message()
 
-def build_flameboard_cast_embed():
-    embed = discord.Embed(color=0xD35400)
-    embed.set_image(url=FLAMEBOARD_CAST_URL)
-    return embed
+FLAMEBOARD_CAST_ASSETS = (
+    ("fire", 5),
+    ("jakiro", 4),
+)
+
+
+def make_flameboard_cast_file():
+    asset_name, part_count = secrets.choice(FLAMEBOARD_CAST_ASSETS)
+    encoded = "".join(
+        (
+            Path(__file__).resolve().parent
+            / "assets"
+            / f"flame_{asset_name}_{part}.b64"
+        ).read_text(encoding="utf-8").strip()
+        for part in range(1, part_count + 1)
+    )
+    image_bytes = base64.b64decode(encoded)
+    return discord.File(
+        io.BytesIO(image_bytes),
+        filename=f"hyped_ogre_{asset_name}.png"
+    )
 
 
 def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, int]):
@@ -1554,7 +1572,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(content=None, embeds=[build_flameboard_cast_embed(), embed])
+                await board_message.edit(embed=embed)
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1579,17 +1597,24 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
             if video_attachment is not None:
                 try:
                     video_file = await video_attachment.to_file()
+                    cast_file = make_flameboard_cast_file()
                     board_message = await flameboard_channel.send(
-                        embeds=[build_flameboard_cast_embed(), embed],
-                        file=video_file
+                        embed=embed,
+                        files=[cast_file, video_file]
                     )
                 except (discord.HTTPException, discord.NotFound):
+                    cast_file = make_flameboard_cast_file()
                     board_message = await flameboard_channel.send(
                         content=video_attachment.url,
-                        embeds=[build_flameboard_cast_embed(), embed]
+                        embed=embed,
+                        file=cast_file
                     )
             else:
-                board_message = await flameboard_channel.send(embeds=[build_flameboard_cast_embed(), embed])
+                cast_file = make_flameboard_cast_file()
+                board_message = await flameboard_channel.send(
+                    embed=embed,
+                    file=cast_file
+                )
 
         except (discord.Forbidden, discord.HTTPException):
             log_error("FLAMEBOARD POST FAILED")
@@ -2854,7 +2879,10 @@ if ADMIN_MODE:
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
-        await interaction.response.send_message(embeds=[build_flameboard_cast_embed(), embed])
+        await interaction.response.send_message(
+            embed=embed,
+            file=make_flameboard_cast_file()
+        )
 
         log_event(
             f"FLAMEBOARD PREVIEW user={interaction.user.id} channel={interaction.channel_id}"
@@ -2900,20 +2928,24 @@ if ADMIN_MODE:
 
         if content_type.startswith("image/"):
             embed.set_image(url=media.url)
-            await interaction.response.send_message(embeds=[build_flameboard_cast_embed(), embed])
+            await interaction.response.send_message(
+                embed=embed,
+                file=make_flameboard_cast_file()
+            )
         else:
             await interaction.response.defer()
 
             try:
                 video_file = await media.to_file()
                 await interaction.followup.send(
-                    embeds=[build_flameboard_cast_embed(), embed],
-                    file=video_file
+                    embed=embed,
+                    files=[make_flameboard_cast_file(), video_file]
                 )
             except (discord.HTTPException, discord.NotFound):
                 await interaction.followup.send(
                     content=media.url,
-                    embed=embed
+                    embed=embed,
+                    file=make_flameboard_cast_file()
                 )
 
         log_event(
