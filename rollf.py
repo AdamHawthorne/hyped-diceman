@@ -2063,6 +2063,14 @@ async def perform_roll(interaction: discord.Interaction):
 )
 async def roll(interaction: discord.Interaction):
     log_command(interaction, "/roll")
+
+    if interaction.channel_id != ROLL_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"Use `/roll` in <#{ROLL_CHANNEL_ID}> 🎲",
+            ephemeral=True
+        )
+        return
+
     await perform_roll(interaction)
 
 @bot.tree.command(
