@@ -1446,12 +1446,15 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     content = message.content.strip()
 
     if not content:
-        content = "*No text content.*"
+        content = "*Media post*"
 
-    if len(content) > 3500:
-        content = content[:3497] + "..."
+    if len(content) > 3400:
+        content = content[:3397] + "..."
+
+    channel_name = getattr(message.channel, "name", "channel")
 
     embed = discord.Embed(
+        title="🔥 Flameboard",
         description=content,
         color=0xD35400,
         timestamp=message.created_at
@@ -1462,9 +1465,11 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
         icon_url=message.author.display_avatar.url
     )
 
+    embed.set_thumbnail(url=message.author.display_avatar.url)
+
     embed.add_field(
-        name="Original",
-        value=f"[Jump to message]({message.jump_url})",
+        name="Source",
+        value=f"#{channel_name} • [Jump to message]({message.jump_url})",
         inline=False
     )
 
@@ -1482,6 +1487,14 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     embed.set_footer(text=" • ".join(footer_parts))
 
     return embed
+
+
+def get_flameboard_video_url(message: discord.Message):
+    for attachment in message.attachments:
+        content_type = attachment.content_type or ""
+        if content_type.startswith("video/"):
+            return attachment.url
+    return None
 
 
 async def sync_flameboard_message(channel_id: int, message_id: int):
@@ -1540,7 +1553,10 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(embed=embed)
+                await board_message.edit(
+                    content=get_flameboard_video_url(message) or None,
+                    embed=embed
+                )
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1553,7 +1569,10 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 return
 
         try:
-            board_message = await flameboard_channel.send(embed=embed)
+            board_message = await flameboard_channel.send(
+                content=get_flameboard_video_url(message) or None,
+                embed=embed
+            )
         except (discord.Forbidden, discord.HTTPException):
             log_error("FLAMEBOARD POST FAILED")
             return
@@ -2797,9 +2816,10 @@ if ADMIN_MODE:
             return
 
         embed = discord.Embed(
+            title="🔥 Flameboard",
             description=(
-                "This is a preview of how a message will look once it reaches "
-                f"{FLAMEBOARD_THRESHOLD} qualifying reactions (🔥 or 😂)."
+                "This is a preview of how a normal message will look once it "
+                f"reaches {FLAMEBOARD_THRESHOLD} qualifying reactions."
             ),
             color=0xD35400,
             timestamp=datetime.now(TZ)
@@ -2810,18 +2830,82 @@ if ADMIN_MODE:
             icon_url=interaction.user.display_avatar.url
         )
 
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+        channel_name = getattr(interaction.channel, "name", "channel")
         embed.add_field(
-            name="Original",
-            value="[Jump to message](https://discord.com)",
+            name="Source",
+            value=f"#{channel_name} • [Jump to message]({interaction.channel.jump_url if hasattr(interaction.channel, 'jump_url') else 'https://discord.com'})",
             inline=False
         )
 
-        embed.set_footer(text=f"🔥 2 • 😂 1")
+        embed.set_footer(text="🔥 2 • 😂 1")
 
         await interaction.response.send_message(embed=embed)
 
         log_event(
             f"FLAMEBOARD PREVIEW user={interaction.user.id} channel={interaction.channel_id}"
+        )
+
+    @bot.tree.command(
+        name="flamepreviewmedia",
+        description="Owner-only Flameboard preview using an uploaded image, GIF or video",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def flamepreviewmedia_admin(
+        interaction: discord.Interaction,
+        media: discord.Attachment
+    ):
+
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        content_type = media.content_type or ""
+
+        if not (
+            content_type.startswith("image/")
+            or content_type.startswith("video/")
+        ):
+            await interaction.response.send_message(
+                "Upload an image, GIF or video file.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="🔥 Flameboard",
+            description="Example media post on the Flameboard.",
+            color=0xD35400,
+            timestamp=datetime.now(TZ)
+        )
+
+        embed.set_author(
+            name=interaction.user.display_name,
+            icon_url=interaction.user.display_avatar.url
+        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+        channel_name = getattr(interaction.channel, "name", "channel")
+        embed.add_field(
+            name="Source",
+            value=f"#{channel_name} • Preview",
+            inline=False
+        )
+        embed.set_footer(text="🔥 2 • 😂 1")
+
+        if content_type.startswith("image/"):
+            embed.set_image(url=media.url)
+            await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message(
+                content=media.url,
+                embed=embed
+            )
+
+        log_event(
+            f"FLAMEBOARD MEDIA PREVIEW user={interaction.user.id} "
+            f"channel={interaction.channel_id} type={content_type}"
         )
 
     @bot.tree.command(
