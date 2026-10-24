@@ -5,7 +5,7 @@ primary_region = "lhr"
   dockerfile = "Dockerfile"
 
 [env]
-  BOT_NAME = "Hyped Diceman"
+  BOT_NAME = "Hyped Ogre"
   BOT_TIMEZONE = "Europe/London"
   DB_PATH = "/data/bot.db"
   ADMIN_MODE = "true"
