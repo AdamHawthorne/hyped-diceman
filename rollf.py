@@ -1445,32 +1445,25 @@ async def crown_reset_loop():
 def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, int]):
     content = message.content.strip()
 
-    if not content:
-        content = "*Media post*"
-
-    if len(content) > 3400:
-        content = content[:3397] + "..."
+    if len(content) > 3300:
+        content = content[:3297] + "..."
 
     channel_name = getattr(message.channel, "name", "channel")
+    source_line = f"#{channel_name} • [Jump to message]({message.jump_url})"
+
+    description_parts = []
+    if content:
+        description_parts.append(content)
+    description_parts.append(source_line)
 
     embed = discord.Embed(
-        description=content,
+        description="\n\n".join(description_parts),
         color=0xD35400,
         timestamp=message.created_at
     )
 
-    embed.set_author(
-        name=message.author.display_name,
-        icon_url=message.author.display_avatar.url
-    )
-
+    embed.set_author(name=message.author.display_name)
     embed.set_thumbnail(url=message.author.display_avatar.url)
-
-    embed.add_field(
-        name="\u200b",
-        value=f"#{channel_name} • [Jump to message]({message.jump_url})",
-        inline=False
-    )
 
     for attachment in message.attachments:
         content_type = attachment.content_type or ""
@@ -2833,29 +2826,25 @@ if ADMIN_MODE:
             await interaction.response.send_message("No.", ephemeral=True)
             return
 
+        channel_name = getattr(interaction.channel, "name", "channel")
+        jump_url = (
+            interaction.channel.jump_url
+            if hasattr(interaction.channel, "jump_url")
+            else "https://discord.com"
+        )
+
         embed = discord.Embed(
-                description=(
+            description=(
                 "This is a preview of how a normal message will look once it "
-                f"reaches {FLAMEBOARD_THRESHOLD} qualifying reactions."
+                f"reaches {FLAMEBOARD_THRESHOLD} qualifying reactions.\n\n"
+                f"#{channel_name} • [Jump to message]({jump_url})"
             ),
             color=0xD35400,
             timestamp=datetime.now(TZ)
         )
 
-        embed.set_author(
-            name=interaction.user.display_name,
-            icon_url=interaction.user.display_avatar.url
-        )
-
+        embed.set_author(name=interaction.user.display_name)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-        channel_name = getattr(interaction.channel, "name", "channel")
-        embed.add_field(
-            name="\u200b",
-            value=f"#{channel_name} • [Jump to message]({interaction.channel.jump_url if hasattr(interaction.channel, 'jump_url') else 'https://discord.com'})",
-            inline=False
-        )
-
         embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
         await interaction.response.send_message(embed=embed)
@@ -2890,24 +2879,16 @@ if ADMIN_MODE:
             )
             return
 
+        channel_name = getattr(interaction.channel, "name", "channel")
+
         embed = discord.Embed(
-                description="Example media post on the Flameboard.",
+            description=f"#{channel_name} • Preview",
             color=0xD35400,
             timestamp=datetime.now(TZ)
         )
 
-        embed.set_author(
-            name=interaction.user.display_name,
-            icon_url=interaction.user.display_avatar.url
-        )
+        embed.set_author(name=interaction.user.display_name)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-        channel_name = getattr(interaction.channel, "name", "channel")
-        embed.add_field(
-            name="\u200b",
-            value=f"#{channel_name} • Preview",
-            inline=False
-        )
         embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
         if content_type.startswith("image/"):
