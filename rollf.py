@@ -1,5 +1,5 @@
 # -----------------------------------------
-# Hyped Diceman – daily roll Discord bot for the Hyped community
+# Hyped Ogre – daily roll Discord bot for the Hyped community
 # Derived from RollF by hegernat/plutonium87
 # Original source: https://github.com/hegernat/rollf-bot
 # Copyright (c) 2026 hegernat/plutonium87
@@ -36,7 +36,7 @@ from PIL import Image, ImageDraw, ImageFont
 load_dotenv()
 
 TZ = ZoneInfo(os.getenv("BOT_TIMEZONE", "Europe/London"))
-BOT_NAME = os.getenv("BOT_NAME", "Hyped Diceman")
+BOT_NAME = os.getenv("BOT_NAME", "Hyped Ogre")
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 
 HYPED_GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -82,7 +82,7 @@ TOPGG_TOKEN = os.getenv("TOPGG_TOKEN")
 TOPGG_WEBHOOK_SECRET = os.getenv("TOPGG_WEBHOOK_SECRET")
 
 ONBOARDING_TEXT = (
-    "**Hyped Diceman is ready.**\n\n"
+    "**Hyped Ogre is ready.**\n\n"
     "Use `/roll` once per day, `/leaderboards` for rankings, "
     "and `/stats` for your roll history."
 )
