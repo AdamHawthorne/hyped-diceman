@@ -649,13 +649,15 @@ def log_command(
 LOGGER = setup_logging()
 
 def log_event(message: str):
+    print(message, flush=True)
     if LOGGER:
         LOGGER.info(message)
 
 
 def log_error(message: str):
+    print(f"ERROR: {message}", flush=True)
     if LOGGER:
-        LOGGER.exception(message)
+        LOGGER.error(message, exc_info=True)
 
 def trim(name, max_len=18):
     return name[:max_len-1] + "…" if len(name) > max_len else name
@@ -1402,9 +1404,19 @@ async def post_daily_reset_message():
         ).fetchone()
 
     if existing:
-        log_event(f"DAILY RESET ALREADY RECORDED date={today} message={existing[0]}")
-        return
+        try:
+            posted = await channel.fetch_message(existing[0])
+            if posted.author.id == bot.user.id:
+                log_event(f"DAILY RESET ALREADY POSTED date={today} message={existing[0]}")
+                return
+            log_error(f"DAILY RESET STORED MESSAGE WRONG AUTHOR date={today} message={existing[0]}")
+        except discord.NotFound:
+            log_event(f"DAILY RESET STORED MESSAGE MISSING date={today} message={existing[0]}; reposting")
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"DAILY RESET MESSAGE VERIFY FAILED date={today} error={exc!r}")
+            return
 
+    log_event(f"DAILY RESET POST ATTEMPT date={today} channel={ROLL_CHANNEL_ID}")
     embed = build_daily_reset_embed()
 
     try:
@@ -1432,6 +1444,7 @@ async def post_daily_reset_message():
 async def daily_post_loop():
     """Post the Daily Roll panel at 00:10 Europe/London for testing."""
     await bot.wait_until_ready()
+    log_event(f"DAILY POST LOOP ACTIVE timezone={TZ} channel={ROLL_CHANNEL_ID}")
     while not bot.is_closed():
         try:
             now = datetime.now(TZ)
@@ -1440,7 +1453,9 @@ async def daily_post_loop():
                 next_post = (now + timedelta(days=1)).replace(
                     hour=0, minute=10, second=0, microsecond=0
                 )
+            log_event(f"DAILY POST NEXT RUN local={next_post.isoformat()} now={now.isoformat()}")
             await asyncio.sleep(max(1, (next_post - now).total_seconds()))
+            log_event(f"DAILY POST SCHEDULE FIRED local={datetime.now(TZ).isoformat()}")
             await post_daily_reset_message()
         except asyncio.CancelledError:
             raise
@@ -1773,6 +1788,7 @@ async def on_ready():
     # Catch up only after the scheduled 00:10 UK posting time.
     # Before 00:10, the dedicated loop will post at the scheduled time.
     now_uk = datetime.now(TZ)
+    log_event(f"DAILY POST STARTUP CHECK local={now_uk.isoformat()} channel={ROLL_CHANNEL_ID}")
     if (now_uk.hour, now_uk.minute) >= (0, 10):
         try:
             await post_daily_reset_message()
