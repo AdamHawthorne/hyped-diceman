@@ -1530,14 +1530,6 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
             embed.set_image(url=attachment.url)
             break
 
-    footer_parts = []
-    if reaction_counts.get("🔥", 0):
-        footer_parts.append(f"🔥 {reaction_counts['🔥']}")
-    if reaction_counts.get("😂", 0):
-        footer_parts.append(f"😂 {reaction_counts['😂']}")
-    if reaction_counts.get("⭐", 0):
-        footer_parts.append(f"⭐ {reaction_counts['⭐']}")
-    embed.set_footer(text=" • ".join(footer_parts))
 
     return embed
 
@@ -2926,7 +2918,6 @@ if ADMIN_MODE:
 
         embed.set_author(name=interaction.user.display_name)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
         await interaction.response.defer()
 
@@ -2983,7 +2974,6 @@ if ADMIN_MODE:
 
         embed.set_author(name=interaction.user.display_name)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
         if content_type.startswith("image/"):
             embed.set_image(url=media.url)
