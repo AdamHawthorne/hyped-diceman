@@ -2480,6 +2480,169 @@ if ADMIN_MODE:
         log_event(f"MANUAL DAILY RESET user={interaction.user.id}")
 
     @bot.tree.command(
+        name="serveraudit",
+        description="Owner-only export of server roles, channels and permissions",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def serveraudit_admin(interaction: discord.Interaction):
+
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+
+        if guild is None or guild.id != HYPED_GUILD_ID:
+            await interaction.followup.send(
+                "Server audit is only available in Hyped.",
+                ephemeral=True
+            )
+            return
+
+        def enabled_permissions(permissions: discord.Permissions):
+            return sorted(
+                name
+                for name, enabled in permissions
+                if enabled
+            )
+
+        def serialise_overwrites(channel):
+            rows = []
+
+            for target, overwrite in channel.overwrites.items():
+                allow, deny = overwrite.pair()
+
+                if isinstance(target, discord.Role):
+                    target_type = "role"
+                else:
+                    target_type = "member"
+
+                rows.append({
+                    "target_type": target_type,
+                    "target_id": target.id,
+                    "target_name": getattr(target, "name", str(target)),
+                    "allow_value": allow.value,
+                    "deny_value": deny.value,
+                    "allow": enabled_permissions(allow),
+                    "deny": enabled_permissions(deny),
+                })
+
+            return sorted(
+                rows,
+                key=lambda row: (
+                    row["target_type"],
+                    row["target_name"].lower()
+                )
+            )
+
+        roles = []
+
+        for role in sorted(guild.roles, key=lambda r: r.position, reverse=True):
+            roles.append({
+                "id": role.id,
+                "name": role.name,
+                "position": role.position,
+                "colour": str(role.colour),
+                "colour_value": role.colour.value,
+                "hoist": role.hoist,
+                "mentionable": role.mentionable,
+                "managed": role.managed,
+                "is_default": role.is_default(),
+                "permissions_value": role.permissions.value,
+                "permissions": enabled_permissions(role.permissions),
+            })
+
+        channels = []
+
+        for channel in sorted(guild.channels, key=lambda ch: ch.position):
+            row = {
+                "id": channel.id,
+                "name": channel.name,
+                "type": str(channel.type),
+                "position": channel.position,
+                "category_id": channel.category_id,
+                "category_name": (
+                    channel.category.name
+                    if channel.category is not None
+                    else None
+                ),
+                "permission_overwrites": serialise_overwrites(channel),
+            }
+
+            if not isinstance(channel, discord.CategoryChannel):
+                row["permissions_synced"] = channel.permissions_synced
+
+            if hasattr(channel, "topic"):
+                row["topic"] = channel.topic
+
+            if hasattr(channel, "nsfw"):
+                row["nsfw"] = channel.nsfw
+
+            if hasattr(channel, "slowmode_delay"):
+                row["slowmode_delay"] = channel.slowmode_delay
+
+            if hasattr(channel, "bitrate"):
+                row["bitrate"] = channel.bitrate
+
+            if hasattr(channel, "user_limit"):
+                row["user_limit"] = channel.user_limit
+
+            channels.append(row)
+
+        audit = {
+            "generated_at": datetime.now(TZ).isoformat(),
+            "bot": BOT_NAME,
+            "guild": {
+                "id": guild.id,
+                "name": guild.name,
+                "member_count": guild.member_count,
+                "owner_id": guild.owner_id,
+                "verification_level": str(guild.verification_level),
+                "default_notifications": str(guild.default_notifications),
+                "explicit_content_filter": str(guild.explicit_content_filter),
+                "features": list(guild.features),
+                "system_channel_id": (
+                    guild.system_channel.id
+                    if guild.system_channel is not None
+                    else None
+                ),
+                "rules_channel_id": (
+                    guild.rules_channel.id
+                    if guild.rules_channel is not None
+                    else None
+                ),
+            },
+            "notes": [
+                "This is a read-only structural export.",
+                "No message content is included.",
+                "Role member counts are intentionally omitted because the bot does not use the privileged members intent.",
+            ],
+            "roles": roles,
+            "channels": channels,
+        }
+
+        payload = json.dumps(
+            audit,
+            indent=2,
+            ensure_ascii=False
+        ).encode("utf-8")
+
+        audit_file = discord.File(
+            io.BytesIO(payload),
+            filename=f"hyped-server-audit-{datetime.now(TZ).date().isoformat()}.json"
+        )
+
+        await interaction.followup.send(
+            "Server structure export attached.",
+            file=audit_file,
+            ephemeral=True
+        )
+
+        log_event(f"SERVER AUDIT EXPORTED user={interaction.user.id}")
+
+    @bot.tree.command(
         name="export",
         description="Owner-only export",
         guild=discord.Object(id=ADMIN_GUILD_ID)
