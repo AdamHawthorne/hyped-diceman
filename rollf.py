@@ -1379,8 +1379,7 @@ def build_daily_reset_embed():
         color=0xD19A3B
     )
 
-    if bot.user:
-        embed.set_thumbnail(url=bot.user.display_avatar.url)
+    embed.set_thumbnail(url="https://i.vgy.me/zJXBXg.png")
 
     return embed
 
@@ -1442,16 +1441,16 @@ async def post_daily_reset_message():
 
 
 async def daily_post_loop():
-    """Post the Daily Roll panel at 00:10 Europe/London for testing."""
+    """Post the Daily Roll panel at midnight Europe/London."""
     await bot.wait_until_ready()
     log_event(f"DAILY POST LOOP ACTIVE timezone={TZ} channel={ROLL_CHANNEL_ID}")
     while not bot.is_closed():
         try:
             now = datetime.now(TZ)
-            next_post = now.replace(hour=0, minute=10, second=0, microsecond=0)
+            next_post = now.replace(hour=0, minute=0, second=0, microsecond=0)
             if now >= next_post:
                 next_post = (now + timedelta(days=1)).replace(
-                    hour=0, minute=10, second=0, microsecond=0
+                    hour=0, minute=0, second=0, microsecond=0
                 )
             log_event(f"DAILY POST NEXT RUN local={next_post.isoformat()} now={now.isoformat()}")
             await asyncio.sleep(max(1, (next_post - now).total_seconds()))
@@ -1785,11 +1784,11 @@ async def on_ready():
     if DAILY_POST_TASK is None or DAILY_POST_TASK.done():
         DAILY_POST_TASK = asyncio.create_task(daily_post_loop())
 
-    # Catch up only after the scheduled 00:10 UK posting time.
-    # Before 00:10, the dedicated loop will post at the scheduled time.
+    # Catch up on startup if today's Daily Roll panel has not been posted.
+    # The database check prevents duplicate posts when the scheduler also fires.
     now_uk = datetime.now(TZ)
     log_event(f"DAILY POST STARTUP CHECK local={now_uk.isoformat()} channel={ROLL_CHANNEL_ID}")
-    if (now_uk.hour, now_uk.minute) >= (0, 10):
+    if ROLL_CHANNEL_ID:
         try:
             await post_daily_reset_message()
         except Exception as exc:
