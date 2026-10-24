@@ -1,4 +1,4 @@
-# Hyped Diceman 🎲
+# Hyped Ogre 🎲
 
 A private daily dice-roll Discord bot for the **Hyped** community.
 
@@ -64,7 +64,7 @@ docker compose logs -f
 
 ## Upstream and licence
 
-Hyped Diceman is a modified fork of **RollF**, originally created by **hegernat/plutonium87**:
+Hyped Ogre is a modified fork of **RollF**, originally created by **hegernat/plutonium87**:
 
 https://github.com/hegernat/rollf-bot
 
