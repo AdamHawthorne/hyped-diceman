@@ -45,6 +45,7 @@ HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
 FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
 FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "3"))
+FLAMEBOARD_CAST_URL = "https://i.vgy.me/xZwlcA.png"
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1547,7 +1548,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(embed=embed)
+                await board_message.edit(content=FLAMEBOARD_CAST_URL, embed=embed)
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1573,16 +1574,17 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 try:
                     video_file = await video_attachment.to_file()
                     board_message = await flameboard_channel.send(
+                        content=FLAMEBOARD_CAST_URL,
                         embed=embed,
                         file=video_file
                     )
                 except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
-                        content=video_attachment.url,
+                        content=f"{FLAMEBOARD_CAST_URL}\n{video_attachment.url}",
                         embed=embed
                     )
             else:
-                board_message = await flameboard_channel.send(embed=embed)
+                board_message = await flameboard_channel.send(content=FLAMEBOARD_CAST_URL, embed=embed)
 
         except (discord.Forbidden, discord.HTTPException):
             log_error("FLAMEBOARD POST FAILED")
@@ -2847,7 +2849,7 @@ if ADMIN_MODE:
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(content=FLAMEBOARD_CAST_URL, embed=embed)
 
         log_event(
             f"FLAMEBOARD PREVIEW user={interaction.user.id} channel={interaction.channel_id}"
@@ -2893,13 +2895,14 @@ if ADMIN_MODE:
 
         if content_type.startswith("image/"):
             embed.set_image(url=media.url)
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(content=FLAMEBOARD_CAST_URL, embed=embed)
         else:
             await interaction.response.defer()
 
             try:
                 video_file = await media.to_file()
                 await interaction.followup.send(
+                    content=FLAMEBOARD_CAST_URL,
                     embed=embed,
                     file=video_file
                 )
