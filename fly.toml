@@ -13,7 +13,7 @@ primary_region = "lhr"
   ENABLE_WEBHOOK = "false"
   FOREVER_ROLE_ID = "1563364290658967593"
   FLAMEBOARD_CHANNEL_ID = "1562128686931644436"
-  FLAMEBOARD_THRESHOLD = "4"
+  FLAMEBOARD_THRESHOLD = "3"
 
 [[mounts]]
   source = "diceman_data"
