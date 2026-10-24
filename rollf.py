@@ -1266,7 +1266,7 @@ class ForeverRoleView(discord.ui.View):
 
     @discord.ui.button(
         label="Forever",
-        style=discord.ButtonStyle.success,
+        style=discord.ButtonStyle.secondary,
         custom_id="hyped_ogre_forever_role"
     )
     async def forever_role_button(
@@ -1320,12 +1320,11 @@ class ForeverRoleView(discord.ui.View):
                 await interaction.response.send_message(
                     (
                         "**Forever** role added. Welcome in.\n\n"
-                        "By taking the role, you’re agreeing to help us:\n"
-                        "• keep raid time organised and worthwhile\n"
-                        "• turn up prepared and understand the content\n"
-                        "• communicate clearly and openly\n"
-                        "• be reliable and help build a friendly group\n"
-                        "• keep the atmosphere positive and enjoyable"
+                        "By taking the role, you agree to:\n"
+                        "• keep the atmosphere positive and enjoyable\n"
+                        "• show up prepared and focused\n"
+                        "• be reliable and communicate clearly\n"
+                        "• no racism or hate of any kind"
                     ),
                     ephemeral=True
                 )
