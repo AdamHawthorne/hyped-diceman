@@ -1265,8 +1265,8 @@ class ForeverRoleView(discord.ui.View):
         super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Forever",
-        style=discord.ButtonStyle.secondary,
+        label="Forever Role",
+        style=discord.ButtonStyle.primary,
         custom_id="hyped_ogre_forever_role"
     )
     async def forever_role_button(
@@ -1338,13 +1338,12 @@ class ForeverRoleView(discord.ui.View):
 
 def build_forever_role_embed():
     embed = discord.Embed(
-        title="WoW Forever",
+        title="<Hyped> for WoW: Forever.",
         description=(
-            "Playing **WoW Forever** with Hyped?\n\n"
-            "Click **Forever** below to get access to the Forever channels.\n"
+            "**Click the button below** to get access to the Forever channels.\n\n"
             "Click it again at any time to remove the role."
         ),
-        color=0x4FB8A8
+        color=0xD19A3B
     )
 
     embed.set_thumbnail(url="https://i.vgy.me/asI88C.png")
