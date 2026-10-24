@@ -62,6 +62,7 @@ ENABLE_COMMAND_LOGGING = (
 LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
 CROWN_RESET_TASK = None
+DAILY_POST_TASK = None
 
 VOTE_COLORS = [
     (255, 255, 204),  # Pale Yellow
@@ -1388,8 +1389,8 @@ async def post_daily_reset_message():
     if channel is None:
         try:
             channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            log_event("DAILY RESET CHANNEL NOT FOUND")
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"DAILY RESET CHANNEL LOOKUP FAILED channel={ROLL_CHANNEL_ID} error={exc!r}")
             return
 
     today = datetime.now(TZ).date().isoformat()
@@ -1401,6 +1402,7 @@ async def post_daily_reset_message():
         ).fetchone()
 
     if existing:
+        log_event(f"DAILY RESET ALREADY RECORDED date={today} message={existing[0]}")
         return
 
     embed = build_daily_reset_embed()
@@ -1410,8 +1412,8 @@ async def post_daily_reset_message():
             embed=embed,
             view=DailyRollView()
         )
-    except (discord.Forbidden, discord.HTTPException):
-        log_error("DAILY RESET POST FAILED")
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log_error(f"DAILY RESET POST FAILED channel={ROLL_CHANNEL_ID} error={exc!r}")
         return
 
     with db() as con:
@@ -1427,38 +1429,47 @@ async def post_daily_reset_message():
     log_event(f"DAILY RESET POST message={message.id}")
 
 
-async def crown_reset_loop():
+async def daily_post_loop():
+    """Post the Daily Roll panel at 00:10 Europe/London for testing."""
     await bot.wait_until_ready()
-
     while not bot.is_closed():
         try:
             now = datetime.now(TZ)
-            tomorrow = (
-                now + timedelta(days=1)
-            ).replace(hour=0, minute=0, second=2, microsecond=0)
+            next_post = now.replace(hour=0, minute=10, second=0, microsecond=0)
+            if now >= next_post:
+                next_post = (now + timedelta(days=1)).replace(
+                    hour=0, minute=10, second=0, microsecond=0
+                )
+            await asyncio.sleep(max(1, (next_post - now).total_seconds()))
+            await post_daily_reset_message()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log_error(f"DAILY POST SCHEDULER ERROR: {exc!r}")
+            await asyncio.sleep(30)
 
+
+async def crown_reset_loop():
+    """Keep High Roller role cleanup at midnight UK time."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            now = datetime.now(TZ)
+            tomorrow = (now + timedelta(days=1)).replace(
+                hour=0, minute=0, second=2, microsecond=0
+            )
             await asyncio.sleep(max(1, (tomorrow - now).total_seconds()))
-
-            # The daily panel is the critical midnight action. Post it first so
-            # a Discord role/API failure cannot prevent the new day's roll.
-            try:
-                await post_daily_reset_message()
-            except Exception as exc:
-                log_error(f"DAILY RESET POST ERROR: {exc!r}")
-
-            # Crown cleanup is independent from posting. A failure here should
-            # be logged but must never kill the scheduler.
             try:
                 await clear_high_roller_role()
                 log_event("CROWN RESET")
             except Exception as exc:
                 log_error(f"CROWN RESET ERROR: {exc!r}")
-
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             log_error(f"MIDNIGHT SCHEDULER ERROR: {exc!r}")
             await asyncio.sleep(30)
+
 
 async def get_flameboard_cast_file():
     timeout = aiohttp.ClientTimeout(total=10)
@@ -1740,7 +1751,7 @@ async def on_ready():
             f"BOT STARTED ({BOT_NAME})"
         )
 
-    global DAILY_ROLL_TASK, CROWN_RESET_TASK
+    global DAILY_ROLL_TASK, CROWN_RESET_TASK, DAILY_POST_TASK
 
     ensure_schema()
     ensure_indexes()
@@ -1756,12 +1767,17 @@ async def on_ready():
     if CROWN_RESET_TASK is None or CROWN_RESET_TASK.done():
         CROWN_RESET_TASK = asyncio.create_task(crown_reset_loop())
 
-    # Catch up any missed daily panel after a restart/deploy. The post helper
-    # deduplicates by UK roll date, so this is safe to run on every ready event.
-    try:
-        await post_daily_reset_message()
-    except Exception as exc:
-        log_error(f"DAILY RESET CATCH-UP ERROR: {exc!r}")
+    if DAILY_POST_TASK is None or DAILY_POST_TASK.done():
+        DAILY_POST_TASK = asyncio.create_task(daily_post_loop())
+
+    # Catch up only after the scheduled 00:10 UK posting time.
+    # Before 00:10, the dedicated loop will post at the scheduled time.
+    now_uk = datetime.now(TZ)
+    if (now_uk.hour, now_uk.minute) >= (0, 10):
+        try:
+            await post_daily_reset_message()
+        except Exception as exc:
+            log_error(f"DAILY RESET CATCH-UP ERROR: {exc!r}")
 
     await post_botlist_commands()
     await post_bot_stats()
