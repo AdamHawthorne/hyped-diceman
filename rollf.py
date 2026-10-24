@@ -1266,7 +1266,6 @@ class ForeverRoleView(discord.ui.View):
 
     @discord.ui.button(
         label="Forever",
-        emoji="♾️",
         style=discord.ButtonStyle.success,
         custom_id="hyped_ogre_forever_role"
     )
@@ -1309,7 +1308,7 @@ class ForeverRoleView(discord.ui.View):
                     reason="Forever role removed via Hyped Ogre role panel"
                 )
                 await interaction.response.send_message(
-                    "♾️ **Forever** role removed.",
+                    "**Forever** role removed.",
                     ephemeral=True
                 )
                 log_event(f"FOREVER ROLE REMOVED user={member.id}")
@@ -1319,7 +1318,15 @@ class ForeverRoleView(discord.ui.View):
                     reason="Forever role added via Hyped Ogre role panel"
                 )
                 await interaction.response.send_message(
-                    "♾️ **Forever** role added. Welcome in.",
+                    (
+                        "**Forever** role added. Welcome in.\n\n"
+                        "By taking the role, you’re agreeing to help us:\n"
+                        "• keep raid time organised and worthwhile\n"
+                        "• turn up prepared and understand the content\n"
+                        "• communicate clearly and openly\n"
+                        "• be reliable and help build a friendly group\n"
+                        "• keep the atmosphere positive and enjoyable"
+                    ),
                     ephemeral=True
                 )
                 log_event(f"FOREVER ROLE ADDED user={member.id}")
@@ -1335,14 +1342,14 @@ def build_forever_role_embed():
         title="WoW Forever",
         description=(
             "Playing **WoW Forever** with Hyped?\n\n"
-            "Click **♾️ Forever** below to get access to the Forever channels.\n"
+            "Click **Forever** below to get access to the Forever channels.\n"
             "Click it again at any time to remove the role."
         ),
         color=0x4FB8A8
     )
 
-    if bot.user:
-        embed.set_thumbnail(url=bot.user.display_avatar.url)
+    embed.set_thumbnail(url="https://i.vgy.me/asI88C.png")
+    embed.set_image(url="https://i.vgy.me/WGNGdr.png")
 
     return embed
 
