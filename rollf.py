@@ -43,6 +43,8 @@ HYPED_GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 ROLL_CHANNEL_ID = int(os.getenv("ROLL_CHANNEL_ID", "0"))
 HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
 FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
+FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
+FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "4"))
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -347,6 +349,15 @@ def ensure_schema():
             roll_date TEXT PRIMARY KEY,
             channel_id INTEGER NOT NULL,
             message_id INTEGER NOT NULL
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS flameboard_posts (
+            source_message_id INTEGER PRIMARY KEY,
+            source_channel_id INTEGER NOT NULL,
+            flameboard_message_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
         )
         """)
 
@@ -1430,6 +1441,174 @@ async def crown_reset_loop():
         log_event("CROWN RESET")
 
         await post_daily_reset_message()
+
+def build_flameboard_embed(message: discord.Message, flame_count: int):
+    content = message.content.strip()
+
+    if not content:
+        content = "*No text content.*"
+
+    if len(content) > 3500:
+        content = content[:3497] + "..."
+
+    embed = discord.Embed(
+        description=content,
+        color=0xD35400,
+        timestamp=message.created_at
+    )
+
+    embed.set_author(
+        name=message.author.display_name,
+        icon_url=message.author.display_avatar.url
+    )
+
+    embed.add_field(
+        name="Original",
+        value=f"[Jump to message]({message.jump_url})",
+        inline=False
+    )
+
+    for attachment in message.attachments:
+        content_type = attachment.content_type or ""
+        if content_type.startswith("image/"):
+            embed.set_image(url=attachment.url)
+            break
+
+    embed.set_footer(text=f"🔥 {flame_count}")
+
+    return embed
+
+
+async def sync_flameboard_message(channel_id: int, message_id: int):
+    if not FLAMEBOARD_CHANNEL_ID:
+        return
+
+    if channel_id == FLAMEBOARD_CHANNEL_ID:
+        return
+
+    source_channel = bot.get_channel(channel_id)
+
+    if source_channel is None:
+        try:
+            source_channel = await bot.fetch_channel(channel_id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return
+
+    try:
+        message = await source_channel.fetch_message(message_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        return
+
+    flame_count = 0
+
+    for reaction in message.reactions:
+        if str(reaction.emoji) == "🔥":
+            flame_count = reaction.count
+            break
+
+    flameboard_channel = bot.get_channel(FLAMEBOARD_CHANNEL_ID)
+
+    if flameboard_channel is None:
+        try:
+            flameboard_channel = await bot.fetch_channel(FLAMEBOARD_CHANNEL_ID)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            log_error("FLAMEBOARD CHANNEL NOT FOUND")
+            return
+
+    with db() as con:
+        existing = con.execute(
+            """
+            SELECT flameboard_message_id
+            FROM flameboard_posts
+            WHERE source_message_id = ?
+            """,
+            (message_id,)
+        ).fetchone()
+
+    if flame_count >= FLAMEBOARD_THRESHOLD:
+        embed = build_flameboard_embed(message, flame_count)
+
+        if existing:
+            try:
+                board_message = await flameboard_channel.fetch_message(
+                    existing["flameboard_message_id"]
+                )
+                await board_message.edit(embed=embed)
+                return
+            except discord.NotFound:
+                with db() as con:
+                    con.execute(
+                        "DELETE FROM flameboard_posts WHERE source_message_id = ?",
+                        (message_id,)
+                    )
+            except (discord.Forbidden, discord.HTTPException):
+                log_error("FLAMEBOARD UPDATE FAILED")
+                return
+
+        try:
+            board_message = await flameboard_channel.send(embed=embed)
+        except (discord.Forbidden, discord.HTTPException):
+            log_error("FLAMEBOARD POST FAILED")
+            return
+
+        with db() as con:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO flameboard_posts
+                    (source_message_id, source_channel_id, flameboard_message_id, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (message_id, channel_id, board_message.id, int(time.time()))
+            )
+
+        log_event(
+            f"FLAMEBOARD POST source={message_id} board={board_message.id} flames={flame_count}"
+        )
+
+    elif existing:
+        try:
+            board_message = await flameboard_channel.fetch_message(
+                existing["flameboard_message_id"]
+            )
+            await board_message.delete()
+        except discord.NotFound:
+            pass
+        except (discord.Forbidden, discord.HTTPException):
+            log_error("FLAMEBOARD DELETE FAILED")
+            return
+
+        with db() as con:
+            con.execute(
+                "DELETE FROM flameboard_posts WHERE source_message_id = ?",
+                (message_id,)
+            )
+
+        log_event(
+            f"FLAMEBOARD REMOVED source={message_id} flames={flame_count}"
+        )
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    if payload.guild_id != HYPED_GUILD_ID:
+        return
+
+    if str(payload.emoji) != "🔥":
+        return
+
+    await sync_flameboard_message(payload.channel_id, payload.message_id)
+
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    if payload.guild_id != HYPED_GUILD_ID:
+        return
+
+    if str(payload.emoji) != "🔥":
+        return
+
+    await sync_flameboard_message(payload.channel_id, payload.message_id)
+
 
 # ---------------- EVENTS ----------------
 
@@ -2598,6 +2777,45 @@ if ADMIN_MODE:
         )
 
         log_event(f"FOREVER ROLE PANEL POSTED user={interaction.user.id} channel={interaction.channel_id}")
+
+    @bot.tree.command(
+        name="flamepreview",
+        description="Owner-only preview of the Flameboard embed",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def flamepreview_admin(interaction: discord.Interaction):
+
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            description=(
+                "This is a preview of how a message will look once it reaches "
+                f"{FLAMEBOARD_THRESHOLD} 🔥 reactions."
+            ),
+            color=0xD35400,
+            timestamp=datetime.now(TZ)
+        )
+
+        embed.set_author(
+            name=interaction.user.display_name,
+            icon_url=interaction.user.display_avatar.url
+        )
+
+        embed.add_field(
+            name="Original",
+            value="[Jump to message](https://discord.com)",
+            inline=False
+        )
+
+        embed.set_footer(text=f"🔥 {FLAMEBOARD_THRESHOLD}")
+
+        await interaction.response.send_message(embed=embed)
+
+        log_event(
+            f"FLAMEBOARD PREVIEW user={interaction.user.id} channel={interaction.channel_id}"
+        )
 
     @bot.tree.command(
         name="serveraudit",
