@@ -42,6 +42,7 @@ DB_PATH = os.getenv("DB_PATH", "bot.db")
 HYPED_GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 ROLL_CHANNEL_ID = int(os.getenv("ROLL_CHANNEL_ID", "0"))
 HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
+FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1259,6 +1260,93 @@ class DailyRollView(discord.ui.View):
         await perform_roll(interaction)
 
 
+class ForeverRoleView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Forever",
+        emoji="♾️",
+        style=discord.ButtonStyle.success,
+        custom_id="hyped_ogre_forever_role"
+    )
+    async def forever_role_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        guild = interaction.guild
+
+        if guild is None or guild.id != HYPED_GUILD_ID:
+            await interaction.response.send_message(
+                "This role button is only available in Hyped.",
+                ephemeral=True
+            )
+            return
+
+        role = guild.get_role(FOREVER_ROLE_ID)
+
+        if role is None:
+            await interaction.response.send_message(
+                "The Forever role is not configured correctly.",
+                ephemeral=True
+            )
+            return
+
+        member = interaction.user
+
+        if not isinstance(member, discord.Member):
+            await interaction.response.send_message(
+                "I couldn't update your role.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            if role in member.roles:
+                await member.remove_roles(
+                    role,
+                    reason="Forever role removed via Hyped Ogre role panel"
+                )
+                await interaction.response.send_message(
+                    "♾️ **Forever** role removed.",
+                    ephemeral=True
+                )
+                log_event(f"FOREVER ROLE REMOVED user={member.id}")
+            else:
+                await member.add_roles(
+                    role,
+                    reason="Forever role added via Hyped Ogre role panel"
+                )
+                await interaction.response.send_message(
+                    "♾️ **Forever** role added. Welcome in.",
+                    ephemeral=True
+                )
+                log_event(f"FOREVER ROLE ADDED user={member.id}")
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I can't manage the Forever role. Check my role hierarchy and Manage Roles permission.",
+                ephemeral=True
+            )
+
+
+def build_forever_role_embed():
+    embed = discord.Embed(
+        title="WoW Forever",
+        description=(
+            "Playing **WoW Forever** with Hyped?\n\n"
+            "Click **♾️ Forever** below to get access to the Forever channels.\n"
+            "Click it again at any time to remove the role."
+        ),
+        color=0x4FB8A8
+    )
+
+    if bot.user:
+        embed.set_thumbnail(url=bot.user.display_avatar.url)
+
+    return embed
+
+
 def build_daily_reset_embed():
     embed = discord.Embed(
         title="Hyped Rolls - Daily Reset",
@@ -1402,6 +1490,7 @@ async def on_ready():
     ensure_indexes()
 
     bot.add_view(DailyRollView())
+    bot.add_view(ForeverRoleView())
 
     # Start time-sensitive background tasks immediately. Global Discord command
     # syncing can occasionally take long enough to cross midnight.
@@ -2480,6 +2569,31 @@ if ADMIN_MODE:
         )
 
         log_event(f"MANUAL DAILY RESET user={interaction.user.id}")
+
+    @bot.tree.command(
+        name="postroles",
+        description="Owner-only post of the Forever role panel",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def postroles_admin(interaction: discord.Interaction):
+
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        if interaction.guild is None or interaction.guild.id != HYPED_GUILD_ID:
+            await interaction.response.send_message(
+                "Role panel is only available in Hyped.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            embed=build_forever_role_embed(),
+            view=ForeverRoleView()
+        )
+
+        log_event(f"FOREVER ROLE PANEL POSTED user={interaction.user.id} channel={interaction.channel_id}")
 
     @bot.tree.command(
         name="serveraudit",
