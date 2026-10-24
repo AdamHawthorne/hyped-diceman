@@ -1483,6 +1483,8 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
         footer_parts.append(f"🔥 {reaction_counts['🔥']}")
     if reaction_counts.get("😂", 0):
         footer_parts.append(f"😂 {reaction_counts['😂']}")
+    if reaction_counts.get("⭐", 0):
+        footer_parts.append(f"⭐ {reaction_counts['⭐']}")
     embed.set_footer(text=" • ".join(footer_parts))
 
     return embed
@@ -1516,7 +1518,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         return
 
-    reaction_counts = {"🔥": 0, "😂": 0}
+    reaction_counts = {"🔥": 0, "😂": 0, "⭐": 0}
 
     for reaction in message.reactions:
         emoji = str(reaction.emoji)
@@ -1635,7 +1637,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.guild_id != HYPED_GUILD_ID:
         return
 
-    if str(payload.emoji) not in ("🔥", "😂"):
+    if str(payload.emoji) not in ("🔥", "😂", "⭐"):
         return
 
     await sync_flameboard_message(payload.channel_id, payload.message_id)
@@ -1646,7 +1648,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     if payload.guild_id != HYPED_GUILD_ID:
         return
 
-    if str(payload.emoji) not in ("🔥", "😂"):
+    if str(payload.emoji) not in ("🔥", "😂", "⭐"):
         return
 
     await sync_flameboard_message(payload.channel_id, payload.message_id)
@@ -2854,7 +2856,7 @@ if ADMIN_MODE:
             inline=False
         )
 
-        embed.set_footer(text="🔥 2 • 😂 1")
+        embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
         await interaction.response.send_message(embed=embed)
 
@@ -2906,7 +2908,7 @@ if ADMIN_MODE:
             value=f"#{channel_name} • Preview",
             inline=False
         )
-        embed.set_footer(text="🔥 2 • 😂 1")
+        embed.set_footer(text="🔥 1 • 😂 1 • ⭐ 1")
 
         if content_type.startswith("image/"):
             embed.set_image(url=media.url)
