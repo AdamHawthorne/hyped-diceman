@@ -1266,7 +1266,7 @@ class ForeverRoleView(discord.ui.View):
 
     @discord.ui.button(
         label="Forever Role",
-        style=discord.ButtonStyle.primary,
+        style=discord.ButtonStyle.secondary,
         custom_id="hyped_ogre_forever_role"
     )
     async def forever_role_button(
@@ -1319,11 +1319,10 @@ class ForeverRoleView(discord.ui.View):
                 )
                 await interaction.response.send_message(
                     (
-                        "**Forever** role added. Welcome in.\n\n"
-                        "By taking the role, you agree to:\n"
-                        "• keep the atmosphere positive and enjoyable\n"
-                        "• show up prepared and focused\n"
-                        "• be reliable and communicate clearly\n"
+                        "**Forever** role added. By taking the role, you agree to:\n"
+                        "• keep the atmosphere positive and enjoyable "
+                        "• show up prepared and focused "
+                        "• be reliable and communicate clearly "
                         "• no racism or hate of any kind"
                     ),
                     ephemeral=True
@@ -1343,7 +1342,7 @@ def build_forever_role_embed():
             "**Click the button below** to get access to the Forever channels.\n\n"
             "Click it again at any time to remove the role."
         ),
-        color=0xD19A3B
+        color=0x8C5A3C
     )
 
     embed.set_thumbnail(url="https://i.vgy.me/asI88C.png")
