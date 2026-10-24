@@ -1586,18 +1586,15 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
 
             if video_attachment is not None:
                 try:
-                    cast_file = await get_flameboard_cast_file()
                     video_file = await video_attachment.to_file()
                     board_message = await flameboard_channel.send(
                         embed=embed,
-                        files=[cast_file, video_file]
+                        file=video_file
                     )
-                except (aiohttp.ClientError, asyncio.TimeoutError, discord.HTTPException, discord.NotFound):
-                    cast_file = await get_flameboard_cast_file()
+                except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
                         content=video_attachment.url,
-                        embed=embed,
-                        file=cast_file
+                        embed=embed
                     )
             else:
                 cast_file = await get_flameboard_cast_file()
@@ -2928,36 +2925,20 @@ if ADMIN_MODE:
 
         if content_type.startswith("image/"):
             embed.set_image(url=media.url)
-            await interaction.response.defer()
-
-            try:
-                cast_file = await get_flameboard_cast_file()
-                await interaction.followup.send(
-                    embed=embed,
-                    file=cast_file
-                )
-            except (aiohttp.ClientError, asyncio.TimeoutError, discord.HTTPException) as exc:
-                log_error(f"FLAMEBOARD MEDIA PREVIEW FAILED: {exc}")
-                await interaction.followup.send(
-                    "Flameboard preview failed to load the casting image.",
-                    ephemeral=True
-                )
+            await interaction.response.send_message(embed=embed)
         else:
             await interaction.response.defer()
 
             try:
                 video_file = await media.to_file()
-                cast_file = await get_flameboard_cast_file()
                 await interaction.followup.send(
                     embed=embed,
-                    files=[cast_file, video_file]
+                    file=video_file
                 )
             except (discord.HTTPException, discord.NotFound):
-                cast_file = await get_flameboard_cast_file()
                 await interaction.followup.send(
                     content=media.url,
-                    embed=embed,
-                    file=cast_file
+                    embed=embed
                 )
 
         log_event(
