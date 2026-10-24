@@ -1431,17 +1431,34 @@ async def crown_reset_loop():
     await bot.wait_until_ready()
 
     while not bot.is_closed():
-        now = datetime.now(TZ)
-        tomorrow = (
-            now + timedelta(days=1)
-        ).replace(hour=0, minute=0, second=2, microsecond=0)
+        try:
+            now = datetime.now(TZ)
+            tomorrow = (
+                now + timedelta(days=1)
+            ).replace(hour=0, minute=0, second=2, microsecond=0)
 
-        await asyncio.sleep(max(1, (tomorrow - now).total_seconds()))
+            await asyncio.sleep(max(1, (tomorrow - now).total_seconds()))
 
-        await clear_high_roller_role()
-        log_event("CROWN RESET")
+            # The daily panel is the critical midnight action. Post it first so
+            # a Discord role/API failure cannot prevent the new day's roll.
+            try:
+                await post_daily_reset_message()
+            except Exception as exc:
+                log_error(f"DAILY RESET POST ERROR: {exc!r}")
 
-        await post_daily_reset_message()
+            # Crown cleanup is independent from posting. A failure here should
+            # be logged but must never kill the scheduler.
+            try:
+                await clear_high_roller_role()
+                log_event("CROWN RESET")
+            except Exception as exc:
+                log_error(f"CROWN RESET ERROR: {exc!r}")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log_error(f"MIDNIGHT SCHEDULER ERROR: {exc!r}")
+            await asyncio.sleep(30)
 
 async def get_flameboard_cast_file():
     timeout = aiohttp.ClientTimeout(total=10)
@@ -1739,11 +1756,12 @@ async def on_ready():
     if CROWN_RESET_TASK is None or CROWN_RESET_TASK.done():
         CROWN_RESET_TASK = asyncio.create_task(crown_reset_loop())
 
-    # Catch up a just-missed reset after a restart/deploy during the first hour
-    # of the new day.
-    now_local = datetime.now(TZ)
-    if now_local.hour == 0:
+    # Catch up any missed daily panel after a restart/deploy. The post helper
+    # deduplicates by UK roll date, so this is safe to run on every ready event.
+    try:
         await post_daily_reset_message()
+    except Exception as exc:
+        log_error(f"DAILY RESET CATCH-UP ERROR: {exc!r}")
 
     await post_botlist_commands()
     await post_bot_stats()
