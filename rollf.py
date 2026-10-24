@@ -1553,10 +1553,7 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(
-                    content=get_flameboard_video_url(message) or None,
-                    embed=embed
-                )
+                await board_message.edit(embed=embed)
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1569,10 +1566,30 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
                 return
 
         try:
-            board_message = await flameboard_channel.send(
-                content=get_flameboard_video_url(message) or None,
-                embed=embed
+            video_attachment = next(
+                (
+                    attachment
+                    for attachment in message.attachments
+                    if (attachment.content_type or "").startswith("video/")
+                ),
+                None
             )
+
+            if video_attachment is not None:
+                try:
+                    video_file = await video_attachment.to_file()
+                    board_message = await flameboard_channel.send(
+                        embed=embed,
+                        file=video_file
+                    )
+                except (discord.HTTPException, discord.NotFound):
+                    board_message = await flameboard_channel.send(
+                        content=video_attachment.url,
+                        embed=embed
+                    )
+            else:
+                board_message = await flameboard_channel.send(embed=embed)
+
         except (discord.Forbidden, discord.HTTPException):
             log_error("FLAMEBOARD POST FAILED")
             return
@@ -2898,10 +2915,19 @@ if ADMIN_MODE:
             embed.set_image(url=media.url)
             await interaction.response.send_message(embed=embed)
         else:
-            await interaction.response.send_message(
-                content=media.url,
-                embed=embed
-            )
+            await interaction.response.defer()
+
+            try:
+                video_file = await media.to_file()
+                await interaction.followup.send(
+                    embed=embed,
+                    file=video_file
+                )
+            except (discord.HTTPException, discord.NotFound):
+                await interaction.followup.send(
+                    content=media.url,
+                    embed=embed
+                )
 
         log_event(
             f"FLAMEBOARD MEDIA PREVIEW user={interaction.user.id} "
