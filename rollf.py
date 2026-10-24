@@ -1087,6 +1087,8 @@ def get_vote_color(user_id):
 # ---------------- BOT SETUP ----------------
 
 intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
 bot = commands.Bot(command_prefix="diceman_", intents=intents)
 
 async def fetch_guild_member(guild: discord.Guild, user_id: int):
