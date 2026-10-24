@@ -45,10 +45,7 @@ HIGH_ROLLER_ROLE_ID = int(os.getenv("HIGH_ROLLER_ROLE_ID", "0"))
 FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
 FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "3"))
-FLAMEBOARD_CAST_URLS = (
-    "https://i.vgy.me/Cm1ZTF.png",
-    "https://i.vgy.me/nS4L0z.png",
-)
+FLAMEBOARD_CAST_URL = "https://i.vgy.me/nS4L0z.png"
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1446,7 +1443,7 @@ async def crown_reset_loop():
 
         await post_daily_reset_message()
 
-def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, int], cast_url: str | None = None):
+def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, int]):
     content = message.content.strip()
 
     if len(content) > 3300:
@@ -1477,8 +1474,8 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
             image_set = True
             break
 
-    if not image_set and cast_url:
-        embed.set_image(url=cast_url)
+    if not image_set:
+        embed.set_image(url=FLAMEBOARD_CAST_URL)
 
     footer_parts = []
     if reaction_counts.get("🔥", 0):
@@ -1549,23 +1546,12 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
         ).fetchone()
 
     if qualifying_count >= FLAMEBOARD_THRESHOLD:
+        embed = build_flameboard_embed(message, reaction_counts)
 
         if existing:
             try:
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
-                )
-
-                existing_cast_url = None
-                if board_message.embeds:
-                    existing_image = board_message.embeds[0].image
-                    if existing_image and existing_image.url in FLAMEBOARD_CAST_URLS:
-                        existing_cast_url = existing_image.url
-
-                embed = build_flameboard_embed(
-                    message,
-                    reaction_counts,
-                    existing_cast_url
                 )
                 await board_message.edit(embed=embed)
                 return
@@ -1578,9 +1564,6 @@ async def sync_flameboard_message(channel_id: int, message_id: int):
             except (discord.Forbidden, discord.HTTPException):
                 log_error("FLAMEBOARD UPDATE FAILED")
                 return
-
-        cast_url = secrets.choice(FLAMEBOARD_CAST_URLS)
-        embed = build_flameboard_embed(message, reaction_counts, cast_url)
 
         try:
             video_attachment = next(
