@@ -29,9 +29,23 @@ def is_solo_or_sorted(activity):
     return "Full Group / Sorted" in value or "Solo Questing" in value
 
 
+def is_open_lfm(activity):
+    """Only explicit Open and LFM plans mean actively seeking group members."""
+    value = str(activity or "")
+    if is_solo_or_sorted(value):
+        return False
+    plans = {part.strip() for part in value.split(",")}
+    return bool(plans & {
+        "Open / Flexible",
+        "Flexible",  # Legacy saved plans.
+        "Group Questing (LFM)",
+        "Group Questing + Dungeons (LFM)",
+    })
+
+
 def listing_board_key(row):
-    """Show players seeking a group first, then solo/sorted plans, by time."""
-    return (int(is_solo_or_sorted(row["activity"])), listing_start_key(row))
+    """Open/LFM plans first; all other plans at the bottom, no day groupings."""
+    return (int(not is_open_lfm(row["activity"])), listing_start_key(row))
 
 
 def listing_start_key(row):
