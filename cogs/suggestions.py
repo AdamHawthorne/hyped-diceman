@@ -121,7 +121,6 @@ class NamedSuggestionButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             label="Named",
-            emoji="💬",
             style=discord.ButtonStyle.secondary,
             custom_id="hyped_suggestions_named_v1",
         )
@@ -135,8 +134,7 @@ class NamedSuggestionButton(discord.ui.Button):
 class AnonymousSuggestionButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
-            label="Anonymous",
-            emoji="🥷",
+            label="Anon",
             style=discord.ButtonStyle.secondary,
             custom_id="hyped_suggestions_anonymous_v1",
         )
@@ -165,11 +163,11 @@ class SuggestionsPanel(discord.ui.LayoutView):
         )
         self.add_item(discord.ui.Container(
             header,
-            discord.ui.ActionRow(
-                NamedSuggestionButton(),
-                AnonymousSuggestionButton(),
-            ),
             accent_color=ACCENT,
+        ))
+        self.add_item(discord.ui.ActionRow(
+            NamedSuggestionButton(),
+            AnonymousSuggestionButton(),
         ))
 
 
