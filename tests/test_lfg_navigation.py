@@ -45,6 +45,13 @@ class WizardNavigationTests(unittest.TestCase):
             self.assertEqual(CONTEXT["next_step"](st, before), after)
             self.assertEqual(CONTEXT["previous_step"](st, after), before)
 
+    def test_later_skips_finish_and_back_returns_to_start(self):
+        st = state(finish="")
+        st.start_time = "Later"
+        self.assertEqual(CONTEXT["next_step"](st, "start"), "days")
+        self.assertEqual(CONTEXT["previous_step"](st, "days"), "start")
+        self.assertEqual(CONTEXT["next_step"](st, "days"), "intentions")
+
     def test_dps_class_skips_roles_both_directions(self):
         st = state(cls="Mage", roles="DPS")
         self.assertEqual(CONTEXT["next_step"](st, "class"), "start")
