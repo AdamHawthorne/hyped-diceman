@@ -222,7 +222,7 @@ def playing_days_prompt(state):
     if automatic:
         return (
             f"{automatic[0]} is already included from your start time. "
-            "Choose additional days, or press Only this day."
+            "Choose the additional days you plan to play."
         )
     return "Choose the days you plan to play, from Thu 5 Nov onwards."
 
@@ -572,17 +572,9 @@ class LaunchDaysView(discord.ui.View):
         super().__init__(timeout=900)
         self.state = state
         self.add_item(LaunchDaysSelect(state))
-        if automatic_start_days(getattr(state, "start_time", "Later")):
-            only_day = discord.ui.Button(
-                label="Only this day", style=discord.ButtonStyle.secondary)
-            only_day.callback = self.only_start_day
-            self.add_item(only_day)
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
-
-    async def only_start_day(self, interaction):
-        await self.finish(interaction, [])
 
     async def finish(self, interaction, selected):
         state = self.state
