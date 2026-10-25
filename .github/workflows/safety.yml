@@ -1,0 +1,20 @@
+name: Hyped Ogre safety checks
+on:
+  push:
+    branches: [refactor/hyped-cogs-foundation]
+  pull_request:
+    branches: [hyped-customisation]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Compile all Python modules
+        run: python -m compileall -q rollf.py cogs tests
+      - name: Run migration regression guards
+        run: python -m unittest discover -s tests -v
+      - name: Verify Docker build includes modules
+        run: docker build -t hyped-ogre-test .
