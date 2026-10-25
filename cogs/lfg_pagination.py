@@ -1,10 +1,9 @@
-"""Pagination and audience grouping for the persistent LFG noticeboard.
+"""Message ordering for the live LFG board and the read-only preview.
 
-Discord V2 permits 40 components and 4000 text characters per message.
-Five avatar rows per page gives room for dividers, heading and controls.
+Every player seeking others has a separate Components V2 message. Non-LFM
+plans stay in dedicated embeds. The image footer is always the final message.
 """
 
-OPEN_PAGE_SIZE = 5
 CLOSED_EMBED_SIZE = 10
 
 
@@ -19,9 +18,9 @@ def split_audience(rows, is_open):
 
 
 def page_specs(open_rows, closed_rows):
-    """Additional messages in strict message order, after the live anchor."""
-    extra_open = chunks(open_rows, OPEN_PAGE_SIZE)[1:]
+    """All messages after the persistent header, in display order."""
     return (
-        [("v2", part) for part in extra_open]
-        + [("closed", part) for part in chunks(closed_rows, CLOSED_EMBED_SIZE)]
+        [("entry", row) for row in open_rows]
+        + [("closed", group) for group in chunks(closed_rows, CLOSED_EMBED_SIZE)]
+        + [("footer", None)]
     )
