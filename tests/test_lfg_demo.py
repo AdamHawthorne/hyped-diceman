@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 from cogs.lfg_demo import demo_entries, display_race, display_uk_times
-from cogs.lfg_sort import listing_board_key, is_solo_or_sorted
+from cogs.lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
 
 
 class LFGLaunchPreviewTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         self.assertEqual(len({row["character"] for row in entries}), 20)
         self.assertEqual(entries, sorted(entries, key=listing_board_key))
         self.assertEqual(entries[0]["character"], "Grim Ironjaw")
-        self.assertEqual(entries[-1]["character"], "Thundertotem")
+        self.assertEqual(entries[-1]["character"], "Stormcaller")
         self.assertEqual(entries[0]["availability"], "Launch 23:00 UK - 04:00 UK")
 
     def test_demo_has_a_mix_of_open_solo_sorted_and_lfm(self):
@@ -41,9 +41,9 @@ class LFGLaunchPreviewTests(unittest.TestCase):
 
     def test_solo_and_sorted_at_bottom_with_times_hidden_in_board(self):
         rows = demo_entries()
-        statuses = [is_solo_or_sorted(row["activity"]) for row in rows]
-        self.assertEqual(statuses, sorted(statuses))
-        self.assertTrue(all(is_solo_or_sorted(row["activity"]) for row in rows[-5:]))
+        non_lfm = [not is_open_lfm(row["activity"]) for row in rows]
+        self.assertEqual(non_lfm, sorted(non_lfm))
+        self.assertTrue(all(not is_open_lfm(row["activity"]) for row in rows[-5:]))
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
