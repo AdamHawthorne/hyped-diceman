@@ -313,6 +313,7 @@ class SetupState:
         self.minute = (now.minute // 5 * 5) % 60
         self.remind_minutes = 30
         self.repeat_hours = 0
+        self.has_existing = False
 
     async def check(self, interaction):
         if interaction.user.id != self.owner_id:
@@ -580,6 +581,12 @@ class SetupReviewLayout(CountdownLayout):
             SetupReviewBackButton(state),
             SetupPublishButton(state),
         ))
+        if state.has_existing:
+            self.add_item(discord.ui.ActionRow(
+                SetupTestDMButton(state),
+                SetupStopButton(state),
+                SetupRemoveButton(state),
+            ))
 
 
 class SetupReviewBackButton(discord.ui.Button):
@@ -636,12 +643,116 @@ class SetupPublishButton(discord.ui.Button):
         )
 
 
+class SetupTestDMButton(discord.ui.Button):
+    def __init__(self, state):
+        super().__init__(label="Test DM", style=discord.ButtonStyle.secondary)
+        self.state = state
+
+    async def callback(self, interaction):
+        if not await self.state.check(interaction):
+            return
+        row = get_timer(self.state.channel_id)
+        title = row["title"] if row else self.state.title
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await interaction.user.send(
+                "⏱️ **Ogre bonk clock! Five minutes!**\n"
+                f"**{discord.utils.escape_markdown(title)}** "
+                "almost here. Get ready, gamer.\n"
+                "-# Dev test from Hyped Ogre",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            await interaction.followup.send(
+                "❌ Ogre could not DM you. Check Discord privacy settings.",
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            "✅ Ogre sent test DM.", ephemeral=True,
+        )
+
+
+class SetupStopButton(discord.ui.Button):
+    def __init__(self, state):
+        super().__init__(label="Stop", style=discord.ButtonStyle.secondary)
+        self.state = state
+
+    async def callback(self, interaction):
+        if not await self.state.check(interaction):
+            return
+        row = get_timer(self.state.channel_id)
+        if row is None:
+            await interaction.response.send_message(
+                "No saved timer here.", ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        with connect() as db:
+            db.execute(
+                "UPDATE countdowns SET active=0,last_render_key='' "
+                "WHERE channel_id=?",
+                (self.state.channel_id,),
+            )
+        try:
+            await interaction.channel.get_partial_message(row["message_id"]).edit(
+                content=None, embeds=[], attachments=[],
+                view=CountdownLayout(
+                    {**row, "active": 0},
+                    channel_id=self.state.channel_id,
+                    include_remind=True,
+                ),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+        await interaction.followup.send("Timer stopped.", ephemeral=True)
+
+
+class SetupRemoveButton(discord.ui.Button):
+    def __init__(self, state):
+        super().__init__(label="Remove", style=discord.ButtonStyle.danger)
+        self.state = state
+
+    async def callback(self, interaction):
+        if not await self.state.check(interaction):
+            return
+        row = get_timer(self.state.channel_id)
+        if row is None:
+            await interaction.response.send_message(
+                "No saved timer here.", ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await interaction.channel.get_partial_message(row["message_id"]).delete()
+        except discord.NotFound:
+            pass
+        except (discord.Forbidden, discord.HTTPException):
+            await interaction.followup.send(
+                "Ogre could not delete the public timer. Saved timer kept.",
+                ephemeral=True,
+            )
+            return
+        with connect() as db:
+            db.execute(
+                "DELETE FROM countdown_subscribers WHERE channel_id=?",
+                (self.state.channel_id,),
+            )
+            db.execute(
+                "DELETE FROM countdowns WHERE channel_id=?",
+                (self.state.channel_id,),
+            )
+        self.state.has_existing = False
+        await interaction.followup.send("Timer removed.", ephemeral=True)
+
+
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @app_commands.guild_only()
 @app_commands.default_permissions(manage_guild=True)
 class CountdownCog(
     commands.GroupCog, group_name="countdown",
-    group_description="Owner-only timer setup, preview and management",
+    group_description="Owner-only countdown setup",
 ):
     def __init__(self, bot):
         self.bot = bot
@@ -691,6 +802,7 @@ class CountdownCog(
         state = SetupState(self, interaction)
         existing = get_timer(interaction.channel_id)
         if existing:
+            state.has_existing = True
             state.title = existing["title"]
             state.description = existing.get("description", "")
             state.image_url = existing["image_url"]
@@ -701,88 +813,6 @@ class CountdownCog(
             state.hour = local.hour
             state.minute = local.minute - (local.minute % 5)
         await interaction.response.send_modal(SetupDetailsModal(state))
-
-    @app_commands.command(name="preview", description="Preview a V2 timer privately")
-    @app_commands.describe(
-        title="Countdown title",
-        when_uk="YYYY-MM-DD HH:MM in UK time; omit for demo two hours away",
-        image_url="Optional HTTPS artwork shown at the bottom",
-        remind_minutes="Owner warning before target; 0 means none",
-        repeat_hours="0 for one-off; positive hours for repeating cooldown",
-    )
-    async def preview(
-        self, interaction: discord.Interaction,
-        title: str = "Hyped Countdown", when_uk: str | None = None,
-        image_url: str | None = None, remind_minutes: int = 30,
-        repeat_hours: int = 0,
-    ):
-        now = int(time.time())
-        if not when_uk:
-            moment = datetime.fromtimestamp(now, UK) + timedelta(hours=2)
-            when_uk = moment.strftime("%Y-%m-%d %H:%M")
-        try:
-            config = validate_settings(
-                title, when_uk, image_url, remind_minutes, repeat_hours, now,
-            )
-        except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
-            return
-        await interaction.response.send_message(
-            view=CountdownLayout(
-                config, now=now, preview=True,
-                channel_id=interaction.channel_id, include_remind=True,
-            ),
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="post", description="Typed fallback: post/edit public timer")
-    @app_commands.describe(
-        title="Public countdown title",
-        when_uk="YYYY-MM-DD HH:MM in Europe/London time",
-        image_url="Optional HTTPS artwork displayed at bottom",
-        remind_minutes="Owner warning in minutes; 0 disables owner pre-warning",
-        repeat_hours="Cooldown repeats every N hours; 0 is one-off",
-    )
-    async def post(
-        self, interaction: discord.Interaction, title: str, when_uk: str,
-        image_url: str | None = None, remind_minutes: int = 30,
-        repeat_hours: int = 0,
-    ):
-        channel = interaction.channel
-        if not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message(
-                "Use a Hyped server text channel.", ephemeral=True,
-            )
-            return
-        existing = get_timer(channel.id)
-        now = int(time.time())
-        try:
-            config = validate_settings(
-                title, when_uk,
-                image_url if image_url is not None else
-                (existing["image_url"] if existing else ""),
-                remind_minutes, repeat_hours, now,
-            )
-        except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
-            return
-
-        await interaction.response.defer(thinking=True, ephemeral=True)
-        try:
-            message = await self.publish_config(
-                channel, interaction.guild_id, interaction.user.id, config,
-            )
-        except (discord.Forbidden, discord.HTTPException) as exc:
-            print(f"COUNTDOWN POST FAILED channel={channel.id}: {exc!r}")
-            await interaction.followup.send(
-                "Couldn't publish the timer. Check View Channel, Send "
-                "Messages and Embed Links permissions.", ephemeral=True,
-            )
-            return
-        await interaction.followup.send(
-            f"✅ Public V2 countdown ready: {message.jump_url}",
-            ephemeral=True,
-        )
 
     async def publish_config(self, channel, guild_id, owner_id, config):
         async with self.lock:
@@ -811,15 +841,16 @@ class CountdownCog(
                 db.execute(
                     """INSERT INTO countdowns (
                         channel_id, guild_id, message_id, owner_id, title,
-                        target_ts, image_url, remind_minutes, repeat_seconds,
+                        description, target_ts, image_url, remind_minutes, repeat_seconds,
                         active, pre_notified_target, due_notified_target,
                         last_render_key
-                    ) VALUES (?,?,?,?,?,?,?,?,?,1,0,0,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,0,?)
                     ON CONFLICT(channel_id) DO UPDATE SET
                         guild_id=excluded.guild_id,
                         message_id=excluded.message_id,
                         owner_id=excluded.owner_id,
                         title=excluded.title,
+                        description=excluded.description,
                         target_ts=excluded.target_ts,
                         image_url=excluded.image_url,
                         remind_minutes=excluded.remind_minutes,
@@ -830,141 +861,13 @@ class CountdownCog(
                         last_render_key=excluded.last_render_key""",
                     (
                         channel.id, guild_id, message.id, owner_id,
-                        config["title"], config["target_ts"], config["image_url"],
+                        config["title"], config["description"],
+                        config["target_ts"], config["image_url"],
                         config["remind_minutes"], config["repeat_seconds"],
                         render_key(config["target_ts"], int(time.time()), 1),
                     ),
                 )
             return message
-
-    @app_commands.command(
-        name="testdm",
-        description="Developer: send the real five-minute reminder DM now",
-    )
-    @app_commands.describe(user="Member to test; defaults to yourself")
-    async def testdm(
-        self,
-        interaction: discord.Interaction,
-        user: discord.User | None = None,
-    ):
-        target_user = user or interaction.user
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        title = "Countdown DM Test"
-        row = get_timer(interaction.channel_id)
-        if row:
-            title = row["title"]
-        try:
-            await target_user.send(
-                "⏱️ **Ogre bonk clock! Five minutes!**\n"
-                f"**{discord.utils.escape_markdown(title)}** "
-                "almost here. Get ready, gamer.\n"
-                "-# Dev test from Hyped Ogre",
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-        except (discord.Forbidden, discord.HTTPException) as exc:
-            print(
-                f"COUNTDOWN TEST DM FAILED user={target_user.id}: {exc!r}"
-            )
-            await interaction.followup.send(
-                f"❌ Ogre could not DM <@{target_user.id}>. "
-                "Their Discord privacy settings may block bot DMs.",
-                ephemeral=True,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            return
-        await interaction.followup.send(
-            f"✅ Ogre sent test DM to <@{target_user.id}>.",
-            ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
-    @app_commands.command(name="status", description="Show this channel's timer settings")
-    async def status(self, interaction: discord.Interaction):
-        row = get_timer(interaction.channel_id)
-        if row is None:
-            await interaction.response.send_message(
-                "No countdown saved here.", ephemeral=True,
-            )
-            return
-        with connect() as db:
-            counts = {
-                item["delivery"]: item["count"]
-                for item in db.execute(
-                    "SELECT delivery,COUNT(*) AS count "
-                    "FROM countdown_subscribers WHERE channel_id=? "
-                    "GROUP BY delivery",
-                    (interaction.channel_id,),
-                )
-            }
-        await interaction.response.send_message(
-            f"**{discord.utils.escape_markdown(row['title'])}**\n"
-            f"Status: {'Running' if row['active'] else 'Stopped'}\n"
-            f"Target: {timestamp_label(row['target_ts'])}\n"
-            f"Owner reminder: {row['remind_minutes']} minutes before\n"
-            f"Repeat: {row['repeat_seconds'] // 3600} hours\n"
-            f"5-minute reminders: {counts.get('dm', 0)} DM · "
-            f"{counts.get('ping', 0)} Ping",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="stop", description="Pause this channel's timer/reminders")
-    async def stop(self, interaction: discord.Interaction):
-        row = get_timer(interaction.channel_id)
-        if row is None:
-            await interaction.response.send_message("No timer to stop.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        async with self.lock:
-            with connect() as db:
-                db.execute(
-                    "UPDATE countdowns SET active=0,last_render_key='' "
-                    "WHERE channel_id=?", (interaction.channel_id,),
-                )
-            try:
-                await interaction.channel.get_partial_message(row["message_id"]).edit(
-                    content=None, embeds=[], attachments=[],
-                    view=CountdownLayout(
-                        {**row, "active": 0},
-                        channel_id=interaction.channel_id,
-                        include_remind=True,
-                    ),
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-                pass
-        await interaction.followup.send(
-            "Timer stopped. Use /countdown setup or post to start again.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="remove", description="Delete the public timer and saved settings")
-    async def remove(self, interaction: discord.Interaction):
-        row = get_timer(interaction.channel_id)
-        if row is None:
-            await interaction.response.send_message("No timer to remove.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        async with self.lock:
-            try:
-                await interaction.channel.get_partial_message(row["message_id"]).delete()
-            except discord.NotFound:
-                pass
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                await interaction.followup.send(
-                    f"Could not remove public post ({exc}). Settings untouched.",
-                    ephemeral=True,
-                )
-                return
-            with connect() as db:
-                db.execute(
-                    "DELETE FROM countdown_subscribers WHERE channel_id=?",
-                    (interaction.channel_id,),
-                )
-                db.execute(
-                    "DELETE FROM countdowns WHERE channel_id=?",
-                    (interaction.channel_id,),
-                )
-        await interaction.followup.send("Timer removed.", ephemeral=True)
 
     async def _notify_owner(self, row, *, due):
         try:
