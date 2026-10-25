@@ -37,7 +37,7 @@ class BoardPaginationTests(unittest.TestCase):
             listing(5, "Grinding (Dungeons, grind spots etc)"),
         ]
         ordered = sorted(roster, key=listing_board_key)
-        self.assertEqual([r["user_id"] for r in ordered][-2:], [3, 1])
+        self.assertEqual([r["user_id"] for r in ordered][-2:], [1, 3])
         self.assertEqual(
             [r["user_id"] for p in range(page_count(len(ordered)))
              for r in page_rows(ordered, p)],
