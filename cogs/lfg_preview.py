@@ -32,25 +32,38 @@ RACE_CLASSES = {
     "Undead": ("Mage", "Paladin", "Priest", "Rogue", "Warlock", "Warrior"),
     "Skyborne (Windshaper)": ("Druid", "Hunter", "Rogue", "Shaman", "Warrior"),
 }
-ROLES = ("Tank", "Healer", "DPS")
-PLAY_WINDOWS = (
-    "Launch 23:00",
-    "00:00",
-    "04:00",
-    "Morning",
-    "Daytime",
-    "Evening",
-    "All day",
-    "Flexible",
-)
+CLASS_ROLES = {
+    "Druid": ("Tank", "Healer", "DPS"),
+    "Paladin": ("Tank", "Healer", "DPS"),
+    "Warrior": ("Tank", "DPS"),
+    "Priest": ("Healer", "DPS"),
+    "Shaman": ("Healer", "DPS"),
+    "Hunter": ("DPS",),
+    "Rogue": ("DPS",),
+    "Mage": ("DPS",),
+    "Warlock": ("DPS",),
+}
 INTENTIONS = (
     "Solo Questing",
     "Group Questing",
-    "Group Questing / Dungeon",
-    "Dungeon Focused",
-    "Flexible",
+    "Group Questing + Dungeons",
+    "Grinding (Dungeons, grind spots etc)",
 )
-DAYS_OFF = ("None", "1 day", "2 days", "3 days", "4 days", "5 days", "1 week+", "Varies")
+DAYS_OFF = (
+    "None",
+    "1 day",
+    "2 days",
+    "3 days",
+    "4 days",
+    "5 days",
+    "6 days",
+    "1 week+",
+    "Varies",
+)
+
+HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
+BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
+ACCENT = 0x8C5A3C
 
 
 def connect():
@@ -71,7 +84,7 @@ def init_db():
         db.execute("""CREATE TABLE IF NOT EXISTS lfg_listings (
             channel_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
-            character TEXT NOT NULL,
+            character TEXT NOT NULL DEFAULT '',
             level INTEGER NOT NULL DEFAULT 1,
             level_label TEXT NOT NULL DEFAULT '1',
             level_sort INTEGER NOT NULL DEFAULT 1,
@@ -149,6 +162,10 @@ def format_roles(value):
     return " / ".join(part.strip() for part in value.split(",") if part.strip())
 
 
+def compact_availability(value):
+    return " / ".join(part.strip() for part in value.replace("\r", "").split("\n") if part.strip())
+
+
 class Draft:
     def __init__(self, row=None):
         self.character = row["character"] if row else ""
@@ -161,14 +178,15 @@ class Draft:
         self.days_off = row["days_off"] if row else ""
 
     def summary(self):
+        name = safe(self.character) if self.character else "Undecided"
         fields = [
-            f"**Planned character:** {safe(self.character or 'Not set')}",
+            f"**Planned character:** {name}",
             f"**Race:** {self.race or 'Not set'}",
             f"**Class:** {self.class_name or 'Not set'}",
             f"**Role(s):** {format_roles(self.role) or 'Not set'}",
-            f"**Playing:** {safe(self.availability or 'Not set')}",
-            f"**Plan:** {safe(self.activity or 'Not set')}",
-            f"**Days off:** {self.days_off or 'Not set'}",
+            f"**Availability:** {safe(compact_availability(self.availability) or 'Not set')}",
+            f"**Levelling plan:** {safe(self.activity or 'Not set')}",
+            f"**Time off:** {self.days_off or 'Not set'}",
         ]
         if self.starting_zone:
             fields.insert(2, f"**Starting zone:** {self.starting_zone}")
@@ -196,37 +214,30 @@ def wizard_embed(title, prompt, state):
     embed = discord.Embed(
         title=title,
         description=f"{prompt}\n\n{state.draft.summary()}",
-        color=0x8C5A3C,
+        color=ACCENT,
     )
     embed.set_footer(text="Only you can see this. Nothing changes until you save.")
     return embed
 
 
-class PlannedNameModal(discord.ui.Modal, title="Planned character"):
+class PlannedNameModal(discord.ui.Modal, title="What are your plans?"):
     def __init__(self, state):
         super().__init__()
         self.state = state
         self.character = discord.ui.TextInput(
-            label="Planned character name",
-            placeholder="First name or First Last",
+            label="First and last name",
+            placeholder="Leave blank if undecided",
             default=state.draft.character or None,
+            required=False,
             max_length=48,
         )
         self.add_item(self.character)
 
     async def on_submit(self, interaction):
-        name = " ".join(self.character.value.split())
-        if not name:
-            await interaction.response.send_message(
-                "Ogre need planned character name.",
-                ephemeral=True,
-            )
-            return
-
-        self.state.draft.character = name
+        self.state.draft.character = " ".join(self.character.value.split())
         await interaction.response.send_message(
             embed=wizard_embed(
-                "Hyped Ogre LFG · Character Plan",
+                "Hyped Ogre LFG · Race",
                 "What race you planning?",
                 self.state,
             ),
@@ -254,15 +265,14 @@ class RaceSelect(discord.ui.Select):
         race = self.values[0]
         state.draft.race = race
         state.draft.starting_zone = STARTING_ZONES[race]
-
-        # If an existing class is invalid for the new race, clear it.
         if state.draft.class_name not in RACE_CLASSES[race]:
             state.draft.class_name = ""
+            state.draft.role = ""
 
         await interaction.response.edit_message(
             embed=wizard_embed(
-                "Hyped Ogre LFG · Character Plan",
-                f"{state.draft.starting_zone}. What class?",
+                "Hyped Ogre LFG · Class",
+                f"Starting in {state.draft.starting_zone}. What class?",
                 state,
             ),
             view=ClassView(state),
@@ -291,14 +301,23 @@ class ClassSelect(discord.ui.Select):
 
     async def callback(self, interaction):
         state = self.view.state
-        state.draft.class_name = self.values[0]
+        class_name = self.values[0]
+        state.draft.class_name = class_name
+        allowed_roles = CLASS_ROLES[class_name]
+
+        if len(allowed_roles) == 1:
+            state.draft.role = allowed_roles[0]
+            await interaction.response.send_modal(AvailabilityModal(state))
+            return
+
+        state.draft.role = ""
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Roles",
                 "What role(s) you happy to play? Choose all that apply.",
                 state,
             ),
-            view=RoleView(state),
+            view=RoleView(state, allowed_roles),
         )
 
 
@@ -313,79 +332,82 @@ class ClassView(discord.ui.View):
 
 
 class RoleSelect(discord.ui.Select):
-    def __init__(self):
+    def __init__(self, allowed_roles):
         super().__init__(
             placeholder="Choose role(s)",
             min_values=1,
-            max_values=len(ROLES),
-            options=[discord.SelectOption(label=value, value=value) for value in ROLES],
+            max_values=len(allowed_roles),
+            options=[
+                discord.SelectOption(label=value, value=value)
+                for value in allowed_roles
+            ],
         )
 
     async def callback(self, interaction):
         state = self.view.state
         state.draft.role = ", ".join(self.values)
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Launch Time",
-                "When you planning to play? Pick up to two.",
-                state,
-            ),
-            view=PlayWindowView(state),
-        )
+        await interaction.response.send_modal(AvailabilityModal(state))
 
 
 class RoleView(discord.ui.View):
-    def __init__(self, state):
+    def __init__(self, state, allowed_roles):
         super().__init__(timeout=900)
         self.state = state
-        self.add_item(RoleSelect())
+        self.add_item(RoleSelect(allowed_roles))
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
 
 
-class PlayWindowSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose start / play time",
-            min_values=1,
-            max_values=2,
-            options=[discord.SelectOption(label=value, value=value) for value in PLAY_WINDOWS],
+class AvailabilityModal(discord.ui.Modal, title="When can you play?"):
+    def __init__(self, state):
+        super().__init__()
+        self.state = state
+        self.availability = discord.ui.TextInput(
+            label="Availability for the first few days",
+            placeholder="e.g. 04:00 UK - 22:00 UK; Thu/Fri all day",
+            default=state.draft.availability or None,
+            required=True,
+            max_length=180,
+            style=discord.TextStyle.paragraph,
         )
+        self.add_item(self.availability)
 
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.availability = " + ".join(self.values)
+    async def on_submit(self, interaction):
+        value = compact_availability(self.availability.value)
+        if not value:
+            await interaction.response.send_message(
+                "Ogre need some launch availability.",
+                ephemeral=True,
+            )
+            return
+
+        self.state.draft.availability = value
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Levelling Plan",
-                "How you planning to level?",
-                state,
+                "How you planning to level? Choose all that apply.",
+                self.state,
             ),
-            view=IntentionView(state),
+            view=IntentionView(self.state),
         )
-
-
-class PlayWindowView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(PlayWindowSelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
 
 
 class IntentionSelect(discord.ui.Select):
     def __init__(self):
         super().__init__(
-            placeholder="Choose levelling intention",
-            options=[discord.SelectOption(label=value, value=value) for value in INTENTIONS],
+            placeholder="Choose levelling plan(s)",
+            min_values=1,
+            max_values=len(INTENTIONS),
+            options=[
+                discord.SelectOption(label=value, value=value)
+                for value in INTENTIONS
+            ],
         )
 
     async def callback(self, interaction):
         state = self.view.state
-        state.draft.activity = self.values[0]
+        state.draft.activity = ", ".join(self.values)
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Time Off",
@@ -410,7 +432,10 @@ class DaysOffSelect(discord.ui.Select):
     def __init__(self):
         super().__init__(
             placeholder="Choose days off",
-            options=[discord.SelectOption(label=value, value=value) for value in DAYS_OFF],
+            options=[
+                discord.SelectOption(label=value, value=value)
+                for value in DAYS_OFF
+            ],
         )
 
     async def callback(self, interaction):
@@ -435,11 +460,8 @@ class DaysOffView(discord.ui.View):
 def review_embed(state):
     embed = discord.Embed(
         title="Hyped Ogre LFG · Review",
-        description=(
-            "**Ogre got plan.** Save it to board?\n\n"
-            + state.draft.summary()
-        ),
-        color=0x8C5A3C,
+        description="**Ogre got plan.** Save it to board?\n\n" + state.draft.summary(),
+        color=ACCENT,
     )
     embed.set_footer(text="Only you can see this review")
     return embed
@@ -453,11 +475,10 @@ class ReviewView(discord.ui.View):
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
 
-    @discord.ui.button(label="Save", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Save", style=discord.ButtonStyle.secondary)
     async def save(self, interaction, button):
         draft = self.state.draft
         required = (
-            draft.character,
             draft.race,
             draft.class_name,
             draft.role,
@@ -538,7 +559,7 @@ class AddUpdateButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
         super().__init__(
             label="Add / Update",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id="hyped_lfg_edit_v4",
         )
         self.cog = cog
@@ -595,14 +616,14 @@ class BoardLayout(discord.ui.LayoutView):
         header = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> LFG-LFM Board\n"
-                "**Ogre want know plan.**"
+                "**Ogre want know launch plans.**"
             ),
             accessory=discord.ui.Thumbnail(
-                "https://i.vgy.me/2Jt4oi.png",
+                HEADER_IMAGE,
                 description="Hyped LFG-LFM",
             ),
         )
-        container = discord.ui.Container(header, accent_color=0x8C5A3C)
+        container = discord.ui.Container(header, accent_color=ACCENT)
 
         if visible:
             container.add_item(discord.ui.Separator())
@@ -610,16 +631,18 @@ class BoardLayout(discord.ui.LayoutView):
                 race = row["race"] or "Race not set"
                 zone = row["starting_zone"] or STARTING_ZONES.get(race, "Starting zone not set")
                 roles = format_roles(row["role"]) or "Role not set"
-                days = row["days_off"] or "Days off not set"
+                days = row["days_off"] or "Not set"
+                character = safe(row["character"]) if row["character"] else "Name TBD"
                 text = (
-                    f"### {safe(row['character'])} · {race} {row['class_name']} · {roles}\n"
-                    f"{zone} · **{safe(row['availability'])}** · "
-                    f"{safe(row['activity'])} · **{days} off**"
+                    f"**{character} · {race} {row['class_name']} · {roles}**\n"
+                    f"Starting in {zone} · {safe(compact_availability(row['availability']))}\n"
+                    f"Levelling: {safe(row['activity'])}\n"
+                    f"Time off: {days}"
                 )
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
-                    avatar or "https://i.vgy.me/2Jt4oi.png",
-                    description=f"{safe(row['character'])} Discord avatar",
+                    avatar or HEADER_IMAGE,
+                    description=f"{character} Discord avatar",
                 )
                 container.add_item(
                     discord.ui.Section(
@@ -648,6 +671,13 @@ class BoardLayout(discord.ui.LayoutView):
                 RemoveButton(cog, channel_id),
             )
         )
+
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(
+            media=BOTTOM_IMAGE,
+            description="Hyped",
+        )
+        container.add_item(gallery)
         self.add_item(container)
 
 
