@@ -18,3 +18,5 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Verify Docker build includes modules
         run: docker build -t hyped-ogre-test .
+      - name: Import new countdown cog inside runtime image
+        run: docker run --rm --entrypoint python hyped-ogre-test -c "import cogs.countdown; print('Countdown cog imported successfully')"
