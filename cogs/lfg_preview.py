@@ -13,7 +13,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from .lfg_sort import listing_board_key, is_solo_or_sorted
-from .lfg_pagination import chunks, split_audience, page_specs, OPEN_PAGE_SIZE, CLOSED_EMBED_SIZE
+from .lfg_pagination import chunks, split_audience, page_specs, CLOSED_EMBED_SIZE
 from .lfg_demo import demo_entries, display_race, display_uk_times
 
 PATH = os.getenv(
@@ -94,6 +94,7 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
+BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
 # Native Unicode emoji stays sharp and requires no guild emoji permissions.
 OPEN_LFM_MARKER = "🟢"
 ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
@@ -308,7 +309,9 @@ class WizardState:
         self.finish_time = finish if finish in FINISH_TIMES + LONG_SESSION_TIMES else ""
 
     def set_availability(self):
-        if self.start_time in START_TIMES and self.finish_time in FINISH_TIMES + LONG_SESSION_TIMES:
+        if self.start_time == "Later":
+            self.draft.availability = "Later"
+        elif self.start_time in START_TIMES and self.finish_time in FINISH_TIMES + LONG_SESSION_TIMES:
             joiner = " + " if self.finish_time in LONG_SESSION_TIMES else " - "
             self.draft.availability = self.start_time + joiner + self.finish_time
         else:
@@ -385,7 +388,7 @@ def next_step(state, stage):
     if stage == "roles":
         return "start"
     if stage == "start":
-        return "finish"
+        return "days" if state.start_time == "Later" else "finish"
     if stage == "finish":
         return "long" if state.finish_time == "Long session..." else "days"
     if stage == "long":
@@ -409,6 +412,8 @@ def previous_step(state, stage):
     if stage == "long":
         return "finish"
     if stage == "days":
+        if state.start_time == "Later":
+            return "start"
         return "long" if state.finish_time in LONG_SESSION_TIMES else "finish"
     if stage == "intentions":
         return "days"
@@ -515,8 +520,13 @@ class StageSelect(discord.ui.Select):
             state.start_time = choice
             draft.days_off = merge_playing_days(
                 choice, draft.days_off.split(", "))
-            if state.finish_time in FINISH_TIMES[:-1] or state.finish_time in LONG_SESSION_TIMES:
+            if choice == "Later":
+                state.finish_time = ""
                 state.set_availability()
+            elif state.finish_time in FINISH_TIMES[:-1] or state.finish_time in LONG_SESSION_TIMES:
+                state.set_availability()
+            else:
+                draft.availability = ""
         elif self.stage == "finish":
             state.finish_time = choice
             state.set_availability()
@@ -744,6 +754,7 @@ class ReviewView(discord.ui.View):
                 role=excluded.role,
                 availability=excluded.availability,
                 activity=excluded.activity,
+                notes=excluded.notes,
                 avatar_url=excluded.avatar_url,
                 race=excluded.race,
                 starting_zone=excluded.starting_zone,
@@ -977,6 +988,7 @@ class RemoveButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction):
+        await interaction.response.defer(ephemeral=True)
         with connect() as db:
             result = db.execute(
                 "DELETE FROM lfg_listings WHERE channel_id=? AND user_id=?",
@@ -1000,7 +1012,7 @@ class RemoveButton(discord.ui.Button):
         else:
             text = "You don't have a plan on board."
 
-        await interaction.response.send_message(text, ephemeral=True)
+        await interaction.followup.send(text, ephemeral=True)
 
 
 def not_lfm_embed(roster, page_number=0):
@@ -1034,75 +1046,82 @@ def not_lfm_embed(roster, page_number=0):
 
 
 class BoardLayout(discord.ui.LayoutView):
-    """One V2 page, with a separator between every entry (never day groups)."""
+    """Persistent header and buttons; player messages follow individually."""
 
-    def __init__(self, cog, channel_id, guild=None, *, preview=False,
-                 page_index=0, page_rows=None):
+    def __init__(self, cog, channel_id, guild=None, *, preview=False):
         super().__init__(timeout=None)
-        if page_rows is None:
-            roster = demo_entries() if preview else entries(channel_id)
-            open_rows, _ = split_audience(roster, show_lfm_emoji)
-            page_rows = chunks(open_rows, OPEN_PAGE_SIZE)[0] if open_rows else []
-        visible = page_rows
+        heading = discord.ui.Section(
+            discord.ui.TextDisplay(
+                "## <Hyped> LFG-LFM Board\n"
+                "**Ogre want know launch plans.**"
+                + ("\n-# DEMO PREVIEW · 20 fictional players · nothing saved"
+                   if preview else "")
+            ),
+            accessory=discord.ui.Thumbnail(
+                HEADER_IMAGE, description="Hyped LFG-LFM",
+            ),
+        )
+        self.add_item(discord.ui.Container(heading, accent_color=ACCENT))
 
-        if page_index == 0:
-            header = discord.ui.Section(
-                discord.ui.TextDisplay(
-                    "## <Hyped> LFG-LFM Board\n"
-                    "**Ogre want know launch plans.**"
-                    + ("\n-# DEMO PREVIEW · 20 fictional players · nothing saved"
-                       if preview else "")
-                ),
-                accessory=discord.ui.Thumbnail(
-                    HEADER_IMAGE,
-                    description="Hyped LFG-LFM",
-                ),
-            )
-            self.add_item(discord.ui.Container(header, accent_color=ACCENT))
+        if preview:
+            # Match the real controls visually, but previews cannot edit live data.
+            self.add_item(discord.ui.ActionRow(
+                *[discord.ui.Button(
+                    label=label, style=discord.ButtonStyle.secondary,
+                    disabled=True,
+                ) for label in ("Add / Update", "Edit Race", "Edit Class", "Remove")]
+            ))
+        else:
+            self.add_item(discord.ui.ActionRow(
+                AddUpdateButton(cog, channel_id),
+                CharacterEditButton(cog, channel_id, "race"),
+                CharacterEditButton(cog, channel_id, "class"),
+                RemoveButton(cog, channel_id),
+            ))
+
+
+class EntryLayout(discord.ui.LayoutView):
+    """One member per Discord message, divided by a subtle rule."""
+
+    def __init__(self, row, guild=None):
+        super().__init__(timeout=None)
+        race = row["race"] or "Race not set"
+        zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
+        roles = format_roles(row["role"], icons=True) or "Role not set"
+        days = row["days_off"] or "Not set"
+        character = safe(row["character"]) if row["character"] else "Name TBD"
+        notes = safe(row["notes"]) if row["notes"] else ""
+        open_marker = f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""
+
+        lines = [
+            f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
+            f"-# **Playing:** {safe(display_uk_times(compact_availability(row['availability'])))} · {safe(compact_days(days))}",
+            f"-# **Plan:** {open_marker}{safe(row['activity'])}",
+        ]
+        if notes:
+            lines.append(f"-# **Notes:** {notes}")
+        lines.append(f"-# **Starting Zone:** {zone}")
 
         container = discord.ui.Container(accent_color=ACCENT)
-        if visible:
-            for index, row in enumerate(visible):
-                if index:
-                    container.add_item(discord.ui.Separator())
-                race = row["race"] or "Race not set"
-                zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
-                roles = format_roles(row["role"], icons=True) or "Role not set"
-                days = row["days_off"] or "Not set"
-                character = safe(row["character"]) if row["character"] else "Name TBD"
-                notes = safe(row["notes"]) if row["notes"] else ""
-                open_marker = f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""
-                lines = [
-                    f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
-                    f"-# **Playing:** {safe(display_uk_times(compact_availability(row['availability'])))} · {safe(compact_days(days))}",
-                    f"-# **Plan:** {open_marker}{safe(row['activity'])}",
-                ]
-                if notes:
-                    lines.append(f"-# **Notes:** {notes}")
-                lines.append(f"-# **Starting Zone:** {zone}")
-                thumbnail = discord.ui.Thumbnail(
-                    player_avatar_url(row, guild) or HEADER_IMAGE,
-                    description=f"{character} Discord avatar",
-                )
-                container.add_item(
-                    discord.ui.Section(
-                        discord.ui.TextDisplay("\n".join(lines)),
-                        accessory=thumbnail,
-                    )
-                )
-        else:
-            container.add_item(discord.ui.TextDisplay("*Nobody looking for more yet.*"))
+        container.add_item(discord.ui.Section(
+            discord.ui.TextDisplay("\n".join(lines)),
+            accessory=discord.ui.Thumbnail(
+                player_avatar_url(row, guild) or HEADER_IMAGE,
+                description=f"{character} Discord avatar",
+            ),
+        ))
+        container.add_item(discord.ui.Separator())
         self.add_item(container)
 
-        if page_index == 0 and not preview:
-            self.add_item(
-                discord.ui.ActionRow(
-                    AddUpdateButton(cog, channel_id),
-                    CharacterEditButton(cog, channel_id, "race"),
-                    CharacterEditButton(cog, channel_id, "class"),
-                    RemoveButton(cog, channel_id),
-                )
-            )
+
+class FooterLayout(discord.ui.LayoutView):
+    """Final image in its own V2 message, after ALL players and other plans."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=BOTTOM_IMAGE, description="Hyped")
+        self.add_item(gallery)
 
 
 class LFGPreview(commands.Cog):
