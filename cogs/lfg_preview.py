@@ -146,6 +146,7 @@ class LFGPreview(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="lfg-preview", description="See a fictional Hyped LFG board")
+    @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
     async def lfg_preview(self, interaction: discord.Interaction):
