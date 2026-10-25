@@ -11,6 +11,14 @@ class SuggestionsSafetyTests(unittest.TestCase):
         self.assertIn('"1554621739017707591"', SOURCE)
         self.assertIn("SUGGESTIONS_DEST_CHANNEL_ID", SOURCE)
 
+    def test_v2_panel_uses_requested_title_copy_and_right_image(self):
+        self.assertIn('SUGGESTIONS_ICON_URL = "https://i.vgy.me/mN6c1j.png"', SOURCE)
+        self.assertIn('"## Suggestions:\\n"', SOURCE)
+        self.assertIn("Give Ogre ideas or feedback to pass on.", SOURCE)
+        self.assertIn("discord.ui.Section(", SOURCE)
+        self.assertIn("discord.ui.Thumbnail(", SOURCE)
+        self.assertIn("SUGGESTIONS_ICON_URL,", SOURCE)
+
     def test_named_and_anonymous_buttons_are_persistent(self):
         self.assertIn('custom_id="hyped_suggestions_named_v1"', SOURCE)
         self.assertIn('custom_id="hyped_suggestions_anonymous_v1"', SOURCE)
