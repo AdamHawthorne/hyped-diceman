@@ -195,7 +195,8 @@ def format_roles(value, *, icons=False):
     roles = [part.strip() for part in value.split(",") if part.strip()]
     if icons:
         return " / ".join(
-            f"{ROLE_EMOJIS.get(role, '')} {role}".strip() for role in roles
+            f"{role} {ROLE_EMOJIS[role]}" if role in ROLE_EMOJIS else role
+            for role in roles
         )
     return " / ".join(roles)
 
