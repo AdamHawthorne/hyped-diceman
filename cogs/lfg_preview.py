@@ -702,6 +702,167 @@ class AddUpdateButton(discord.ui.Button):
         await interaction.response.send_modal(PlannedNameModal(state))
 
 
+
+def save_character_edit(channel_id, user_id, original, race, class_name, role):
+    """Update only character choices, rejecting a stale or deleted listing."""
+    if class_name not in RACE_CLASSES.get(race, ()):
+        raise ValueError("Class is not available for this race")
+    roles = [part.strip() for part in role.split(",") if part.strip()]
+    if not roles or any(part not in CLASS_ROLES[class_name] for part in roles):
+        raise ValueError("Choose valid roles for this class")
+    with connect() as db:
+        result = db.execute(
+            """UPDATE lfg_listings SET race=?, starting_zone=?, class_name=?, role=?
+            WHERE channel_id=? AND user_id=? AND race=? AND starting_zone=?
+              AND class_name=? AND role=?""",
+            (race, STARTING_ZONES[race], class_name, role, channel_id, user_id,
+             original["race"], original["starting_zone"],
+             original["class_name"], original["role"]),
+        )
+        return result.rowcount == 1
+
+
+class CharacterEditSelect(discord.ui.Select):
+    def __init__(self, editor, stage):
+        self.editor = editor
+        self.stage = stage
+        if stage == "race":
+            values = RACES
+            selected = (editor.race,)
+        elif stage == "class":
+            values = RACE_CLASSES[editor.race]
+            selected = (editor.class_name,)
+        else:
+            values = CLASS_ROLES[editor.class_name]
+            selected = tuple(part.strip() for part in editor.role.split(","))
+        super().__init__(
+            placeholder={"race": "Choose race", "class": "Choose class",
+                         "roles": "Choose role(s)"}[stage],
+            min_values=1,
+            max_values=len(values) if stage == "roles" else 1,
+            options=[discord.SelectOption(label=value, value=value,
+                                          default=value in selected)
+                     for value in values],
+        )
+
+    async def callback(self, interaction):
+        editor = self.editor
+        if self.stage == "race":
+            editor.race = self.values[0]
+            if editor.class_name not in RACE_CLASSES[editor.race]:
+                editor.class_name = ""
+                editor.role = ""
+                editor.show_stage("class")
+            else:
+                editor.show_stage("review")
+        elif self.stage == "class":
+            editor.class_name = self.values[0]
+            allowed = CLASS_ROLES[editor.class_name]
+            if len(allowed) == 1:
+                editor.role = allowed[0]
+                editor.show_stage("review")
+            else:
+                editor.show_stage("roles")
+        else:
+            editor.role = ", ".join(self.values)
+            editor.show_stage("review")
+        await interaction.response.edit_message(content=editor.summary(), view=editor)
+
+
+class CharacterEditView(discord.ui.View):
+    def __init__(self, cog, channel_id, user_id, row, stage):
+        super().__init__(timeout=900)
+        self.cog = cog
+        self.channel_id = channel_id
+        self.user_id = user_id
+        self.original = dict(row)
+        self.race = row["race"]
+        self.class_name = row["class_name"]
+        self.role = row["role"]
+        self.show_stage(stage if self.race in RACE_CLASSES else "race")
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id == self.user_id:
+            return True
+        await interaction.response.send_message(
+            "This edit belongs to someone else.", ephemeral=True)
+        return False
+
+    def summary(self):
+        prompt = {
+            "race": "Choose your new race.",
+            "class": "Choose a class available for your race.",
+            "roles": "Choose your roles for this class.",
+            "review": "Save these character choices?",
+        }[self.stage]
+        return (
+            f"**{prompt}**\n"
+            f"**Race:** {self.race or 'Not set'}\n"
+            f"**Class:** {self.class_name or 'Not set'}\n"
+            f"**Roles:** {format_roles(self.role) or 'Not set'}\n"
+            f"**Starting Zone:** {STARTING_ZONES.get(self.race, 'Not set')}\n\n"
+            "Your name, playing times, days, plan and notes stay as they are."
+        )
+
+    def show_stage(self, stage):
+        self.stage = stage
+        self.clear_items()
+        if stage != "review":
+            self.add_item(CharacterEditSelect(self, stage))
+        else:
+            save = discord.ui.Button(label="Save", style=discord.ButtonStyle.success)
+            save.callback = self.save
+            self.add_item(save)
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+        cancel.callback = self.cancel
+        self.add_item(cancel)
+
+    async def save(self, interaction):
+        await interaction.response.defer()
+        saved = save_character_edit(
+            self.channel_id, self.user_id, self.original,
+            self.race, self.class_name, self.role,
+        )
+        if not saved:
+            text = "Your character choices changed or your entry was removed. Open Edit again."
+        else:
+            try:
+                await self.cog.refresh(self.channel_id)
+                text = "Saved. Ogre updated your character choices."
+            except Exception as exc:
+                print(f"LFG CHARACTER REFRESH FAILED channel={self.channel_id} error={exc!r}")
+                text = "Changes saved, but board refresh failed. Tell an officer."
+        await interaction.edit_original_response(content=text, view=None)
+        self.stop()
+
+    async def cancel(self, interaction):
+        await interaction.response.edit_message(content="Cancelled. Nothing changed.", view=None)
+        self.stop()
+
+
+class CharacterEditButton(discord.ui.Button):
+    def __init__(self, cog, channel_id, field):
+        super().__init__(
+            label=f"Edit {field.title()}",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"hyped_lfg_edit_{field}_v1",
+        )
+        self.cog = cog
+        self.channel_id = channel_id
+        self.field = field
+
+    async def callback(self, interaction):
+        row = current_listing(self.channel_id, interaction.user.id)
+        if row is None:
+            await interaction.response.send_message(
+                "Add your plan first using Add / Update.", ephemeral=True)
+            return
+        view = CharacterEditView(
+            self.cog, self.channel_id, interaction.user.id, row, self.field)
+        await interaction.response.send_message(
+            content=view.summary(), view=view, ephemeral=True)
+
+
 class RemoveButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
         super().__init__(
@@ -743,7 +904,8 @@ class BoardLayout(discord.ui.LayoutView):
     def __init__(self, cog, channel_id, guild=None):
         super().__init__(timeout=None)
         roster = entries(channel_id)
-        visible = roster[:8]
+        # Leave room for four controls and the overflow notice (40-component limit).
+        visible = roster[:7]
 
         header = discord.ui.Section(
             discord.ui.TextDisplay(
@@ -805,6 +967,8 @@ class BoardLayout(discord.ui.LayoutView):
         self.add_item(
             discord.ui.ActionRow(
                 AddUpdateButton(cog, channel_id),
+                CharacterEditButton(cog, channel_id, "race"),
+                CharacterEditButton(cog, channel_id, "class"),
                 RemoveButton(cog, channel_id),
             )
         )
