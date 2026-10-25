@@ -44,12 +44,12 @@ CLASS_ROLES = {
     "Warlock": ("DPS",),
 }
 INTENTIONS = (
+    "Open / Flexible",
     "Solo Questing",
     "Solo Questing + Dungeons (LFG/ Pugging)",
-    "Group Questing",
-    "Group Questing + Dungeons",
+    "Group Questing (LFM)",
+    "Group Questing + Dungeons (LFM)",
     "Grinding (Dungeons, grind spots etc)",
-    "Flexible",
 )
 
 START_TIMES = (
