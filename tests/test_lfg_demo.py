@@ -10,7 +10,7 @@ from cogs.lfg_sort import listing_board_key, is_solo_or_sorted
 
 
 class LFGLaunchPreviewTests(unittest.TestCase):
-    def test_ten_distinct_synthetic_entries_sorted_earliest_first(self):
+    def test_twenty_distinct_synthetic_entries_sorted_earliest_first(self):
         entries = demo_entries()
         self.assertEqual(len(entries), 20)
         self.assertEqual(len({row["character"] for row in entries}), 20)
@@ -47,16 +47,14 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
-    def test_preview_component_budget(self):
-        # Each V2 message uses five entries and four separator lines.
-        # header container (4) + listing container (1) + five rows (15)
-        # + four separators (4) + action row / buttons (5).
-        self.assertLessEqual(4 + 1 + 15 + 4 + 5, 40)
-        self.assertLessEqual(5 + 4, 10)
+    def test_preview_individual_messages_and_final_footer(self):
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
-        self.assertIn("OPEN_PAGE_SIZE", source)
-        self.assertIn("if index:", source)
-        self.assertIn("await interaction.followup.send(", source)
+        self.assertIn("class EntryLayout", source)
+        self.assertIn("class FooterLayout", source)
+        self.assertIn("for row in open_rows:", source)
+        self.assertIn("view=EntryLayout(row, interaction.guild)", source)
+        self.assertIn("await interaction.followup.send(view=FooterLayout()", source)
+        self.assertIn("preview=True", source)
 
 
 if __name__ == "__main__":
