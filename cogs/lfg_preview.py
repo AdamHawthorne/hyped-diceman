@@ -50,6 +50,7 @@ INTENTIONS = (
     "Group Questing (LFM)",
     "Group Questing + Dungeons (LFM)",
     "Grinding (Dungeons, grind spots etc)",
+    "Full Group / Sorted",
 )
 
 START_TIMES = (
