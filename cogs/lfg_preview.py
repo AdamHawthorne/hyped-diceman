@@ -94,7 +94,7 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
-BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
+BOTTOM_IMAGE = "https://i.vgy.me/pJaxaB.png"
 # Native Unicode emoji stays sharp and requires no guild emoji permissions.
 OPEN_LFM_MARKER = "🟢"
 ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
