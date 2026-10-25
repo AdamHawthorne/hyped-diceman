@@ -12,8 +12,11 @@ NODES = [
     node for node in TREE.body
     if isinstance(node, ast.FunctionDef) and node.name in HELPERS
 ]
+from cogs.lfg_sort import is_open_lfm
+
 CONTEXT = {
     "ROLE_EMOJIS": {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"},
+    "is_open_lfm": is_open_lfm,
 }
 exec(compile(ast.Module(body=NODES, type_ignores=[]), str(SOURCE), "exec"), CONTEXT)
 
