@@ -15,7 +15,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from .countdown_core import (
-    UK, parse_uk_datetime, remaining_hours_string, render_key,
+    UK, parse_uk_datetime, upcoming_string, render_key,
     next_cycle, pre_reminder_due, due_reminder_due, validate_image_url,
 )
 
@@ -234,7 +234,7 @@ class CountdownLayout(discord.ui.LayoutView):
         elif now >= target and not repeat:
             remaining = "Ready!"
         else:
-            remaining = remaining_hours_string(target, now)
+            remaining = upcoming_string(target, now)
 
         title = discord.utils.escape_markdown(config["title"])
         subtitle = f"<t:{target}:F>"
@@ -253,13 +253,10 @@ class CountdownLayout(discord.ui.LayoutView):
             ),
         )
         panel = discord.ui.Container(header, accent_color=ACCENT)
-        details = []
         if repeat:
-            details.append(f"Repeats every {repeat // 3600}h")
-        if config["remind_minutes"]:
-            details.append(f"Owner reminder {config['remind_minutes']}m before")
-        if details:
-            panel.add_item(discord.ui.TextDisplay("-# " + " · ".join(details)))
+            panel.add_item(discord.ui.TextDisplay(
+                f"-# Repeats every {repeat // 3600}h"
+            ))
         self.add_item(panel)
 
         if include_remind:
