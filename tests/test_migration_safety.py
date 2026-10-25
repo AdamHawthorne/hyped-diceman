@@ -48,6 +48,16 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn('bot.load_extension("cogs.lfg_preview")', self.source)
         self.assertIn("FlameboardEvents(bot, HYPED_GUILD_ID, sync_flameboard_message)", self.source)
 
+    def test_lfg_is_isolated_from_legacy_data(self):
+        source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
+        self.assertIn("lfg_board.db", source)
+        self.assertIn("class BoardView", source)
+        self.assertIn("class EditorView", source)
+        self.assertIn("ORDER BY level DESC", source)
+        self.assertIn('name="lfg-preview"', source)
+        self.assertNotIn("DROP TABLE", source)
+        self.assertNotIn("DELETE FROM rolls", source)
+
     def test_no_alter_existing_dice_tables(self):
         self.assertNotIn("DROP TABLE", self.source.upper())
         self.assertNotIn("DELETE FROM ROLLS", self.source.upper())
