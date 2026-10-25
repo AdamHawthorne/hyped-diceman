@@ -6,7 +6,7 @@ values remain 24-hour UK time for accurate chronological sorting.
 
 import re
 
-from .lfg_sort import listing_start_key
+from .lfg_sort import listing_board_key
 
 
 _TIME = re.compile(r"(?<!\d)([01]\d|2[0-3]):00 UK")
@@ -87,4 +87,4 @@ def demo_entries():
             "starting_zone": zone,
             "avatar_url": f"https://cdn.discordapp.com/embed/avatars/{index % 6}.png",
         })
-    return sorted(result, key=listing_start_key)
+    return sorted(result, key=listing_board_key)
