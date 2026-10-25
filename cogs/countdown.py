@@ -86,6 +86,12 @@ def init_db():
             last_notified_target INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(channel_id, user_id)
         )""")
+        # PR #30 briefly stored the fixed stopwatch in image_url. That field
+        # now means optional bottom artwork only, so remove only that legacy value.
+        db.execute(
+            "UPDATE countdowns SET image_url='' WHERE image_url=?",
+            (COUNTDOWN_ICON_URL,),
+        )
 
 
 def get_timer(channel_id):
