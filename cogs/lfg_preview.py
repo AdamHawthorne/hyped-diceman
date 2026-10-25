@@ -1136,7 +1136,6 @@ class BoardLayout(discord.ui.LayoutView):
             lines.append(f"-# **Plan:** {open_marker}{safe(row['activity'])}")
             if notes:
                 lines.append(f"-# **Notes:** {notes}")
-            lines.append(f"-# **Starting Zone:** {zone}")
             lines.append(contact_line(row, preview=preview))
 
             # Separate V2 containers are still part of this ONE message.

@@ -137,7 +137,7 @@ class CountdownSafetyTests(unittest.TestCase):
 
     def test_public_card_is_reminder_then_event_date_space_countdown(self):
         self.assertIn('COUNTDOWN_ICON_URL = "https://i.vgy.me/MC2gD0.png"', SOURCE)
-        self.assertIn('"## Reminder\\n"', SOURCE)
+        self.assertIn('"## Reminder:\\n"', SOURCE)
         self.assertIn('f"**{event}**\\n"', SOURCE)
         self.assertIn('f"-# {date_line}\\n"', SOURCE)
         self.assertIn('"\\n"\n                f"**{remaining}**"', SOURCE)

@@ -220,7 +220,7 @@ class CountdownLayout(discord.ui.LayoutView):
 
         header = discord.ui.Section(
             discord.ui.TextDisplay(
-                "## Reminder\n"
+                "## Reminder:\n"
                 f"**{event}**\n"
                 f"-# {date_line}\n"
                 "\n"

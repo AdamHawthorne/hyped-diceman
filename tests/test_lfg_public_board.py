@@ -209,7 +209,8 @@ class PublicBoardRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scope["contact_line"](row, preview=True),
                          "-# **Contact:** @Demo player")
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn('lines.append(f"-# **Starting Zone:** {zone}")\\n            lines.append(contact_line(row, preview=preview))'.replace("\\n", "\n"), source)
+        self.assertNotIn('lines.append(f"-# **Starting Zone:** {zone}")', source)
+        self.assertIn("lines.append(contact_line(row, preview=preview))", source)
         self.assertIn("allowed_mentions=discord.AllowedMentions.none()", source)
 
     def test_preview_remains_ephemeral_and_public_board_is_channel_send(self):
