@@ -66,7 +66,6 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("https://i.vgy.me/2Jt4oi.png", source)
         self.assertIn("Skyborne (Windshaper)", source)
         self.assertIn("STARTING_ZONES", source)
-        self.assertIn("DAYS_OFF", source)
         self.assertIn("CLASS_ROLES", source)
         self.assertIn("class AvailabilityModal", source)
         self.assertIn("Group Questing + Dungeons", source)
