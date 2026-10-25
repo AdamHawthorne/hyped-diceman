@@ -97,6 +97,19 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn("DROP TABLE", source)
         self.assertNotIn("DELETE FROM rolls", source)
 
+    def test_lfg_select_menus_stay_within_discord_limit(self):
+        source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        values = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                if node.targets[0].id in {"START_TIMES", "FINISH_TIMES", "LONG_SESSION_TIMES", "LAUNCH_DAYS"}:
+                    values[node.targets[0].id] = ast.literal_eval(node.value)
+
+        for name, options in values.items():
+            with self.subTest(name=name):
+                self.assertLessEqual(len(options), 25)
+
     def test_no_alter_existing_dice_tables(self):
         self.assertNotIn("DROP TABLE", self.source.upper())
         self.assertNotIn("DELETE FROM ROLLS", self.source.upper())
