@@ -2259,6 +2259,19 @@ if ADMIN_MODE:
             ephemeral=True
         )
 
+# ---------------- HYPED OGRE EXTENSIONS ----------------
+# Load isolated guild features without modifying the existing dice commands.
+# Individual failures are reported, not allowed to stop the dice bot.
+async def load_hyped_extensions():
+    for extension in ("cogs.lfg_preview",):
+        try:
+            await bot.load_extension(extension)
+            print(f"Loaded extension: {extension}")
+        except Exception:
+            logging.exception("Failed to load Hyped extension %s", extension)
+
+bot.setup_hook = load_hyped_extensions
+
 # ---------------- RUN ----------------
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN is missing")
