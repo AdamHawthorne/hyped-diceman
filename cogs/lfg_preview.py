@@ -92,8 +92,8 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
-# Warcraft Discord's custom emoji; requires external-emoji access to render.
-OPEN_LFM_EMOJI = "<:LFM:777046177551613962>"
+# The LFG emoji is installed in Hyped. Resolve its guild-specific ID at render time.
+LFG_EMOJI_NAME = "LFG"
 ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
 ACCENT = 0x8C5A3C
 
@@ -201,7 +201,7 @@ def format_roles(value, *, icons=False):
 
 
 def show_lfm_emoji(activity):
-    """Only explicitly open/LFM plans display the image, never solo/sorted."""
+    """Only explicitly open/LFM plans display the emoji, never solo/sorted."""
     plans = {part.strip() for part in activity.split(",")}
     if "Full Group / Sorted" in plans or any("Solo Questing" in part for part in plans):
         return False
@@ -211,6 +211,14 @@ def show_lfm_emoji(activity):
         "Group Questing (LFM)",
         "Group Questing + Dungeons (LFM)",
     })
+
+
+def guild_lfg_emoji(guild):
+    """Use Hyped's own :LFG: emoji ID rather than the old Warcraft server ID."""
+    if guild is None:
+        return ""
+    emoji = discord.utils.get(getattr(guild, "emojis", ()), name=LFG_EMOJI_NAME)
+    return str(emoji) if emoji else ""
 
 
 def visible_board_entries(roster):
@@ -1011,6 +1019,7 @@ class BoardLayout(discord.ui.LayoutView):
             ),
         )
         container = discord.ui.Container(header, accent_color=ACCENT)
+        lfg_emoji = guild_lfg_emoji(guild)
 
         if visible:
             container.add_item(discord.ui.Separator())
@@ -1028,7 +1037,7 @@ class BoardLayout(discord.ui.LayoutView):
                 ]
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
-                open_marker = f" {OPEN_LFM_EMOJI}" if show_lfm_emoji(row["activity"]) else ""
+                open_marker = f" {lfg_emoji}" if lfg_emoji and show_lfm_emoji(row["activity"]) else ""
                 lines.append(f"-# **Starting Zone:** {zone}{open_marker}")
                 text = "\n".join(lines)
                 avatar = player_avatar_url(row, guild)
