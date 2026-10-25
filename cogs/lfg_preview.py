@@ -68,8 +68,10 @@ FINISH_TIMES = (
     "10:00 UK", "11:00 UK", "12:00 UK", "13:00 UK", "14:00 UK",
     "15:00 UK", "16:00 UK", "17:00 UK", "18:00 UK", "19:00 UK",
     "20:00 UK", "21:00 UK", "22:00 UK", "23:00 UK",
-    "24 hours", "30 hours", "40 hours", "50 hours +",
+    "Long session...",
 )
+
+LONG_SESSION_TIMES = ("24 hours", "30 hours", "40 hours", "50 hours +")
 
 LAUNCH_DAYS = (
     "Launch Night · Wed 4 Nov",
@@ -444,11 +446,19 @@ class FinishTimeSelect(discord.ui.Select):
     async def callback(self, interaction):
         state = self.view.state
         finish_time = self.values[0]
+        if finish_time == "Long session...":
+            await interaction.response.edit_message(
+                embed=wizard_embed(
+                    "Hyped Ogre LFG · Long Session",
+                    "How long you planning to go?",
+                    state,
+                ),
+                view=LongSessionView(state),
+            )
+            return
+
         start_time = getattr(state, "start_time", "Later")
-        if "hours" in finish_time:
-            state.draft.availability = f"{start_time} + {finish_time}"
-        else:
-            state.draft.availability = f"{start_time} - {finish_time}"
+        state.draft.availability = f"{start_time} - {finish_time}"
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Playing On",
@@ -464,6 +474,37 @@ class FinishTimeView(discord.ui.View):
         super().__init__(timeout=900)
         self.state = state
         self.add_item(FinishTimeSelect())
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+class LongSessionSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Choose session length",
+            options=[discord.SelectOption(label=value, value=value) for value in LONG_SESSION_TIMES],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        start_time = getattr(state, "start_time", "Later")
+        state.draft.availability = f"{start_time} + {self.values[0]}"
+        await interaction.response.edit_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Playing On",
+                "Which days you planning to play? Choose any that apply.",
+                state,
+            ),
+            view=LaunchDaysView(state),
+        )
+
+
+class LongSessionView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(LongSessionSelect())
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
