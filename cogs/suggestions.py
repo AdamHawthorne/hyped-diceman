@@ -194,6 +194,23 @@ class SuggestionsCog(
         return True
 
     @app_commands.command(
+        name="preview",
+        description="Owner-only preview of the Suggestions & Feedback panel",
+    )
+    async def preview_panel(self, interaction: discord.Interaction):
+        if not isinstance(interaction.channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "Use this in a text channel.", ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            "Preview only — submissions still go to the private leadership channel.",
+            view=SuggestionsPanel(self),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
         name="setup",
         description="Post the Suggestions & Feedback panel in this channel",
     )
