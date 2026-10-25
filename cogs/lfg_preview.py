@@ -12,8 +12,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .lfg_sort import listing_board_key, is_solo_or_sorted
-from .lfg_pagination import chunks, split_audience, page_specs, CLOSED_EMBED_SIZE
+from .lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
+from .lfg_pagination import PAGE_SIZE, page_count, clamp_page, page_rows
 from .lfg_demo import demo_entries, display_race, display_uk_times
 
 PATH = os.getenv(
@@ -114,8 +114,13 @@ def init_db():
             channel_id INTEGER PRIMARY KEY,
             guild_id INTEGER NOT NULL,
             message_id INTEGER NOT NULL,
-            board_day TEXT NOT NULL DEFAULT 'launch'
+            board_day TEXT NOT NULL DEFAULT 'launch',
+            page_index INTEGER NOT NULL DEFAULT 0
         )""")
+        # Safe additive migration: no board IDs or player details are reset.
+        board_columns = {row[1] for row in db.execute("PRAGMA table_info(lfg_boards)")}
+        if "page_index" not in board_columns:
+            db.execute("ALTER TABLE lfg_boards ADD COLUMN page_index INTEGER NOT NULL DEFAULT 0")
         db.execute("""CREATE TABLE IF NOT EXISTS lfg_board_parts (
             channel_id INTEGER NOT NULL,
             position INTEGER NOT NULL,
@@ -212,21 +217,8 @@ def format_roles(value, *, icons=False):
 
 
 def show_lfm_emoji(activity):
-    """Only explicitly open/LFM plans display the emoji, never solo/sorted."""
-    plans = {part.strip() for part in activity.split(",")}
-    if "Full Group / Sorted" in plans or any("Solo Questing" in part for part in plans):
-        return False
-    return bool(plans & {
-        "Open / Flexible",
-        "Flexible",  # Old saved listings before the option was renamed.
-        "Group Questing (LFM)",
-        "Group Questing + Dungeons (LFM)",
-    })
-
-
-def visible_board_entries(roster):
-    """Seven compact listings fit the board's 40-component budget."""
-    return roster[:7]
+    """The marker and board sorting use the same Open/LFM rule."""
+    return is_open_lfm(activity)
 
 
 def compact_availability(value):
@@ -1015,41 +1007,64 @@ class RemoveButton(discord.ui.Button):
         await interaction.followup.send(text, ephemeral=True)
 
 
-def not_lfm_embed(roster, page_number=0):
-    """Traditional embed in its own message; never mixed with V2 components."""
-    embed = discord.Embed(
-        title="Other Plans · Not LFM / Open" if page_number == 0
-              else "Other Plans · Continued",
-        description="Solo, sorted and other plans not looking for group members.",
-        color=ACCENT,
-    )
-    for row in roster:
-        race = display_race(row["race"] or "Race not set")
-        zone = row["starting_zone"] or STARTING_ZONES.get(row["race"], "Not set")
-        name = safe(row["character"]) if row["character"] else "Name TBD"
-        roles = format_roles(row["role"], icons=True) or "Role not set"
-        lines = [f"**Plan:** {safe(row['activity'])}"]
-        # Solo and full groups keep Playing private but saved in SQLite.
-        if not is_solo_or_sorted(row["activity"]):
-            days = safe(compact_days(row["days_off"] or "Not set"))
-            times = safe(display_uk_times(compact_availability(row["availability"])))
-            lines.append(f"**Playing:** {times} · {days}")
-        lines.append(f"**Starting Zone:** {zone}")
-        if row["notes"]:
-            lines.append(f"**Notes:** {safe(row['notes'])}")
-        embed.add_field(
-            name=f"{name} · {race} {row['class_name']} · {roles}",
-            value="\n".join(lines),
-            inline=False,
+class BoardPageButton(discord.ui.Button):
+    """Navigate among V2 containers by editing the *existing* board message."""
+
+    def __init__(self, delta, page_index, total_pages):
+        label = "‹ Previous" if delta == -1 else "Next ›"
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.secondary,
+            custom_id=("hyped_lfg_page_prev_v1" if delta == -1
+                       else "hyped_lfg_page_next_v1"),
+            disabled=(page_index == 0 if delta == -1
+                      else page_index >= total_pages - 1),
         )
-    return embed
+        self.delta = delta
+
+    async def callback(self, interaction):
+        layout = self.view
+        if layout.preview:
+            roster = demo_entries()
+            page = clamp_page(layout.page_index + self.delta, len(roster))
+            await interaction.response.edit_message(
+                view=BoardLayout(layout.cog, layout.channel_id,
+                                 interaction.guild, preview=True, page_index=page),
+            )
+            return
+
+        # Page changes do not insert/delete messages or touch member records.
+        async with layout.cog.lock:
+            roster = entries(layout.channel_id)
+            page = clamp_page(layout.page_index + self.delta, len(roster))
+            await interaction.response.edit_message(
+                view=BoardLayout(layout.cog, layout.channel_id,
+                                 interaction.guild, page_index=page,
+                                 roster=roster),
+            )
+            with connect() as db:
+                db.execute(
+                    "UPDATE lfg_boards SET page_index=? WHERE channel_id=?",
+                    (page, layout.channel_id),
+                )
 
 
 class BoardLayout(discord.ui.LayoutView):
-    """Persistent header and buttons; player messages follow individually."""
+    """One Discord message with a V2 container for each visible member."""
 
-    def __init__(self, cog, channel_id, guild=None, *, preview=False):
-        super().__init__(timeout=None)
+    def __init__(self, cog, channel_id, guild=None, *, preview=False,
+                 page_index=0, roster=None):
+        super().__init__(timeout=900 if preview else None)
+        self.cog = cog
+        self.channel_id = channel_id
+        self.preview = preview
+
+        # Preview never reads/writes real member records.
+        if roster is None:
+            roster = demo_entries() if preview else entries(channel_id)
+        self.page_index = clamp_page(page_index, len(roster))
+        total_pages = page_count(len(roster))
+
         heading = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> LFG-LFM Board\n"
@@ -1064,7 +1079,7 @@ class BoardLayout(discord.ui.LayoutView):
         self.add_item(discord.ui.Container(heading, accent_color=ACCENT))
 
         if preview:
-            # Match the real controls visually, but previews cannot edit live data.
+            # The preview is navigable but cannot edit real member data.
             self.add_item(discord.ui.ActionRow(
                 *[discord.ui.Button(
                     label=label, style=discord.ButtonStyle.secondary,
@@ -1079,49 +1094,62 @@ class BoardLayout(discord.ui.LayoutView):
                 RemoveButton(cog, channel_id),
             ))
 
+        if total_pages > 1:
+            self.add_item(discord.ui.ActionRow(
+                BoardPageButton(-1, self.page_index, total_pages),
+                BoardPageButton(+1, self.page_index, total_pages),
+            ))
+            self.add_item(discord.ui.TextDisplay(
+                f"-# Page {self.page_index + 1} of {total_pages} · "
+                f"{len(roster)} member plan(s)"
+            ))
 
-class EntryLayout(discord.ui.LayoutView):
-    """One member per Discord message, divided by a subtle rule."""
+        visible = page_rows(roster, self.page_index)
+        for row in visible:
+            race = row["race"] or "Race not set"
+            zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
+            roles = format_roles(row["role"], icons=True) or "Role not set"
+            days = row["days_off"] or "Not set"
+            character = safe(row["character"]) if row["character"] else "Name TBD"
+            notes = safe(row["notes"]) if row["notes"] else ""
+            open_marker = (
+                f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""
+            )
 
-    def __init__(self, row, guild=None):
-        super().__init__(timeout=None)
-        race = row["race"] or "Race not set"
-        zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
-        roles = format_roles(row["role"], icons=True) or "Role not set"
-        days = row["days_off"] or "Not set"
-        character = safe(row["character"]) if row["character"] else "Name TBD"
-        notes = safe(row["notes"]) if row["notes"] else ""
-        open_marker = f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""
+            lines = [
+                f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
+            ]
+            if not is_solo_or_sorted(row["activity"]):
+                lines.append(
+                    f"-# **Playing:** "
+                    f"{safe(display_uk_times(compact_availability(row['availability'])))} "
+                    f"· {safe(compact_days(days))}"
+                )
+            lines.append(f"-# **Plan:** {open_marker}{safe(row['activity'])}")
+            if notes:
+                lines.append(f"-# **Notes:** {notes}")
+            lines.append(f"-# **Starting Zone:** {zone}")
 
-        lines = [
-            f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
-            f"-# **Playing:** {safe(display_uk_times(compact_availability(row['availability'])))} · {safe(compact_days(days))}",
-            f"-# **Plan:** {open_marker}{safe(row['activity'])}",
-        ]
-        if notes:
-            lines.append(f"-# **Notes:** {notes}")
-        lines.append(f"-# **Starting Zone:** {zone}")
+            # Separate V2 containers are still part of this ONE message.
+            container = discord.ui.Container(accent_color=ACCENT)
+            container.add_item(discord.ui.Section(
+                discord.ui.TextDisplay("\n".join(lines)),
+                accessory=discord.ui.Thumbnail(
+                    player_avatar_url(row, guild) or HEADER_IMAGE,
+                    description=f"{character} Discord avatar",
+                ),
+            ))
+            container.add_item(discord.ui.Separator())
+            self.add_item(container)
 
-        container = discord.ui.Container(accent_color=ACCENT)
-        container.add_item(discord.ui.Section(
-            discord.ui.TextDisplay("\n".join(lines)),
-            accessory=discord.ui.Thumbnail(
-                player_avatar_url(row, guild) or HEADER_IMAGE,
-                description=f"{character} Discord avatar",
-            ),
-        ))
-        container.add_item(discord.ui.Separator())
-        self.add_item(container)
+        if not visible:
+            self.add_item(discord.ui.TextDisplay("*Nobody on board yet.*"))
 
-
-class FooterLayout(discord.ui.LayoutView):
-    """Final image in its own V2 message, after ALL players and other plans."""
-
-    def __init__(self):
-        super().__init__(timeout=None)
-        gallery = discord.ui.MediaGallery()
-        gallery.add_item(media=BOTTOM_IMAGE, description="Hyped")
-        self.add_item(gallery)
+        # Always the very bottom of the *last* page, not a new message.
+        if self.page_index == total_pages - 1:
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(media=BOTTOM_IMAGE, description="Hyped")
+            self.add_item(gallery)
 
 
 class LFGPreview(commands.Cog):
@@ -1133,7 +1161,7 @@ class LFGPreview(commands.Cog):
         init_db()
         with connect() as db:
             boards = db.execute(
-                "SELECT channel_id, guild_id, message_id FROM lfg_boards"
+                "SELECT channel_id, guild_id, message_id, page_index FROM lfg_boards"
             ).fetchall()
         for board in boards:
             self.bot.add_view(
@@ -1141,12 +1169,13 @@ class LFGPreview(commands.Cog):
                     self,
                     board["channel_id"],
                     self.bot.get_guild(board["guild_id"]),
+                    page_index=board["page_index"],
                 ),
                 message_id=board["message_id"],
             )
 
     async def refresh(self, channel_id):
-        """Synchronise all individually posted messages after the header."""
+        """Update the original message only; never create public player posts."""
         async with self.lock:
             row = get_board(channel_id)
             if not row:
@@ -1156,76 +1185,45 @@ class LFGPreview(commands.Cog):
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
             guild = getattr(channel, "guild", None)
-            open_rows, closed_rows = split_audience(entries(channel_id), show_lfm_emoji)
+            roster = entries(channel_id)
+            page = clamp_page(row["page_index"], len(roster))
 
-            # Never move the persistent header/buttons or lose its custom IDs.
             anchor = channel.get_partial_message(row["message_id"])
             await anchor.edit(
                 content=None, embeds=[], attachments=[],
-                view=BoardLayout(self, channel_id, guild),
+                view=BoardLayout(self, channel_id, guild,
+                                 page_index=page, roster=roster),
             )
 
-            desired = page_specs(open_rows, closed_rows)
-            with connect() as db:
-                old = [dict(r) for r in db.execute(
-                    "SELECT position,kind,message_id FROM lfg_board_parts "
-                    "WHERE channel_id=? ORDER BY position",
-                    (channel_id,),
-                )]
-
-            # Edit slots in place; rebuild only the tail if the message kind
-            # changes, so the public order always stays chronological.
-            boundary = 0
-            for index, ((kind, part), prior) in enumerate(zip(desired, old)):
-                if prior["position"] != index + 1 or prior["kind"] != kind:
-                    break
-                message = channel.get_partial_message(prior["message_id"])
-                try:
-                    if kind == "entry":
-                        await message.edit(
-                            content=None, embeds=[], attachments=[],
-                            view=EntryLayout(part, guild),
-                        )
-                    elif kind == "closed":
-                        closed_index = sum(1 for k, _ in desired[:index]
-                                           if k == "closed")
-                        await message.edit(embed=not_lfm_embed(part, closed_index))
-                    else:
-                        await message.edit(
-                            content=None, embeds=[], attachments=[],
-                            view=FooterLayout(),
-                        )
-                except discord.NotFound:
-                    break
-                boundary += 1
-
-            # The footer is guaranteed last, even when a member is added,
-            # removed or changes their plan and sorting position.
-            for prior in old[boundary:]:
-                try:
-                    await channel.get_partial_message(prior["message_id"]).delete()
-                except discord.NotFound:
-                    pass
             with connect() as db:
                 db.execute(
-                    "DELETE FROM lfg_board_parts WHERE channel_id=? AND position>?",
-                    (channel_id, boundary),
+                    "UPDATE lfg_boards SET page_index=? WHERE channel_id=?",
+                    (page, channel_id),
                 )
-
-            for index in range(boundary, len(desired)):
-                kind, part = desired[index]
-                if kind == "entry":
-                    message = await channel.send(view=EntryLayout(part, guild))
-                elif kind == "closed":
-                    closed_index = sum(1 for k, _ in desired[:index] if k == "closed")
-                    message = await channel.send(embed=not_lfm_embed(part, closed_index))
-                else:
-                    message = await channel.send(view=FooterLayout())
+                # Old code generated dozens of follow-up player messages.
+                # Remove only IDs tracked in its own isolated table.
+                legacy_parts = [
+                    dict(r) for r in db.execute(
+                        "SELECT position,message_id FROM lfg_board_parts "
+                        "WHERE channel_id=? ORDER BY position",
+                        (channel_id,),
+                    )
+                ]
+            for part in legacy_parts:
+                try:
+                    await channel.get_partial_message(part["message_id"]).delete()
+                except discord.NotFound:
+                    pass  # Already deleted; safe to remove its tracking row.
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    print(
+                        f"LFG OLD PART CLEANUP FAILED channel={channel_id} "
+                        f"message={part['message_id']} error={exc!r}"
+                    )
+                    continue  # Keep its ID so the next refresh can retry.
                 with connect() as db:
                     db.execute(
-                        "INSERT INTO lfg_board_parts(channel_id,position,kind,message_id) "
-                        "VALUES(?,?,?,?)",
-                        (channel_id, index + 1, kind, message.id),
+                        "DELETE FROM lfg_board_parts WHERE channel_id=? AND message_id=?",
+                        (channel_id, part["message_id"]),
                     )
 
     async def post_new_board(self, interaction, channel):
@@ -1308,32 +1306,24 @@ class LFGPreview(commands.Cog):
 
     @app_commands.command(
         name="lfg-preview",
-        description="Preview 20 dummy LFG entries; no real data is changed",
+        description="Preview 20 dummy plans in one navigable V2 board message",
     )
     @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
     async def lfg_preview(self, interaction: discord.Interaction):
         if interaction.guild_id != int(os.environ["HYPED_GUILD_ID"]):
-            await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
+            await interaction.response.send_message(
+                "Only available in Hyped.", ephemeral=True,
+            )
             return
 
-        # Private and read-only: no real member records or board IDs are used.
-        open_rows, closed_rows = split_audience(demo_entries(), show_lfm_emoji)
+        # Private preview: one editable ephemeral message; no live data.
         await interaction.response.send_message(
-            view=BoardLayout(self, interaction.channel_id, interaction.guild,
-                             preview=True),
+            view=BoardLayout(self, interaction.channel_id,
+                             interaction.guild, preview=True),
             ephemeral=True,
         )
-        for row in open_rows:
-            await interaction.followup.send(
-                view=EntryLayout(row, interaction.guild), ephemeral=True,
-            )
-        for index, group in enumerate(chunks(closed_rows, CLOSED_EMBED_SIZE)):
-            await interaction.followup.send(
-                embed=not_lfm_embed(group, index), ephemeral=True,
-            )
-        await interaction.followup.send(view=FooterLayout(), ephemeral=True)
 
 
 async def setup(bot):

@@ -1,26 +1,25 @@
-"""Message ordering for the live LFG board and the read-only preview.
+"""Pure pagination helpers for a single edited Components V2 LFG message.
 
-Every player seeking others has a separate Components V2 message. Non-LFM
-plans stay in dedicated embeds. The image footer is always the final message.
+A separate V2 container represents each player. Four entries per page leave
+room for the header, editing and navigation controls, and the final image.
+No member listing is omitted: viewers use Back/Next on the same message.
 """
 
-CLOSED_EMBED_SIZE = 10
+PAGE_SIZE = 4
 
 
-def chunks(rows, size):
-    return [list(rows[index:index + size]) for index in range(0, len(rows), size)]
+def page_count(total):
+    """One page also exists when the roster is empty."""
+    return max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
 
 
-def split_audience(rows, is_open):
-    open_rows = [row for row in rows if is_open(row["activity"])]
-    closed_rows = [row for row in rows if not is_open(row["activity"])]
-    return open_rows, closed_rows
+def clamp_page(index, total):
+    """If a player leaves and a page disappears, show the new last page."""
+    return max(0, min(int(index), page_count(total) - 1))
 
 
-def page_specs(open_rows, closed_rows):
-    """All messages after the persistent header, in display order."""
-    return (
-        [("entry", row) for row in open_rows]
-        + [("closed", group) for group in chunks(closed_rows, CLOSED_EMBED_SIZE)]
-        + [("footer", None)]
-    )
+def page_rows(roster, index):
+    """Return one contiguous slice, without regrouping or changing order."""
+    index = clamp_page(index, len(roster))
+    start = index * PAGE_SIZE
+    return roster[start:start + PAGE_SIZE]
