@@ -36,7 +36,7 @@ class CountdownClockTests(unittest.TestCase):
     def test_compact_total_hours_remaining_format(self):
         self.assertEqual(remaining_hours_string(90061, 0), "25h 02m remaining")
         self.assertEqual(remaining_hours_string(7200, 0), "2h 00m remaining")
-        self.assertEqual(remaining_hours_string(3599, 0), "60m remaining")
+        self.assertEqual(remaining_hours_string(3599, 0), "1h 00m remaining")
         self.assertEqual(remaining_hours_string(100, 100), "Ready!")
 
     def test_repeating_cooldowns_skip_missed_cycles(self):
