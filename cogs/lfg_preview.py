@@ -221,6 +221,13 @@ def show_lfm_emoji(activity):
     return is_open_lfm(activity)
 
 
+def contact_line(row, *, preview=False):
+    """Clickable member contact without exposing fake IDs in demo previews."""
+    if preview:
+        return "-# **Contact:** @Demo player"
+    return f"-# **Contact:** <@{int(row['user_id'])}>"
+
+
 def compact_availability(value):
     return " / ".join(part.strip() for part in value.replace("\r", "").split("\n") if part.strip())
 
@@ -1041,6 +1048,7 @@ class BoardPageButton(discord.ui.Button):
                 view=BoardLayout(layout.cog, layout.channel_id,
                                  interaction.guild, page_index=page,
                                  roster=roster),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             with connect() as db:
                 db.execute(
@@ -1129,6 +1137,7 @@ class BoardLayout(discord.ui.LayoutView):
             if notes:
                 lines.append(f"-# **Notes:** {notes}")
             lines.append(f"-# **Starting Zone:** {zone}")
+            lines.append(contact_line(row, preview=preview))
 
             # Separate V2 containers are still part of this ONE message.
             container = discord.ui.Container(accent_color=ACCENT)
@@ -1193,6 +1202,7 @@ class LFGPreview(commands.Cog):
                 content=None, embeds=[], attachments=[],
                 view=BoardLayout(self, channel_id, guild,
                                  page_index=page, roster=roster),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
 
             with connect() as db:
@@ -1241,6 +1251,7 @@ class LFGPreview(commands.Cog):
             msg = await channel.send(
                 view=BoardLayout(self, channel.id, interaction.guild,
                                  page_index=page),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             with connect() as db:
                 db.execute(
