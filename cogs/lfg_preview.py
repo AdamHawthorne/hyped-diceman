@@ -1019,6 +1019,10 @@ class BoardLayout(discord.ui.LayoutView):
         if visible:
             container.add_item(discord.ui.Separator())
             for index, row in enumerate(visible):
+                if preview and index == 5:
+                    # Two compact containers keep each under ten direct items.
+                    self.add_item(container)
+                    container = discord.ui.Container(accent_color=ACCENT)
                 race = row["race"] or "Race not set"
                 zone = row["starting_zone"] or STARTING_ZONES.get(race, "Starting zone not set")
                 roles = format_roles(row["role"], icons=True) or "Role not set"
@@ -1049,21 +1053,24 @@ class BoardLayout(discord.ui.LayoutView):
                         accessory=thumbnail,
                     )
                 )
-                if index != len(visible) - 1 and (not preview or index % 2 == 1):
+                # V2 containers hold at most 10 direct items. Two dividers
+                # across the 10-entry preview keep it compact and valid.
+                if preview and index in (2, 7):
+                    container.add_item(discord.ui.Separator())
+                elif not preview and index == 3 and len(visible) > 4:
                     container.add_item(discord.ui.Separator())
         else:
             container.add_item(discord.ui.Separator())
             container.add_item(discord.ui.TextDisplay("*Nobody on board yet.*"))
 
-        if not preview and len(roster) > len(visible):
-            container.add_item(discord.ui.Separator())
-            container.add_item(
-                discord.ui.TextDisplay(
-                    f"-# {len(roster) - len(visible)} more plan(s) not shown on this test board."
-                )
-            )
-
         self.add_item(container)
+
+        if not preview and len(roster) > len(visible):
+            # This stays outside the container so seven entries never exceed
+            # the container's direct-child limit.
+            self.add_item(discord.ui.TextDisplay(
+                f"-# {len(roster) - len(visible)} more plan(s) not shown on this board."
+            ))
 
         if not preview:
             self.add_item(
