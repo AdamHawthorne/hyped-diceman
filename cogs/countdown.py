@@ -106,12 +106,16 @@ def init_db():
                 "ALTER TABLE countdown_subscribers "
                 "ADD COLUMN delivery TEXT NOT NULL DEFAULT 'dm'"
             )
-        # PR #30 briefly stored the fixed stopwatch in image_url. That field
-        # now means optional bottom artwork only, so remove only that legacy value.
-        db.execute(
-            "UPDATE countdowns SET image_url='' WHERE image_url=?",
-            (COUNTDOWN_ICON_URL,),
-        )
+        # Earlier builds stored a fixed stopwatch URL in image_url.
+        # That column now means optional bottom artwork only.
+        for legacy_icon in (
+            "https://i.vgy.me/RXYsym.png",
+            COUNTDOWN_ICON_URL,
+        ):
+            db.execute(
+                "UPDATE countdowns SET image_url='' WHERE image_url=?",
+                (legacy_icon,),
+            )
 
 
 def get_timer(channel_id):
