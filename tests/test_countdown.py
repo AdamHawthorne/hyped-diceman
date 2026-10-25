@@ -82,7 +82,10 @@ class CountdownSafetyTests(unittest.TestCase):
                 db = sqlite3.connect(filename)
                 db.row_factory = sqlite3.Row
                 return db
-            scope = {"connect": connect}
+            scope = {
+                "connect": connect,
+                "COUNTDOWN_ICON_URL": "https://i.vgy.me/RXYsym.png",
+            }
             exec(compile(ast.Module(body=[fn], type_ignores=[]),
                          str(filename), "exec"), scope)
             scope["init_db"]()
@@ -147,7 +150,8 @@ class CountdownSafetyTests(unittest.TestCase):
 
     def test_preview_is_ephemeral_public_timer_posts_in_channel(self):
         self.assertIn("preview=True", SOURCE)
-        self.assertIn("include_remind=False", SOURCE)
+        self.assertIn("include_remind=True", SOURCE)
+        self.assertIn("disabled=preview or not active", SOURCE)
         self.assertIn("ephemeral=True", SOURCE)
         self.assertIn("message = await channel.send(", SOURCE)
         self.assertIn("allowed_mentions=discord.AllowedMentions.none()", SOURCE)
