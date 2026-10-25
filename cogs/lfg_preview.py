@@ -1226,7 +1226,7 @@ class LFGPreview(commands.Cog):
                         (channel_id, part["message_id"]),
                     )
 
-    async def post_new_board(self, interaction, channel, *, acknowledged=False):
+    async def post_new_board(self, interaction, channel):
         """Recreate a missing public board without deleting any saved plans.
 
         A stale message ID (including an obsolete ephemeral test response)
@@ -1310,7 +1310,7 @@ class LFGPreview(commands.Cog):
                     f"LFG BOARD MISSING channel={channel.id} "
                     f"message={row['message_id']}; restoring public board"
                 )
-                await self.post_new_board(interaction, channel, acknowledged=True)
+                await self.post_new_board(interaction, channel)
                 return
             except (discord.Forbidden, discord.HTTPException) as exc:
                 # A temporary API problem or missing permission is not proof
@@ -1328,7 +1328,11 @@ class LFGPreview(commands.Cog):
                 return
             try:
                 await self.refresh(channel.id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            except discord.NotFound:
+                # The anchor can disappear between fetch and edit.
+                await self.post_new_board(interaction, channel)
+                return
+            except (discord.Forbidden, discord.HTTPException) as exc:
                 print(
                     f"LFG BOARD REFRESH FAILED channel={channel.id} "
                     f"message={row['message_id']} error={exc!r}"
@@ -1345,7 +1349,7 @@ class LFGPreview(commands.Cog):
             )
             return
 
-        await self.post_new_board(interaction, channel, acknowledged=True)
+        await self.post_new_board(interaction, channel)
 
     @app_commands.command(
         name="lfg-preview",
