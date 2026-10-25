@@ -84,7 +84,7 @@ class CountdownSafetyTests(unittest.TestCase):
                 return db
             scope = {
                 "connect": connect,
-                "COUNTDOWN_ICON_URL": "https://i.vgy.me/RXYsym.png",
+                "COUNTDOWN_ICON_URL": "https://i.vgy.me/MC2gD0.png",
             }
             exec(compile(ast.Module(body=[fn], type_ignores=[]),
                          str(filename), "exec"), scope)
@@ -94,7 +94,7 @@ class CountdownSafetyTests(unittest.TestCase):
                 columns = {row[1] for row in
                            db.execute("PRAGMA table_info(countdowns)")}
                 self.assertTrue({
-                    "message_id", "owner_id", "target_ts", "repeat_seconds",
+                    "message_id", "owner_id", "description", "target_ts", "repeat_seconds",
                     "pre_notified_target", "due_notified_target",
                 }.issubset(columns))
                 tables = {r[0] for r in db.execute(
@@ -113,7 +113,7 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("@app_commands.default_permissions(manage_guild=True)", SOURCE)
 
     def test_compact_card_uses_fixed_stopwatch_and_event_as_title(self):
-        self.assertIn('COUNTDOWN_ICON_URL = "https://i.vgy.me/RXYsym.png"', SOURCE)
+        self.assertIn('COUNTDOWN_ICON_URL = "https://i.vgy.me/MC2gD0.png"', SOURCE)
         self.assertIn('f"## {title}\\n"', SOURCE)
         self.assertIn('f"-# {subtitle}\\n"', SOURCE)
         self.assertIn('f"**{remaining}**"', SOURCE)
@@ -121,13 +121,20 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("discord.ui.Thumbnail(", SOURCE)
         self.assertIn("COUNTDOWN_ICON_URL,", SOURCE)
         self.assertNotIn("## <Hyped> · Countdown / Cooldown", SOURCE)
-        self.assertIn('image_url="Optional HTTPS artwork shown at the bottom"', SOURCE)
+        self.assertIn('label="Bottom image URL (optional)"', SOURCE)
         self.assertIn("gallery.add_item(", SOURCE)
         self.assertIn("media=image_url", SOURCE)
 
     def test_public_card_hides_owner_reminder_and_uses_day_hour_minute_format(self):
         self.assertIn("upcoming_string(target, now)", SOURCE)
         self.assertNotIn("Owner reminder {config['remind_minutes']}m before", SOURCE)
+
+    def test_optional_description_and_spacing_are_in_public_layout(self):
+        self.assertIn("description TEXT NOT NULL DEFAULT ''", SOURCE)
+        self.assertIn('ADD COLUMN description TEXT NOT NULL DEFAULT \'\'', SOURCE)
+        self.assertIn('label="Subtitle / description (optional)"', SOURCE)
+        self.assertIn('config.get("description", "")', SOURCE)
+        self.assertIn('+ "\\n"\n                + f"**{remaining}**"', SOURCE)
 
     def test_friendly_setup_wizard_uses_dropdowns_not_raw_datetime_only(self):
         self.assertIn('@app_commands.command(name="setup"', SOURCE)
@@ -159,25 +166,38 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("users=True, roles=False, everyone=False", SOURCE)
         self.assertIn("delete_after=60", SOURCE)
 
-    def test_owner_testdm_uses_real_ogre_reminder_copy(self):
-        self.assertIn('name="testdm"', SOURCE)
-        self.assertIn("user: discord.User | None = None", SOURCE)
-        self.assertIn("target_user = user or interaction.user", SOURCE)
-        self.assertIn("await target_user.send(", SOURCE)
+    def test_only_setup_is_exposed_and_private_review_keeps_admin_tools(self):
+        commands = [
+            line for line in SOURCE.splitlines()
+            if "@app_commands.command" in line
+        ]
+        self.assertEqual(len(commands), 1)
+        self.assertIn('name="setup"', commands[0])
+        self.assertNotIn('name="preview"', SOURCE)
+        self.assertNotIn('name="post"', SOURCE)
+        self.assertNotIn('name="testdm"', SOURCE)
+        self.assertNotIn('name="status"', SOURCE)
+        self.assertNotIn('name="stop"', SOURCE)
+        self.assertNotIn('name="remove"', SOURCE)
+        self.assertIn("class SetupTestDMButton", SOURCE)
+        self.assertIn("class SetupStopButton", SOURCE)
+        self.assertIn("class SetupRemoveButton", SOURCE)
+        self.assertIn("await interaction.user.send(", SOURCE)
         self.assertIn("Dev test from Hyped Ogre", SOURCE)
 
     def test_legacy_stopwatch_is_not_reused_as_bottom_artwork(self):
         self.assertIn("UPDATE countdowns SET image_url='' WHERE image_url=?", SOURCE)
-        self.assertIn("(COUNTDOWN_ICON_URL,)", SOURCE)
+        self.assertIn("UPDATE countdowns SET image_url='' WHERE image_url=?", SOURCE)
 
-    def test_preview_is_ephemeral_public_timer_posts_in_channel(self):
+    def test_setup_preview_is_private_and_publish_posts_public_timer(self):
+        self.assertIn("SetupReviewLayout", SOURCE)
         self.assertIn("preview=True", SOURCE)
-        self.assertIn("include_remind=True", SOURCE)
         self.assertIn("disabled = preview or not active", SOURCE)
         self.assertIn("ephemeral=True", SOURCE)
         self.assertIn("message = await channel.send(", SOURCE)
         self.assertIn("allowed_mentions=discord.AllowedMentions.none()", SOURCE)
         self.assertIn("await channel.fetch_message(existing", SOURCE)
+
 
     def test_worker_updates_existing_message_and_dms_only_owner(self):
         self.assertIn("get_partial_message(row[\"message_id\"]).edit(", SOURCE)
