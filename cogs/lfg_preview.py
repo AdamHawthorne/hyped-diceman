@@ -12,7 +12,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .lfg_sort import listing_start_key
+from .lfg_sort import listing_board_key, is_solo_or_sorted
 from .lfg_demo import demo_entries, display_race, display_uk_times
 
 PATH = os.getenv(
@@ -175,7 +175,7 @@ def entries(channel_id):
             (channel_id,),
         ).fetchall()
     # Recompute after every save/update; the board uses entries() on refresh.
-    return sorted(roster, key=listing_start_key)
+    return sorted(roster, key=listing_board_key)
 
 
 def safe(value):
@@ -1028,9 +1028,12 @@ class BoardLayout(discord.ui.LayoutView):
                 open_marker = f" {OPEN_LFM_MARKER}" if show_lfm_emoji(row["activity"]) else ""
                 lines = [
                     f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
-                    f"-# **Playing:** {safe(display_uk_times(compact_availability(row['availability'])))} · {safe(compact_days(days))}",
-                    f"-# **Plan:** {safe(row['activity'])}{open_marker}",
                 ]
+                if not is_solo_or_sorted(row["activity"]):
+                    lines.append(
+                        f"-# **Playing:** {safe(display_uk_times(compact_availability(row['availability'])))} · {safe(compact_days(days))}"
+                    )
+                lines.append(f"-# **Plan:** {safe(row['activity'])}{open_marker}")
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
                 lines.append(f"-# **Starting Zone:** {zone}")
