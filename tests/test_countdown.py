@@ -121,7 +121,7 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("discord.ui.Thumbnail(", SOURCE)
         self.assertIn("COUNTDOWN_ICON_URL,", SOURCE)
         self.assertNotIn("## <Hyped> · Countdown / Cooldown", SOURCE)
-        self.assertIn('image_url="Optional HTTPS artwork shown at the bottom"', SOURCE)
+        self.assertIn('label="Bottom image URL (optional)"', SOURCE)
         self.assertIn("gallery.add_item(", SOURCE)
         self.assertIn("media=image_url", SOURCE)
 
