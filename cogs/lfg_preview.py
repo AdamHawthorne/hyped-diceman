@@ -771,9 +771,9 @@ class BoardLayout(discord.ui.LayoutView):
                     f"-# **Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}",
                     f"-# **Plan:** {safe(row['activity'])}",
                 ]
+                lines.append(f"-# **Starting Zone:** {zone}")
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
-                lines.append(f"-# **Starting Zone:** {zone}")
                 text = "\n".join(lines)
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
