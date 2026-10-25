@@ -53,7 +53,7 @@ class LFGVisualTests(unittest.TestCase):
     def test_open_marker_after_plan_not_starting_zone(self):
         source = SOURCE.read_text(encoding="utf-8")
         self.assertIn('OPEN_LFM_MARKER = "🟢"', source)
-        self.assertIn('f"-# **Plan:** {safe(row[\'activity\'])}{open_marker}"', source)
+        self.assertIn('f"-# **Plan:** {open_marker}{safe(row[\'activity\'])}"', source)
         self.assertIn('f"-# **Starting Zone:** {zone}"', source)
         self.assertNotIn("guild_lfg_emoji", source)
         self.assertNotIn("LFG_EMOJI_NAME", source)
