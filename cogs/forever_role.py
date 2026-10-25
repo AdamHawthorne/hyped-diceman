@@ -66,7 +66,7 @@ class ForeverRoleView(discord.ui.View):
                         "**Forever** role added. By taking the role, you agree to:\n"
                         "• Keep the atmosphere positive\n"
                         "• Show up prepared and focused\n"
-                        "• Be reliable and communicate clearly\n"
+                        "• Be reliable and communicate openly\n"
                         "• No racism or hate of any kind"
                     ),
                     ephemeral=True
