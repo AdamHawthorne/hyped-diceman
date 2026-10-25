@@ -45,7 +45,7 @@ CLASS_ROLES = {
 }
 INTENTIONS = (
     "Solo Questing",
-    "Solo Questing + Dungeons",
+    "Solo Questing + Dungeons (LFG/ Pugging)",
     "Group Questing",
     "Group Questing + Dungeons",
     "Grinding (Dungeons, grind spots etc)",
@@ -68,6 +68,7 @@ FINISH_TIMES = (
     "10:00 UK", "11:00 UK", "12:00 UK", "13:00 UK", "14:00 UK",
     "15:00 UK", "16:00 UK", "17:00 UK", "18:00 UK", "19:00 UK",
     "20:00 UK", "21:00 UK", "22:00 UK", "23:00 UK",
+    "24 hours", "30 hours", "40 hours", "50 hours +",
 )
 
 LAUNCH_DAYS = (
@@ -78,6 +79,11 @@ LAUNCH_DAYS = (
     "Sun 8 Nov",
     "Mon 9 Nov",
     "Tue 10 Nov",
+    "Wed 11 Nov",
+    "Thu 12 Nov",
+    "Fri 13 Nov",
+    "Sat 14 Nov",
+    "Sun 15 Nov",
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
@@ -185,6 +191,10 @@ def compact_availability(value):
     return " / ".join(part.strip() for part in value.replace("\r", "").split("\n") if part.strip())
 
 
+def compact_days(value):
+    return value.replace(" Nov", "")
+
+
 class Draft:
     def __init__(self, row=None):
         self.character = row["character"] if row else ""
@@ -246,8 +256,8 @@ class PlannedNameModal(discord.ui.Modal, title="What are your plans?"):
         super().__init__()
         self.state = state
         self.character = discord.ui.TextInput(
-            label="First and last name",
-            placeholder="Remember last name ;)",
+            label="Character name",
+            placeholder="Forename Surname",
             default=state.draft.character or None,
             required=False,
             max_length=48,
@@ -435,11 +445,14 @@ class FinishTimeSelect(discord.ui.Select):
         state = self.view.state
         finish_time = self.values[0]
         start_time = getattr(state, "start_time", "Later")
-        state.draft.availability = f"{start_time} - {finish_time}"
+        if "hours" in finish_time:
+            state.draft.availability = f"{start_time} + {finish_time}"
+        else:
+            state.draft.availability = f"{start_time} - {finish_time}"
         await interaction.response.edit_message(
             embed=wizard_embed(
-                "Hyped Ogre LFG · Days",
-                "Which days you planning to play? Choose 1-7.",
+                "Hyped Ogre LFG · Playing On",
+                "Which days you planning to play? Choose any that apply.",
                 state,
             ),
             view=LaunchDaysView(state),
@@ -459,7 +472,7 @@ class FinishTimeView(discord.ui.View):
 class LaunchDaysSelect(discord.ui.Select):
     def __init__(self):
         super().__init__(
-            placeholder="Choose launch days (1-7)",
+            placeholder="Playing on",
             min_values=1,
             max_values=len(LAUNCH_DAYS),
             options=[discord.SelectOption(label=value, value=value) for value in LAUNCH_DAYS],
@@ -521,7 +534,7 @@ class NotesModal(discord.ui.Modal, title="Anything else?"):
         self.state = state
         self.notes = discord.ui.TextInput(
             label="Notes (optional)",
-            placeholder="e.g. 4 days booked off, sleeping after launch",
+            placeholder="e.g. 4 days booked off, LF gamers",
             default=state.draft.notes or None,
             required=False,
             max_length=120,
@@ -554,7 +567,7 @@ class ReviewView(discord.ui.View):
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
 
-    @discord.ui.button(label="Save", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Save", style=discord.ButtonStyle.success)
     async def save(self, interaction, button):
         draft = self.state.draft
         required = (
@@ -714,11 +727,11 @@ class BoardLayout(discord.ui.LayoutView):
                 character = safe(row["character"]) if row["character"] else "Name TBD"
                 notes = safe(row["notes"]) if row["notes"] else ""
                 text = (
-                    f"-# **{character} · {race} {row['class_name']} · {roles}**\n"
-                    f"-# Starting in {zone}\n"
-                    f"-# Playing: {safe(compact_availability(row['availability']))} · {safe(days)}\n"
-                    f"-# Levelling: {safe(row['activity'])}"
-                    + (f"\n-# Notes: {notes}" if notes else "")
+                    f"**{character} · {race} {row['class_name']} · {roles}**\n"
+                    f"**Starting:** {zone}\n"
+                    f"**Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}\n"
+                    f"**Plan:** {safe(row['activity'])}"
+                    + (f"\n**Notes:** {notes}" if notes else "")
                 )
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
