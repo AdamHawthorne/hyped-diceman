@@ -1,143 +1,202 @@
-"""Guild-only, opt-in LFG board preview.
+"""Read-only, guild-scoped preview of the planned Hyped LFG noticeboard.
 
-No live signups, roster writes or automatic messages. All data below is fictional.
+All public names are fictional. The private editor keeps a draft in memory only.
+No SQLite access, Discord roles, signups, or other bot systems are changed.
 """
 import os
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-SAMPLES = {
-    "10-19": [("Pip", 16, "Hunter", "DPS", "All day", "Levelling, questing")],
-    "20-29": [("Mog", 22, "Paladin", "Tank", "After work", "Dungeons or quests")],
-    "30-39": [
-        ("Grum", 34, "Warrior", "DPS", "Evening", "Dungeons or group quests"),
-        ("Kami", 36, "Priest", "Healer", "Evening", "Dungeon runs"),
-        ("Kev", 35, "Mage", "DPS", "Evening", "Questing or dungeons"),
-    ],
-    "40-49": [("Rook", 44, "Druid", "Flexible", "Late", "Questing")],
-    "50-59": [],
-    "60": [
-        ("Karg", 60, "Warrior", "Tank", "Evening", "Stratholme / Scholomance"),
-        ("Nessa", 60, "Mage", "DPS", "Evening", "BRD / LBRS"),
-    ],
-}
+
+# Fictional entries, intentionally sorted at render time rather than grouped.
+SAMPLES = [
+    ("Snore", 18, "Priest", "Healer", "Evening", "Group questing"),
+    ("Grum", 26, "Hunter", "DPS", "All day", "SFK, BFD"),
+    ("Rook", 34, "Shaman", "Healer", "After work", "Dungeons"),
+    ("Kami", 36, "Warrior", "Tank", "On now", "Scarlet Monastery, group quests"),
+    ("Mog", 54, "Rogue", "DPS", "Late night", "BRD, levelling"),
+    ("Karg", 60, "Warrior", "Tank", "Evening", "Stratholme, Scholomance"),
+]
+
+CLASSES = (
+    "Warrior", "Paladin", "Hunter", "Rogue", "Priest",
+    "Shaman", "Mage", "Warlock", "Druid",
+)
+ROLES = ("Tank", "Healer", "DPS", "Flexible")
+AVAILABILITY = ("On now", "All day", "After work", "Evening", "Late night", "Flexible")
+ACTIVITIES = ("Dungeons", "Group questing", "Levelling", "PvP", "Farming", "Anything")
 
 
-def home_embed():
+def board_embed():
     lines = []
-    for bracket, players in SAMPLES.items():
-        if players:
-            overview = " · ".join(p[0] for p in players[:4])
-            lines.append(f"**{bracket}**  •  {len(players)} looking  •  {overview}")
-        else:
-            lines.append(f"**{bracket}**  •  No plans yet")
-    return discord.Embed(
-        title="HYPED | DAILY LFG  (PREVIEW)",
-        description=(
-            "OGRE SEE WHO WANT ZUG. Pick a level range to see plans.\n\n"
-            + "\n".join(lines)
-            + "\n\n*Fictional preview data. No real groups or commitments.*"
-        ),
-        color=discord.Color.dark_green(),
-    )
-
-
-def detail_embed(bracket):
-    players = SAMPLES[bracket]
-    embed = discord.Embed(
-        title=f"LFG | Levels {bracket}",
-        description="Choose a player intention below. This is a non-persistent preview.",
-        color=discord.Color.green(),
-    )
-    if not players:
-        embed.description = "Nobody listed yet. Preview data only."
-    for name, lvl, cls, role, when, plan in players:
-        embed.add_field(
-            name=f"{name}  •  {cls} {lvl}  •  {role}",
-            value=f"**When:** {when}\n**Wants:** {plan}",
-            inline=False,
+    for name, level, cls, role, when, plans in sorted(
+        SAMPLES, key=lambda entry: (-entry[1], entry[0].lower())
+    ):
+        lines.append(
+            f"**Lv {level} · {discord.utils.escape_markdown(name)} · {cls} · {role}**\n"
+            f"{when}  ·  {plans}"
         )
-    embed.set_footer(text="Hyped Ogre preview · Interest/commit are simulated")
+    embed = discord.Embed(
+        title="HYPED | LFG-LFM  (PREVIEW)",
+        description=(
+            "Who is around, when are they free, and what do they want to do?\n"
+            "One list, ordered by level.\n\n"
+            + "\n\n".join(lines)
+        ),
+        color=discord.Color.from_rgb(217, 154, 67),
+    )
+    embed.set_footer(text="Fictional players · Editor is private · Nothing is saved")
     return embed
 
 
-class LevelSelect(discord.ui.Select):
+class ListingDraft:
     def __init__(self):
+        self.character = ""
+        self.level = 1
+        self.cls = "Warrior"
+        self.role = "DPS"
+        self.availability = "Evening"
+        self.activities = ["Dungeons"]
+        self.notes = ""
+
+    def summary(self):
+        name = discord.utils.escape_markdown(self.character or "Your character")
+        plan = ", ".join(self.activities)
+        if self.notes:
+            plan += " · " + discord.utils.escape_markdown(self.notes)
+        return (
+            f"**Lv {self.level} · {name} · {self.cls} · {self.role}**\n"
+            f"{self.availability} · {plan}"
+        )
+
+
+def editor_embed(draft, message=None):
+    embed = discord.Embed(
+        title="Your LFG Listing | Private Preview",
+        description=(
+            "Choose your class, role, availability and activities below. "
+            "Use **Character / Level / Notes** to enter text, then "
+            "**Preview My Listing** to see the result.\n\n"
+            + draft.summary()
+        ),
+        color=discord.Color.blurple(),
+    )
+    embed.set_footer(text=message or "Only you can see this editor. Nothing is saved.")
+    return embed
+
+
+class CharacterModal(discord.ui.Modal, title="Character / Level / Notes"):
+    character = discord.ui.TextInput(
+        label="Character name", placeholder="e.g. Grum", max_length=32
+    )
+    level = discord.ui.TextInput(
+        label="Character level (1-60)", placeholder="e.g. 26", max_length=2
+    )
+    notes = discord.ui.TextInput(
+        label="Specific dungeon or notes (optional)", required=False,
+        placeholder="e.g. SFK, BFD, after 7pm", max_length=100
+    )
+
+    def __init__(self, editor):
+        super().__init__()
+        self.editor = editor
+        self.character.default = editor.draft.character
+        self.level.default = str(editor.draft.level)
+        self.notes.default = editor.draft.notes
+
+    async def on_submit(self, interaction: discord.Interaction):
+        name = self.character.value.strip()
+        number = self.level.value.strip()
+        if not name or not number.isdecimal() or not (1 <= int(number) <= 60):
+            await interaction.response.send_message(
+                "Please provide a character name and a whole-number level from 1 to 60.",
+                ephemeral=True,
+            )
+            return
+        self.editor.draft.character = name
+        self.editor.draft.level = int(number)
+        self.editor.draft.notes = self.notes.value.strip()
+        await interaction.response.edit_message(
+            embed=editor_embed(self.editor.draft, "Character details updated in your private draft."),
+            view=self.editor,
+        )
+
+
+class DraftSelect(discord.ui.Select):
+    def __init__(self, field, placeholder, options, max_values=1):
+        self.field = field
         super().__init__(
-            placeholder="View a level bracket",
+            placeholder=placeholder,
             min_values=1,
-            max_values=1,
-            options=[
-                discord.SelectOption(label=f"Levels {key}", value=key,
-                    description=f"{len(value)} sample players")
-                for key, value in SAMPLES.items()
-            ],
+            max_values=max_values,
+            row={"cls": 0, "role": 1, "availability": 2, "activities": 3}[field],
+            options=[discord.SelectOption(label=option, value=option) for option in options],
         )
 
     async def callback(self, interaction: discord.Interaction):
-        bracket = self.values[0]
-        await interaction.response.send_message(
-            embed=detail_embed(bracket), view=PlanView(bracket), ephemeral=True
+        draft = self.view.draft
+        setattr(draft, self.field, list(self.values) if self.field == "activities" else self.values[0])
+        await interaction.response.edit_message(
+            embed=editor_embed(draft, "Private draft updated. Nothing has been published."),
+            view=self.view,
         )
+
+
+class EditorView(discord.ui.View):
+    def __init__(self, owner_id):
+        super().__init__(timeout=900)
+        self.owner_id = owner_id
+        self.draft = ListingDraft()
+        self.add_item(DraftSelect("cls", "Class", CLASSES))
+        self.add_item(DraftSelect("role", "Role", ROLES))
+        self.add_item(DraftSelect("availability", "Availability", AVAILABILITY))
+        self.add_item(DraftSelect("activities", "What do you want to do? (choose up to 3)", ACTIVITIES, 3))
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("This editor belongs to someone else.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Character / Level / Notes", style=discord.ButtonStyle.secondary, row=4)
+    async def details(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CharacterModal(self))
+
+    @discord.ui.button(label="Preview My Listing", style=discord.ButtonStyle.primary, row=4)
+    async def show_preview(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.draft.character:
+            await interaction.response.send_message(
+                "Add your character name and level first.", ephemeral=True
+            )
+            return
+        embed = discord.Embed(
+            title="How you'd appear on the LFG board",
+            description=self.draft.summary(),
+            color=discord.Color.from_rgb(217, 154, 67),
+        )
+        embed.set_footer(text="Preview only · Not added to the public board or database")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class BoardView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=86400)
-        self.add_item(LevelSelect())
 
-
-class PlayerSelect(discord.ui.Select):
-    def __init__(self, bracket):
-        self.bracket = bracket
-        super().__init__(
-            placeholder="Choose a plan",
-            options=[
-                discord.SelectOption(label=f"{p[0]} ({p[2]} {p[1]})", value=p[0],
-                    description=p[5][:90])
-                for p in SAMPLES[bracket]
-            ] if SAMPLES[bracket] else
-            [discord.SelectOption(label="No players", value="none")],
-            disabled=not bool(SAMPLES[bracket])
+    @discord.ui.button(label="Add / Update Me", style=discord.ButtonStyle.primary)
+    async def edit_listing(self, interaction: discord.Interaction, button: discord.ui.Button):
+        editor = EditorView(interaction.user.id)
+        await interaction.response.send_message(
+            embed=editor_embed(editor.draft), view=editor, ephemeral=True
         )
 
-    async def callback(self, interaction: discord.Interaction):
-        self.view.selected = self.values[0]
+    @discord.ui.button(label="Remove Me", style=discord.ButtonStyle.secondary)
+    async def remove_listing(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            f"Selected **{self.values[0]}**. Use the Interest / Commit buttons "
-            "on the same preview panel. Nothing is saved.", ephemeral=True
-        )
-
-
-class PlanView(discord.ui.View):
-    def __init__(self, bracket):
-        super().__init__(timeout=900)
-        self.selected = None
-        self.add_item(PlayerSelect(bracket))
-
-    async def interaction_check(self, interaction):
-        # This panel is ephemeral; Discord restricts visibility to its original user.
-        return True
-
-    @discord.ui.button(label="Interested", style=discord.ButtonStyle.primary)
-    async def interested(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.respond(interaction, "Interested")
-
-    @discord.ui.button(label="Commit", style=discord.ButtonStyle.success)
-    async def commit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.respond(interaction, "Committed")
-
-    async def respond(self, interaction, status):
-        if not self.selected:
-            await interaction.response.send_message(
-                "Choose a character from the dropdown first.", ephemeral=True
-            )
-            return
-        await interaction.response.send_message(
-            f"**Preview:** You marked **{status.lower()}** for "
-            f"**{self.selected}**. This is only a demonstration; "
-            "no real signup or group was changed.", ephemeral=True
+            "In the real board, this will remove your own listing. "
+            "This preview has no saved listings to remove.",
+            ephemeral=True,
         )
 
 
@@ -145,7 +204,7 @@ class LFGPreview(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="lfg-preview", description="See a fictional Hyped LFG board")
+    @app_commands.command(name="lfg-preview", description="Preview the single-list Hyped LFG board and editor")
     @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
@@ -156,7 +215,7 @@ class LFGPreview(commands.Cog):
                 "This preview is limited to the Hyped server.", ephemeral=True
             )
             return
-        await interaction.response.send_message(embed=home_embed(), view=BoardView())
+        await interaction.response.send_message(embed=board_embed(), view=BoardView())
 
 
 async def setup(bot):
