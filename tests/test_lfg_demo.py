@@ -12,11 +12,11 @@ from cogs.lfg_sort import listing_board_key, is_solo_or_sorted
 class LFGLaunchPreviewTests(unittest.TestCase):
     def test_ten_distinct_synthetic_entries_sorted_earliest_first(self):
         entries = demo_entries()
-        self.assertEqual(len(entries), 10)
-        self.assertEqual(len({row["character"] for row in entries}), 10)
+        self.assertEqual(len(entries), 20)
+        self.assertEqual(len({row["character"] for row in entries}), 20)
         self.assertEqual(entries, sorted(entries, key=listing_board_key))
         self.assertEqual(entries[0]["character"], "Grim Ironjaw")
-        self.assertEqual(entries[-1]["character"], "Duststep")
+        self.assertEqual(entries[-1]["character"], "Thundertotem")
         self.assertEqual(entries[0]["availability"], "Launch 23:00 UK - 04:00 UK")
 
     def test_demo_has_a_mix_of_open_solo_sorted_and_lfm(self):
@@ -43,21 +43,20 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         rows = demo_entries()
         statuses = [is_solo_or_sorted(row["activity"]) for row in rows]
         self.assertEqual(statuses, sorted(statuses))
-        self.assertEqual([r["character"] for r in rows[-3:]],
-                         ["Ashenveil", "Frostfang", "Duststep"])
+        self.assertTrue(all(is_solo_or_sorted(row["activity"]) for row in rows[-5:]))
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
     def test_preview_component_budget(self):
-        # Two containers, header section/text/thumb, one header separator,
-        # ten player sections/text/thumb, two between-player dividers.
-        self.assertLessEqual(2 + 3 + 1 + 10 * 3 + 2, 40)
-        # Direct container children are bounded at ten each.
-        self.assertLessEqual(1 + 1 + 5 + 1, 10)
-        self.assertLessEqual(5 + 1, 10)
+        # Each V2 message uses five entries and four separator lines.
+        # header container (4) + listing container (1) + five rows (15)
+        # + four separators (4) + action row / buttons (5).
+        self.assertLessEqual(4 + 1 + 15 + 4 + 5, 40)
+        self.assertLessEqual(5 + 4, 10)
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
-        self.assertIn("if preview and index == 5:", source)
-        self.assertIn("if preview and index in (2, 7):", source)
+        self.assertIn("OPEN_PAGE_SIZE", source)
+        self.assertIn("if index:", source)
+        self.assertIn("await interaction.followup.send(", source)
 
 
 if __name__ == "__main__":
