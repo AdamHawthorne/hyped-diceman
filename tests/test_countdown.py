@@ -30,7 +30,7 @@ class CountdownClockTests(unittest.TestCase):
     def test_human_countdown_rounds_seconds_to_next_minute(self):
         self.assertEqual(upcoming_string(610, 0), "11m")
         self.assertEqual(upcoming_string(7200, 0), "2h 00m")
-        self.assertEqual(upcoming_string(90061, 0), "1d 01h 01m")
+        self.assertEqual(upcoming_string(90061, 0), "1d 01h 02m")
         self.assertEqual(upcoming_string(100, 100), "00m · Ready")
 
     def test_repeating_cooldowns_skip_missed_cycles(self):
