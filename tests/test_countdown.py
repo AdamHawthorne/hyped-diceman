@@ -169,7 +169,7 @@ class CountdownSafetyTests(unittest.TestCase):
     def test_preview_is_ephemeral_public_timer_posts_in_channel(self):
         self.assertIn("preview=True", SOURCE)
         self.assertIn("include_remind=True", SOURCE)
-        self.assertIn("disabled=preview or not active", SOURCE)
+        self.assertIn("disabled = preview or not active", SOURCE)
         self.assertIn("ephemeral=True", SOURCE)
         self.assertIn("message = await channel.send(", SOURCE)
         self.assertIn("allowed_mentions=discord.AllowedMentions.none()", SOURCE)
