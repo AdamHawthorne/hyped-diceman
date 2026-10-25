@@ -92,11 +92,8 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
-# Unsigned attachment URL: Discord refreshes signed attachment URLs used as media.
-OPEN_LFM_IMAGE = (
-    "https://cdn.discordapp.com/attachments/1180461784700821634/"
-    "1563967306000760972/SkillsUndeadBETA.png"
-)
+# The LFG emoji is installed in Hyped. Resolve its guild-specific ID at render time.
+LFG_EMOJI_NAME = "LFG"
 ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
 ACCENT = 0x8C5A3C
 
@@ -203,8 +200,8 @@ def format_roles(value, *, icons=False):
     return " / ".join(roles)
 
 
-def show_lfm_image(activity):
-    """Only explicitly open/LFM plans display the image, never solo/sorted."""
+def show_lfm_emoji(activity):
+    """Only explicitly open/LFM plans display the emoji, never solo/sorted."""
     plans = {part.strip() for part in activity.split(",")}
     if "Full Group / Sorted" in plans or any("Solo Questing" in part for part in plans):
         return False
@@ -216,25 +213,17 @@ def show_lfm_image(activity):
     })
 
 
+def guild_lfg_emoji(guild):
+    """Use Hyped's own :LFG: emoji ID rather than the old Warcraft server ID."""
+    if guild is None:
+        return ""
+    emoji = discord.utils.get(getattr(guild, "emojis", ()), name=LFG_EMOJI_NAME)
+    return str(emoji) if emoji else ""
+
+
 def visible_board_entries(roster):
-    """Stay under Discord's 40 V2 components, including all conditional media."""
-    chosen = []
-    for row in roster[:7]:
-        candidate = chosen + [row]
-        n = len(candidate)
-        image_count = sum(show_lfm_image(item["activity"]) for item in candidate)
-        # Container 1 + header section/text/thumbnail 3 + header separator 1;
-        # each player section/text/avatar 3 + between-player separators n-1;
-        # one gallery per open player; overflow separator/text 2;
-        # action row and its four buttons 5.
-        component_count = (
-            1 + 3 + 1 + 3 * n + (n - 1) + image_count + 5
-            + (2 if len(roster) > n else 0)
-        )
-        if component_count > 40:
-            break
-        chosen = candidate
-    return chosen
+    """Seven compact listings fit the board's 40-component budget."""
+    return roster[:7]
 
 
 def compact_availability(value):
@@ -310,6 +299,18 @@ class WizardState:
         self.channel_id = channel_id
         self.owner_id = owner_id
         self.draft = Draft(current_listing(channel_id, owner_id))
+        start, separator, finish = self.draft.availability.partition(" - ")
+        if not separator:
+            start, separator, finish = self.draft.availability.partition(" + ")
+        self.start_time = start if start in START_TIMES else ""
+        self.finish_time = finish if finish in FINISH_TIMES + LONG_SESSION_TIMES else ""
+
+    def set_availability(self):
+        if self.start_time in START_TIMES and self.finish_time in FINISH_TIMES + LONG_SESSION_TIMES:
+            joiner = " + " if self.finish_time in LONG_SESSION_TIMES else " - "
+            self.draft.availability = self.start_time + joiner + self.finish_time
+        else:
+            self.draft.availability = ""
 
     async def check(self, interaction):
         if interaction.user.id != self.owner_id:
@@ -347,323 +348,320 @@ class PlannedNameModal(discord.ui.Modal, title="What are your plans?"):
     async def on_submit(self, interaction):
         self.state.draft.character = " ".join(self.character.value.split())
         await interaction.response.send_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Race",
-                "What race you planning?",
-                self.state,
-            ),
+            embed=step_embed(self.state, "race"),
             view=RaceView(self.state),
             ephemeral=True,
         )
 
 
-class RaceSelect(discord.ui.Select):
-    def __init__(self):
+STAGE_NAMES = {
+    "race": ("Race", "What race you planning?"),
+    "class": ("Class", "What class you planning?"),
+    "roles": ("Roles", "What role(s) you happy to play? Choose all that apply."),
+    "start": ("Start Time", "When you starting?"),
+    "finish": ("Finish Time", "When you stopping?"),
+    "long": ("Long Session", "How long you planning to go?"),
+    "days": ("Playing On", None),
+    "intentions": ("Levelling Plan", "How you planning to level? Choose all that apply."),
+}
+
+
+def step_embed(state, stage):
+    title, prompt = STAGE_NAMES[stage]
+    if stage == "days":
+        prompt = playing_days_prompt(state)
+    if stage == "finish":
+        prompt = f"Starting {state.start_time}. When you stopping?"
+    return wizard_embed(f"Hyped Ogre LFG · {title}", prompt, state)
+
+
+def next_step(state, stage):
+    if stage == "race":
+        return "class"
+    if stage == "class":
+        return "roles" if len(CLASS_ROLES[state.draft.class_name]) > 1 else "start"
+    if stage == "roles":
+        return "start"
+    if stage == "start":
+        return "finish"
+    if stage == "finish":
+        return "long" if state.finish_time == "Long session..." else "days"
+    if stage == "long":
+        return "days"
+    if stage == "days":
+        return "intentions"
+    return None
+
+
+def previous_step(state, stage):
+    if stage == "race":
+        return "name"
+    if stage == "class":
+        return "race"
+    if stage == "roles":
+        return "class"
+    if stage == "start":
+        return "roles" if len(CLASS_ROLES[state.draft.class_name]) > 1 else "class"
+    if stage == "finish":
+        return "start"
+    if stage == "long":
+        return "finish"
+    if stage == "days":
+        return "long" if state.finish_time in LONG_SESSION_TIMES else "finish"
+    if stage == "intentions":
+        return "days"
+    return None
+
+
+def make_step_view(state, stage):
+    return {
+        "race": RaceView,
+        "class": ClassView,
+        "roles": RoleView,
+        "start": StartTimeView,
+        "finish": FinishTimeView,
+        "long": LongSessionView,
+        "days": LaunchDaysView,
+        "intentions": IntentionView,
+    }[stage](state)
+
+
+async def show_step(interaction, state, stage):
+    await interaction.response.edit_message(
+        embed=step_embed(state, stage),
+        view=make_step_view(state, stage),
+    )
+
+
+def planned_options(state, stage):
+    draft = state.draft
+    if stage == "race":
+        return RACES, {draft.race}
+    if stage == "class":
+        return RACE_CLASSES[draft.race], {draft.class_name}
+    if stage == "roles":
+        return CLASS_ROLES[draft.class_name], set(draft.role.split(", "))
+    if stage == "start":
+        return START_TIMES, {state.start_time}
+    if stage == "finish":
+        chosen = ("Long session..." if state.finish_time in LONG_SESSION_TIMES
+                  else state.finish_time)
+        return FINISH_TIMES, {chosen}
+    if stage == "long":
+        return LONG_SESSION_TIMES, {state.finish_time}
+    if stage == "days":
+        return selectable_playing_days(state.start_time), set(draft.days_off.split(", "))
+    if stage == "intentions":
+        # Match exact option strings: the Grinding label itself contains a comma.
+        return INTENTIONS, {opt for opt in INTENTIONS if opt in draft.activity}
+    raise ValueError(f"Unknown wizard stage {stage}")
+
+
+class StageSelect(discord.ui.Select):
+    def __init__(self, state, stage):
+        self.stage = stage
+        options, selected = planned_options(state, stage)
+        multi = stage in ("roles", "days", "intentions")
+        descriptions = {
+            value: ("Wed 4 Nov" if value == "Launch 23:00 UK"
+                    else "Choose playing days later" if value == "Later"
+                    else "Thu 5 Nov")
+            for value in START_TIMES
+        } if stage == "start" else {}
         super().__init__(
-            placeholder="Choose planned race",
+            placeholder={
+                "race": "Choose planned race",
+                "class": "Choose planned class",
+                "roles": "Choose role(s)",
+                "start": "Choose start time",
+                "finish": "Choose finish time",
+                "long": "Choose session length",
+                "days": "Playing on",
+                "intentions": "Choose levelling plan(s)",
+            }[stage],
+            min_values=1,
+            max_values=len(options) if multi else 1,
             options=[
                 discord.SelectOption(
-                    label=race,
-                    value=race,
-                    description=STARTING_ZONES[race],
-                )
-                for race in RACES
+                    label=value,
+                    value=value,
+                    description=descriptions.get(value),
+                    default=value in selected,
+                ) for value in options
             ],
         )
 
     async def callback(self, interaction):
         state = self.view.state
-        race = self.values[0]
-        state.draft.race = race
-        state.draft.starting_zone = STARTING_ZONES[race]
-        if state.draft.class_name not in RACE_CLASSES[race]:
-            state.draft.class_name = ""
-            state.draft.role = ""
+        choice = self.values[0]
+        draft = state.draft
 
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Class",
-                f"Starting in {state.draft.starting_zone}. What class?",
-                state,
-            ),
-            view=ClassView(state),
-        )
+        if self.stage == "race":
+            draft.race = choice
+            draft.starting_zone = STARTING_ZONES[choice]
+            if draft.class_name not in RACE_CLASSES[choice]:
+                draft.class_name = ""
+                draft.role = ""
+        elif self.stage == "class":
+            draft.class_name = choice
+            allowed = CLASS_ROLES[choice]
+            chosen = [r for r in draft.role.split(", ") if r in allowed]
+            draft.role = ", ".join(chosen) if len(allowed) > 1 else allowed[0]
+        elif self.stage == "roles":
+            draft.role = ", ".join(self.values)
+        elif self.stage == "start":
+            state.start_time = choice
+            draft.days_off = merge_playing_days(
+                choice, draft.days_off.split(", "))
+            if state.finish_time in FINISH_TIMES[:-1] or state.finish_time in LONG_SESSION_TIMES:
+                state.set_availability()
+        elif self.stage == "finish":
+            state.finish_time = choice
+            state.set_availability()
+        elif self.stage == "long":
+            state.finish_time = choice
+            state.set_availability()
+        elif self.stage == "days":
+            draft.days_off = merge_playing_days(state.start_time, self.values)
+        elif self.stage == "intentions":
+            draft.activity = ", ".join(self.values)
+
+        # Don't advance on selection: keep multiselect edits open until Next.
+        await show_step(interaction, state, self.stage)
 
 
-class RaceView(discord.ui.View):
+class RaceSelect(StageSelect):
     def __init__(self, state):
+        super().__init__(state, "race")
+
+
+class ClassSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "class")
+
+
+class RoleSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "roles")
+
+
+class StartTimeSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "start")
+
+
+class FinishTimeSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "finish")
+
+
+class LongSessionSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "long")
+
+
+class LaunchDaysSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "days")
+
+
+class IntentionSelect(StageSelect):
+    def __init__(self, state):
+        super().__init__(state, "intentions")
+
+
+class WizardStepView(discord.ui.View):
+    def __init__(self, state, stage, selector):
         super().__init__(timeout=900)
         self.state = state
-        self.add_item(RaceSelect())
+        self.stage = stage
+        self.add_item(selector(state))
+        back = discord.ui.Button(
+            label="‹ Back", style=discord.ButtonStyle.secondary, row=1,
+        )
+        back.callback = self.back
+        self.add_item(back)
+        forward = discord.ui.Button(
+            label="Next ›", style=discord.ButtonStyle.secondary, row=1,
+        )
+        forward.callback = self.forward
+        self.add_item(forward)
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
 
+    async def back(self, interaction):
+        previous = previous_step(self.state, self.stage)
+        if previous == "name":
+            await interaction.response.send_modal(PlannedNameModal(self.state))
+            return
+        await show_step(interaction, self.state, previous)
 
-class ClassSelect(discord.ui.Select):
-    def __init__(self, race):
-        super().__init__(
-            placeholder="Choose planned class",
-            options=[
-                discord.SelectOption(label=value, value=value)
-                for value in RACE_CLASSES[race]
-            ],
-        )
+    async def forward(self, interaction):
+        draft = self.state.draft
+        stage = self.stage
+        valid = {
+            "race": bool(draft.race),
+            "class": draft.class_name in RACE_CLASSES.get(draft.race, ()),
+            "roles": bool(draft.role),
+            "start": self.state.start_time in START_TIMES,
+            "finish": bool(self.state.finish_time),
+            "long": self.state.finish_time in LONG_SESSION_TIMES,
+            "days": bool(draft.days_off),
+            "intentions": bool(draft.activity),
+        }[stage]
 
-    async def callback(self, interaction):
-        state = self.view.state
-        class_name = self.values[0]
-        state.draft.class_name = class_name
-        allowed_roles = CLASS_ROLES[class_name]
-
-        if len(allowed_roles) == 1:
-            state.draft.role = allowed_roles[0]
-            await interaction.response.edit_message(
-                embed=wizard_embed(
-                    "Hyped Ogre LFG · Start Time",
-                    "When you starting?",
-                    state,
-                ),
-                view=StartTimeView(state),
+        if not valid:
+            await interaction.response.send_message(
+                "Choose an option before moving on.", ephemeral=True,
             )
             return
 
-        state.draft.role = ""
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Roles",
-                "What role(s) you happy to play? Choose all that apply.",
-                state,
-            ),
-            view=RoleView(state, allowed_roles),
-        )
-
-
-class ClassView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(ClassSelect(state.draft.race))
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-class RoleSelect(discord.ui.Select):
-    def __init__(self, allowed_roles):
-        super().__init__(
-            placeholder="Choose role(s)",
-            min_values=1,
-            max_values=len(allowed_roles),
-            options=[
-                discord.SelectOption(label=value, value=value)
-                for value in allowed_roles
-            ],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.role = ", ".join(self.values)
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Start Time",
-                "When you starting?",
-                state,
-            ),
-            view=StartTimeView(state),
-        )
-
-
-class RoleView(discord.ui.View):
-    def __init__(self, state, allowed_roles):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(RoleSelect(allowed_roles))
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-class StartTimeSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose start time",
-            options=[
-                discord.SelectOption(
-                    label=value, value=value,
-                    description=("Wed 4 Nov" if value == "Launch 23:00 UK"
-                                 else "Choose playing days later" if value == "Later"
-                                 else "Thu 5 Nov"),
-                )
-                for value in START_TIMES
-            ],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.start_time = self.values[0]
-        state.draft.days_off = merge_playing_days(
-            state.start_time, state.draft.days_off.split(", "))
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Finish Time",
-                f"Starting {state.start_time}. When you stopping?",
-                state,
-            ),
-            view=FinishTimeView(state),
-        )
-
-
-class StartTimeView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(StartTimeSelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-class FinishTimeSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose finish time",
-            options=[discord.SelectOption(label=value, value=value) for value in FINISH_TIMES],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        finish_time = self.values[0]
-        if finish_time == "Long session...":
-            await interaction.response.edit_message(
-                embed=wizard_embed(
-                    "Hyped Ogre LFG · Long Session",
-                    "How long you planning to go?",
-                    state,
-                ),
-                view=LongSessionView(state),
-            )
+        if stage == "intentions":
+            await interaction.response.send_modal(NotesModal(self.state))
             return
 
-        start_time = getattr(state, "start_time", "Later")
-        state.draft.availability = f"{start_time} - {finish_time}"
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Playing On",
-                playing_days_prompt(state),
-                state,
-            ),
-            view=LaunchDaysView(state),
-        )
+        await show_step(interaction, self.state, next_step(self.state, stage))
 
 
-class FinishTimeView(discord.ui.View):
+class RaceView(WizardStepView):
     def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(FinishTimeSelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
+        super().__init__(state, "race", RaceSelect)
 
 
-class LongSessionSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose session length",
-            options=[discord.SelectOption(label=value, value=value) for value in LONG_SESSION_TIMES],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        start_time = getattr(state, "start_time", "Later")
-        state.draft.availability = f"{start_time} + {self.values[0]}"
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Playing On",
-                playing_days_prompt(state),
-                state,
-            ),
-            view=LaunchDaysView(state),
-        )
-
-
-class LongSessionView(discord.ui.View):
+class ClassView(WizardStepView):
     def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(LongSessionSelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
+        super().__init__(state, "class", ClassSelect)
 
 
-class LaunchDaysSelect(discord.ui.Select):
+class RoleView(WizardStepView):
+    def __init__(self, state, allowed_roles=None):
+        super().__init__(state, "roles", RoleSelect)
+
+
+class StartTimeView(WizardStepView):
     def __init__(self, state):
-        start_time = getattr(state, "start_time", "Later")
-        days = selectable_playing_days(start_time)
-        selected = state.draft.days_off.split(", ")
-        super().__init__(
-            placeholder="Playing on",
-            min_values=1,
-            max_values=len(days),
-            options=[discord.SelectOption(label=value, value=value, default=value in selected)
-                     for value in days],
-        )
-
-    async def callback(self, interaction):
-        await self.view.finish(interaction, self.values)
+        super().__init__(state, "start", StartTimeSelect)
 
 
-class LaunchDaysView(discord.ui.View):
+class FinishTimeView(WizardStepView):
     def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(LaunchDaysSelect(state))
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-    async def finish(self, interaction, selected):
-        state = self.state
-        state.draft.days_off = merge_playing_days(
-            getattr(state, "start_time", "Later"), selected)
-        await interaction.response.edit_message(
-            embed=wizard_embed(
-                "Hyped Ogre LFG · Levelling Plan",
-                "How you planning to level? Choose all that apply.",
-                state,
-            ),
-            view=IntentionView(state),
-        )
+        super().__init__(state, "finish", FinishTimeSelect)
 
 
-class IntentionSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose levelling plan(s)",
-            min_values=1,
-            max_values=len(INTENTIONS),
-            options=[
-                discord.SelectOption(label=value, value=value)
-                for value in INTENTIONS
-            ],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.activity = ", ".join(self.values)
-        await interaction.response.send_modal(NotesModal(state))
-
-
-class IntentionView(discord.ui.View):
+class LongSessionView(WizardStepView):
     def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(IntentionSelect())
+        super().__init__(state, "long", LongSessionSelect)
 
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
+
+class LaunchDaysView(WizardStepView):
+    def __init__(self, state):
+        super().__init__(state, "days", LaunchDaysSelect)
+
+
+class IntentionView(WizardStepView):
+    def __init__(self, state):
+        super().__init__(state, "intentions", IntentionSelect)
 
 
 class NotesModal(discord.ui.Modal, title="Anything else?"):
@@ -687,6 +685,7 @@ class NotesModal(discord.ui.Modal, title="Anything else?"):
             view=ReviewView(self.state),
         )
 
+
 def review_embed(state):
     embed = discord.Embed(
         title="Hyped Ogre LFG · Review",
@@ -704,6 +703,10 @@ class ReviewView(discord.ui.View):
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
+
+    @discord.ui.button(label="‹ Back", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction, button):
+        await show_step(interaction, self.state, "intentions")
 
     @discord.ui.button(label="Save", style=discord.ButtonStyle.success)
     async def save(self, interaction, button):
@@ -1002,7 +1005,7 @@ class BoardLayout(discord.ui.LayoutView):
     def __init__(self, cog, channel_id, guild=None):
         super().__init__(timeout=None)
         roster = entries(channel_id)
-        # Conditional LFM galleries cost one extra component apiece.
+        # Inline emoji keeps the 40-component budget unchanged.
         visible = visible_board_entries(roster)
 
         header = discord.ui.Section(
@@ -1016,6 +1019,7 @@ class BoardLayout(discord.ui.LayoutView):
             ),
         )
         container = discord.ui.Container(header, accent_color=ACCENT)
+        lfg_emoji = guild_lfg_emoji(guild)
 
         if visible:
             container.add_item(discord.ui.Separator())
@@ -1033,7 +1037,8 @@ class BoardLayout(discord.ui.LayoutView):
                 ]
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
-                lines.append(f"-# **Starting Zone:** {zone}")
+                open_marker = f" {lfg_emoji}" if lfg_emoji and show_lfm_emoji(row["activity"]) else ""
+                lines.append(f"-# **Starting Zone:** {zone}{open_marker}")
                 text = "\n".join(lines)
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
@@ -1046,13 +1051,6 @@ class BoardLayout(discord.ui.LayoutView):
                         accessory=thumbnail,
                     )
                 )
-                if show_lfm_image(row["activity"]):
-                    gallery = discord.ui.MediaGallery()
-                    gallery.add_item(
-                        media=OPEN_LFM_IMAGE,
-                        description="Open for group / looking for more",
-                    )
-                    container.add_item(gallery)
                 if index != len(visible) - 1:
                     container.add_item(discord.ui.Separator())
         else:
