@@ -37,14 +37,14 @@ class TextChannel:
         self.lookup_error = None
         self.send_error = None
 
-    async def send(self, *, view):
+    async def send(self, *, view, allowed_mentions=None):
         if self.send_error:
             raise self.send_error
         message = SimpleNamespace(
             id=self.next_id, jump_url=f"https://discord.com/channels/77/101/{self.next_id}"
         )
         self.next_id += 1
-        self.sent.append({"message": message, "view": view})
+        self.sent.append({"message": message, "view": view, "allowed_mentions": allowed_mentions})
         self.messages[message.id] = message
         return message
 
@@ -55,6 +55,12 @@ class TextChannel:
             return self.messages[message_id]
         except KeyError:
             raise NotFound("Previous message was deleted")
+
+
+class AllowedMentions:
+    @staticmethod
+    def none():
+        return "no-pings"
 
 
 class InteractionResponse:
@@ -105,7 +111,7 @@ class PublicBoardRecoveryTests(unittest.IsolatedAsyncioTestCase):
             "discord": SimpleNamespace(
                 Interaction=object, TextChannel=TextChannel,
                 NotFound=NotFound, Forbidden=Forbidden,
-                HTTPException=HTTPException,
+                HTTPException=HTTPException, AllowedMentions=AllowedMentions,
             ),
             "os": SimpleNamespace(environ={"HYPED_GUILD_ID": "77"}),
             "connect": lambda: self.db,
@@ -141,6 +147,7 @@ class PublicBoardRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.stored()["message_id"], 7000)
         self.assertEqual(self.stored()["page_index"], 2)
         self.assertTrue(self.channel.sent[0]["view"].is_public_board)
+        self.assertEqual(self.channel.sent[0]["allowed_mentions"], "no-pings")
         self.assertEqual(self.channel.sent[0]["view"].page_index, 2)
         self.assertEqual(self.saved_plan(), "keep me")
         self.cog.refresh.assert_awaited_once_with(101)
@@ -188,6 +195,22 @@ class PublicBoardRecoveryTests(unittest.IsolatedAsyncioTestCase):
         region = text[text.index("class BoardLayout("):text.index("class LFGPreview(")]
         self.assertNotIn("discord.ui.Separator()", region)
         self.assertIn("self.add_item(container)", region)
+
+    def test_contact_line_has_clickable_discord_mention_but_no_dummy_ping(self):
+        tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+        func = next(n for n in tree.body
+                    if isinstance(n, ast.FunctionDef) and n.name == "contact_line")
+        scope = {}
+        exec(compile(ast.Module(body=[func], type_ignores=[]),
+                     str(SOURCE), "exec"), scope)
+        row = {"user_id": 123456789012345678}
+        self.assertEqual(scope["contact_line"](row),
+                         "-# **Contact:** <@123456789012345678>")
+        self.assertEqual(scope["contact_line"](row, preview=True),
+                         "-# **Contact:** @Demo player")
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn('lines.append(f"-# **Starting Zone:** {zone}")\\n            lines.append(contact_line(row, preview=preview))'.replace("\\n", "\n"), source)
+        self.assertIn("allowed_mentions=discord.AllowedMentions.none()", source)
 
     def test_preview_remains_ephemeral_and_public_board_is_channel_send(self):
         text = SOURCE.read_text(encoding="utf-8")
