@@ -92,6 +92,12 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
+# Unsigned attachment URL: Discord refreshes signed attachment URLs used as media.
+OPEN_LFM_IMAGE = (
+    "https://cdn.discordapp.com/attachments/1180461784700821634/"
+    "1563967306000760972/SkillsUndeadBETA.png"
+)
+ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
 ACCENT = 0x8C5A3C
 
 
@@ -188,8 +194,47 @@ def player_avatar_url(row, guild=None):
     return ""
 
 
-def format_roles(value):
-    return " / ".join(part.strip() for part in value.split(",") if part.strip())
+def format_roles(value, *, icons=False):
+    roles = [part.strip() for part in value.split(",") if part.strip()]
+    if icons:
+        return " / ".join(
+            f"{ROLE_EMOJIS.get(role, '')} {role}".strip() for role in roles
+        )
+    return " / ".join(roles)
+
+
+def show_lfm_image(activity):
+    """Only explicitly open/LFM plans display the image, never solo/sorted."""
+    plans = {part.strip() for part in activity.split(",")}
+    if "Full Group / Sorted" in plans or any("Solo Questing" in part for part in plans):
+        return False
+    return bool(plans & {
+        "Open / Flexible",
+        "Flexible",  # Old saved listings before the option was renamed.
+        "Group Questing (LFM)",
+        "Group Questing + Dungeons (LFM)",
+    })
+
+
+def visible_board_entries(roster):
+    """Stay under Discord's 40 V2 components, including all conditional media."""
+    chosen = []
+    for row in roster[:7]:
+        candidate = chosen + [row]
+        n = len(candidate)
+        image_count = sum(show_lfm_image(item["activity"]) for item in candidate)
+        # Container 1 + header section/text/thumbnail 3 + header separator 1;
+        # each player section/text/avatar 3 + between-player separators n-1;
+        # one gallery per open player; overflow separator/text 2;
+        # action row and its four buttons 5.
+        component_count = (
+            1 + 3 + 1 + 3 * n + (n - 1) + image_count + 5
+            + (2 if len(roster) > n else 0)
+        )
+        if component_count > 40:
+            break
+        chosen = candidate
+    return chosen
 
 
 def compact_availability(value):
@@ -957,8 +1002,8 @@ class BoardLayout(discord.ui.LayoutView):
     def __init__(self, cog, channel_id, guild=None):
         super().__init__(timeout=None)
         roster = entries(channel_id)
-        # Leave room for four controls and the overflow notice (40-component limit).
-        visible = roster[:7]
+        # Conditional LFM galleries cost one extra component apiece.
+        visible = visible_board_entries(roster)
 
         header = discord.ui.Section(
             discord.ui.TextDisplay(
@@ -977,7 +1022,7 @@ class BoardLayout(discord.ui.LayoutView):
             for index, row in enumerate(visible):
                 race = row["race"] or "Race not set"
                 zone = row["starting_zone"] or STARTING_ZONES.get(race, "Starting zone not set")
-                roles = format_roles(row["role"]) or "Role not set"
+                roles = format_roles(row["role"], icons=True) or "Role not set"
                 days = row["days_off"] or "Not set"
                 character = safe(row["character"]) if row["character"] else "Name TBD"
                 notes = safe(row["notes"]) if row["notes"] else ""
@@ -986,9 +1031,9 @@ class BoardLayout(discord.ui.LayoutView):
                     f"-# **Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}",
                     f"-# **Plan:** {safe(row['activity'])}",
                 ]
-                lines.append(f"-# **Starting Zone:** {zone}")
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
+                lines.append(f"-# **Starting Zone:** {zone}")
                 text = "\n".join(lines)
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
@@ -1001,6 +1046,13 @@ class BoardLayout(discord.ui.LayoutView):
                         accessory=thumbnail,
                     )
                 )
+                if show_lfm_image(row["activity"]):
+                    gallery = discord.ui.MediaGallery()
+                    gallery.add_item(
+                        media=OPEN_LFM_IMAGE,
+                        description="Open for group / looking for more",
+                    )
+                    container.add_item(gallery)
                 if index != len(visible) - 1:
                     container.add_item(discord.ui.Separator())
         else:
