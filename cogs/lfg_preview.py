@@ -89,7 +89,6 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
-BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
 ACCENT = 0x8C5A3C
 
 
@@ -767,12 +766,18 @@ class BoardLayout(discord.ui.LayoutView):
                 days = row["days_off"] or "Not set"
                 character = safe(row["character"]) if row["character"] else "Name TBD"
                 notes = safe(row["notes"]) if row["notes"] else ""
+                details_line = (
+                    f"**Starting:** {zone} · "
+                    f"**Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}"
+                )
+                plan_line = f"**Plan:** {safe(row['activity'])}"
+                if notes:
+                    plan_line += f" · **Notes:** {notes}"
+
                 text = (
                     f"**{character} · {race} {row['class_name']} · {roles}**\n"
-                    f"**Starting:** {zone}\n"
-                    f"**Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}\n"
-                    f"**Plan:** {safe(row['activity'])}"
-                    + (f"\n**Notes:** {notes}" if notes else "")
+                    f"-# {details_line}\n"
+                    f"-# {plan_line}"
                 )
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
@@ -800,13 +805,6 @@ class BoardLayout(discord.ui.LayoutView):
             )
 
         self.add_item(container)
-
-        gallery = discord.ui.MediaGallery()
-        gallery.add_item(
-            media=BOTTOM_IMAGE,
-            description="Hyped",
-        )
-        self.add_item(gallery)
 
         self.add_item(
             discord.ui.ActionRow(
