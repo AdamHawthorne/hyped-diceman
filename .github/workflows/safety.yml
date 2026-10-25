@@ -31,3 +31,16 @@ jobs:
               assert 0 < view.total_children_count < 40
           print("V2 countdown views built successfully")
           '
+      - name: Construct suggestions V2 views in real runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs.suggestions import SuggestionsPanel, SuggestionPost
+          class DummyCog: pass
+          panel = SuggestionsPanel(DummyCog())
+          named = SuggestionPost("Test feedback", anonymous=False, user_id=123)
+          anon = SuggestionPost("Anonymous feedback", anonymous=True)
+          assert 0 < panel.total_children_count < 20
+          assert 0 < named.total_children_count < 20
+          assert 0 < anon.total_children_count < 20
+          print("V2 suggestions views built successfully")
+          '

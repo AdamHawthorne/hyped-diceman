@@ -3254,6 +3254,7 @@ async def load_hyped_extensions():
     await bot.add_cog(FlameboardEvents(bot, HYPED_GUILD_ID, sync_flameboard_message))
     await bot.load_extension("cogs.lfg_preview")
     await bot.load_extension("cogs.countdown")
+    await bot.load_extension("cogs.suggestions")
 
 bot.setup_hook = load_hyped_extensions
 
