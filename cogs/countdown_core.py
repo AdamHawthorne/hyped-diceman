@@ -45,6 +45,18 @@ def upcoming_string(target_ts, now_ts):
     return f"{minutes}m"
 
 
+def remaining_hours_string(target_ts, now_ts):
+    """Compact total-hours countdown, e.g. 241h 07m remaining."""
+    remain = max(0, int(target_ts) - int(now_ts))
+    if remain == 0:
+        return "Ready!"
+    total_minutes = (remain + 59) // 60
+    hours, minutes = divmod(total_minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m remaining"
+    return f"{minutes}m remaining"
+
+
 def next_cycle(target_ts, repeat_seconds, now_ts):
     """First repeated target strictly after now, skipping any missed cycles."""
     if repeat_seconds <= 0 or target_ts > now_ts:

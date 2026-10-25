@@ -7,8 +7,8 @@ import tempfile
 import unittest
 
 from cogs.countdown_core import (
-    parse_uk_datetime, upcoming_string, next_cycle, pre_reminder_due,
-    due_reminder_due, render_key, validate_image_url,
+    parse_uk_datetime, upcoming_string, remaining_hours_string, next_cycle,
+    pre_reminder_due, due_reminder_due, render_key, validate_image_url,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +32,12 @@ class CountdownClockTests(unittest.TestCase):
         self.assertEqual(upcoming_string(7200, 0), "2h 00m")
         self.assertEqual(upcoming_string(90061, 0), "1d 01h 02m")
         self.assertEqual(upcoming_string(100, 100), "00m · Ready")
+
+    def test_compact_total_hours_remaining_format(self):
+        self.assertEqual(remaining_hours_string(90061, 0), "25h 02m remaining")
+        self.assertEqual(remaining_hours_string(7200, 0), "2h 00m remaining")
+        self.assertEqual(remaining_hours_string(3599, 0), "1h 00m remaining")
+        self.assertEqual(remaining_hours_string(100, 100), "Ready!")
 
     def test_repeating_cooldowns_skip_missed_cycles(self):
         self.assertEqual(next_cycle(100, 3600, 100), 3700)
@@ -97,6 +103,17 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("interaction.user.id != OWNER_ID", SOURCE)
         self.assertIn("interaction.guild_id != GUILD_ID", SOURCE)
         self.assertIn("@app_commands.default_permissions(manage_guild=True)", SOURCE)
+
+    def test_compact_card_uses_fixed_stopwatch_and_event_as_title(self):
+        self.assertIn('COUNTDOWN_ICON_URL = "https://i.vgy.me/RXYsym.png"', SOURCE)
+        self.assertIn('f"## {title}\\n"', SOURCE)
+        self.assertIn('f"-# {subtitle}\\n"', SOURCE)
+        self.assertIn('f"**{remaining}**"', SOURCE)
+        self.assertIn("remaining_hours_string(target, now)", SOURCE)
+        self.assertIn("discord.ui.Thumbnail(", SOURCE)
+        self.assertIn("COUNTDOWN_ICON_URL,", SOURCE)
+        self.assertNotIn("## <Hyped> · Countdown / Cooldown", SOURCE)
+        self.assertNotIn('icon_url="HTTPS', SOURCE)
 
     def test_preview_is_ephemeral_public_timer_posts_in_channel(self):
         self.assertIn("view=CountdownLayout(config, now=now, preview=True)", SOURCE)
