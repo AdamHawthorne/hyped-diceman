@@ -1,69 +1,71 @@
-"""Ensure 30+ real listings fit consecutive V2 messages with no omissions."""
+"""Verify one Discord message per LFM player, then embeds and footer."""
 
 import unittest
 
-from cogs.lfg_pagination import (
-    OPEN_PAGE_SIZE, CLOSED_EMBED_SIZE, chunks, split_audience, page_specs,
-)
+from cogs.lfg_pagination import CLOSED_EMBED_SIZE, chunks, split_audience, page_specs
 
 
 def open_plan(activity):
-    return activity == "Open / Flexible" or activity == "Group Questing (LFM)"
+    return activity in ("Open / Flexible", "Group Questing (LFM)")
 
 
 class BoardPaginationTests(unittest.TestCase):
-    def test_thirty_open_entries_have_six_continuous_five_player_pages(self):
+    def test_thirty_open_players_each_get_own_message_plus_final_image(self):
         records = [{"user_id": i, "activity": "Open / Flexible"} for i in range(30)]
-        open_rows, closed = split_audience(records, open_plan)
-        pages = chunks(open_rows, OPEN_PAGE_SIZE)
-        self.assertEqual(len(pages), 6)
-        self.assertTrue(all(len(page) == 5 for page in pages))
-        self.assertEqual([row["user_id"] for page in pages for row in page],
-                         list(range(30)))
-        additional = page_specs(open_rows, closed)
-        self.assertEqual([kind for kind, _ in additional], ["v2"] * 5)
+        looking, closed = split_audience(records, open_plan)
+        specs = page_specs(looking, closed)
+        self.assertEqual([kind for kind, _ in specs], ["entry"] * 30 + ["footer"])
+        self.assertEqual(
+            [row["user_id"] for kind, row in specs if kind == "entry"],
+            list(range(30)),
+        )
+        self.assertIsNone(specs[-1][1])
 
-    def test_mixed_group_and_non_group_entries_get_separate_embeds(self):
+    def test_mixed_players_have_separate_embeds_below_open_entries(self):
         records = [
             {"user_id": i, "activity": (
                 "Open / Flexible" if i % 3 != 0 else "Full Group / Sorted"
             )}
             for i in range(35)
         ]
-        looking, not_looking = split_audience(records, open_plan)
-        expected = ([r["user_id"] for r in looking]
-                    + [r["user_id"] for r in not_looking])
-        parts = page_specs(looking, not_looking)
-        actual = (
-            [r["user_id"] for r in looking[:OPEN_PAGE_SIZE]]
-            + [r["user_id"] for _, part in parts for r in part]
+        open_rows, closed = split_audience(records, open_plan)
+        specs = page_specs(open_rows, closed)
+        self.assertEqual(
+            [kind for kind, _ in specs],
+            ["entry"] * len(open_rows) + ["closed"] * 2 + ["footer"],
         )
-        self.assertEqual(actual, expected)
-        self.assertEqual(len(not_looking), 12)
-        self.assertEqual(len([kind for kind, _ in parts if kind == "closed"]), 2)
-        self.assertTrue(all(len(page) <= CLOSED_EMBED_SIZE
-                            for kind, page in parts if kind == "closed"))
-        self.assertEqual([kind for kind, _ in parts],
-                         sorted([kind for kind, _ in parts],
-                                key=lambda kind: kind != "v2"))
+        self.assertEqual(len(closed), 12)
+        self.assertTrue(all(len(group) <= CLOSED_EMBED_SIZE
+                            for kind, group in specs if kind == "closed"))
+        recovered = [row["user_id"] for kind, part in specs
+                     for row in ([part] if kind == "entry"
+                                 else part if kind == "closed" else [])]
+        self.assertEqual(
+            recovered,
+            [row["user_id"] for row in open_rows + closed],
+        )
 
-    def test_zero_looking_still_renders_an_anchor_plus_embed(self):
-        records = [{"activity": "Solo Questing"} for _ in range(2)]
-        looking, other = split_audience(records, open_plan)
-        self.assertEqual(looking, [])
-        self.assertEqual(page_specs(looking, other), [("closed", records)])
+    def test_empty_board_still_has_final_footer(self):
+        self.assertEqual(page_specs([], []), [("footer", None)])
+        rows = [{"activity": "Solo Questing"} for _ in range(2)]
+        looking, closed = split_audience(rows, open_plan)
+        self.assertEqual(
+            page_specs(looking, closed), [("closed", rows), ("footer", None)],
+        )
 
-    def test_twenty_preview_entries_are_not_truncated(self):
-        records = [
+    def test_twenty_dummy_entries_can_be_shown_in_separate_messages(self):
+        rows = [
             {"user_id": i, "activity": (
                 "Open / Flexible" if i < 15 else "Solo Questing"
             )}
             for i in range(20)
         ]
-        looking, closed = split_audience(records, open_plan)
-        pieces = chunks(looking, OPEN_PAGE_SIZE) + chunks(closed, CLOSED_EMBED_SIZE)
-        self.assertEqual(sum(map(len, pieces)), 20)
-        self.assertEqual(len(pieces), 4)
+        looking, closed = split_audience(rows, open_plan)
+        specs = page_specs(looking, closed)
+        self.assertEqual(len([kind for kind, _ in specs if kind == "entry"]), 15)
+        self.assertEqual(sum(len(part) for kind, part in specs
+                             if kind == "closed"), 5)
+        self.assertEqual(specs[-1][0], "footer")
 
 
 if __name__ == "__main__":
