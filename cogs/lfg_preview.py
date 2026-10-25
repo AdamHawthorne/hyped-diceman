@@ -988,7 +988,7 @@ class RemoveButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(thinking=True, ephemeral=True)
         with connect() as db:
             result = db.execute(
                 "DELETE FROM lfg_listings WHERE channel_id=? AND user_id=?",
@@ -1146,7 +1146,7 @@ class LFGPreview(commands.Cog):
             )
 
     async def refresh(self, channel_id):
-        """Synchronise all pages on each save; never drop any LFG listings."""
+        """Synchronise all individually posted messages after the header."""
         async with self.lock:
             row = get_board(channel_id)
             if not row:
@@ -1158,11 +1158,11 @@ class LFGPreview(commands.Cog):
             guild = getattr(channel, "guild", None)
             open_rows, closed_rows = split_audience(entries(channel_id), show_lfm_emoji)
 
+            # Never move the persistent header/buttons or lose its custom IDs.
             anchor = channel.get_partial_message(row["message_id"])
             await anchor.edit(
                 content=None, embeds=[], attachments=[],
-                view=BoardLayout(self, channel_id, guild, page_index=0,
-                                 page_rows=open_rows[:OPEN_PAGE_SIZE]),
+                view=BoardLayout(self, channel_id, guild),
             )
 
             desired = page_specs(open_rows, closed_rows)
@@ -1173,28 +1173,34 @@ class LFGPreview(commands.Cog):
                     (channel_id,),
                 )]
 
-            # Once a page changes type (e.g. the former final embed becomes
-            # a V2 page), recreate that page and its tail to preserve order.
+            # Edit slots in place; rebuild only the tail if the message kind
+            # changes, so the public order always stays chronological.
             boundary = 0
             for index, ((kind, part), prior) in enumerate(zip(desired, old)):
                 if prior["position"] != index + 1 or prior["kind"] != kind:
                     break
                 message = channel.get_partial_message(prior["message_id"])
                 try:
-                    if kind == "v2":
+                    if kind == "entry":
                         await message.edit(
                             content=None, embeds=[], attachments=[],
-                            view=BoardLayout(self, channel_id, guild,
-                                             page_index=index + 1, page_rows=part),
+                            view=EntryLayout(part, guild),
                         )
+                    elif kind == "closed":
+                        closed_index = sum(1 for k, _ in desired[:index]
+                                           if k == "closed")
+                        await message.edit(embed=not_lfm_embed(part, closed_index))
                     else:
-                        closed_number = sum(1 for kind0, _ in desired[:index]
-                                            if kind0 == "closed")
-                        await message.edit(embed=not_lfm_embed(part, closed_number))
+                        await message.edit(
+                            content=None, embeds=[], attachments=[],
+                            view=FooterLayout(),
+                        )
                 except discord.NotFound:
                     break
                 boundary += 1
 
+            # The footer is guaranteed last, even when a member is added,
+            # removed or changes their plan and sorting position.
             for prior in old[boundary:]:
                 try:
                     await channel.get_partial_message(prior["message_id"]).delete()
@@ -1208,15 +1214,13 @@ class LFGPreview(commands.Cog):
 
             for index in range(boundary, len(desired)):
                 kind, part = desired[index]
-                if kind == "v2":
-                    message = await channel.send(
-                        view=BoardLayout(self, channel_id, guild,
-                                         page_index=index + 1, page_rows=part),
-                    )
+                if kind == "entry":
+                    message = await channel.send(view=EntryLayout(part, guild))
+                elif kind == "closed":
+                    closed_index = sum(1 for k, _ in desired[:index] if k == "closed")
+                    message = await channel.send(embed=not_lfm_embed(part, closed_index))
                 else:
-                    closed_number = sum(1 for kind0, _ in desired[:index]
-                                        if kind0 == "closed")
-                    message = await channel.send(embed=not_lfm_embed(part, closed_number))
+                    message = await channel.send(view=FooterLayout())
                 with connect() as db:
                     db.execute(
                         "INSERT INTO lfg_board_parts(channel_id,position,kind,message_id) "
@@ -1279,10 +1283,11 @@ class LFGPreview(commands.Cog):
 
         row = get_board(channel.id)
         if row:
+            await interaction.response.defer(thinking=True, ephemeral=True)
             try:
                 board_message = await channel.fetch_message(row["message_id"])
                 await self.refresh(channel.id)
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Ogre found board: {board_message.jump_url}",
                     ephemeral=True,
                 )
@@ -1292,12 +1297,18 @@ class LFGPreview(commands.Cog):
                     f"LFG EXISTING BOARD INVALID channel={channel.id} "
                     f"message={row['message_id']} error={exc!r}"
                 )
+                await interaction.followup.send(
+                    "The previous board message is missing. Please ask an officer "
+                    "to restore the board; saved plans are still safe.",
+                    ephemeral=True,
+                )
+                return
 
         await self.post_new_board(interaction, channel)
 
     @app_commands.command(
         name="lfg-preview",
-        description="Preview 20 fictional LFG plans across the full board layout",
+        description="Preview 20 dummy LFG entries; no real data is changed",
     )
     @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
@@ -1307,26 +1318,22 @@ class LFGPreview(commands.Cog):
             await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
             return
 
-        # Never reads real members' listings or changes the live board database.
-        sample = demo_entries()
-        open_rows, closed_rows = split_audience(sample, show_lfm_emoji)
-        open_pages = chunks(open_rows, OPEN_PAGE_SIZE)
-        first_page = open_pages[0] if open_pages else []
+        # Private and read-only: no real member records or board IDs are used.
+        open_rows, closed_rows = split_audience(demo_entries(), show_lfm_emoji)
         await interaction.response.send_message(
             view=BoardLayout(self, interaction.channel_id, interaction.guild,
-                             preview=True, page_index=0, page_rows=first_page),
+                             preview=True),
             ephemeral=True,
         )
-        for index, page in enumerate(open_pages[1:], start=1):
+        for row in open_rows:
             await interaction.followup.send(
-                view=BoardLayout(self, interaction.channel_id, interaction.guild,
-                                 preview=True, page_index=index, page_rows=page),
-                ephemeral=True,
+                view=EntryLayout(row, interaction.guild), ephemeral=True,
             )
-        for index, page in enumerate(chunks(closed_rows, CLOSED_EMBED_SIZE)):
+        for index, group in enumerate(chunks(closed_rows, CLOSED_EMBED_SIZE)):
             await interaction.followup.send(
-                embed=not_lfm_embed(page, index), ephemeral=True,
+                embed=not_lfm_embed(group, index), ephemeral=True,
             )
+        await interaction.followup.send(view=FooterLayout(), ephemeral=True)
 
 
 async def setup(bot):
