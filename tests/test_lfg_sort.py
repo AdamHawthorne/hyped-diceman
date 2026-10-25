@@ -2,7 +2,7 @@
 
 import unittest
 
-from cogs.lfg_sort import listing_start_key
+from cogs.lfg_sort import listing_start_key, listing_board_key, is_solo_or_sorted
 
 
 def entry(name, availability, days="Thu 5 Nov", user_id=1):
@@ -50,6 +50,25 @@ class LFGSortTests(unittest.TestCase):
             [r["user_id"] for r in sorted(records, key=listing_start_key)],
             [3, 9, 2],
         )
+
+    def test_solo_and_sorted_always_follow_group_seekers(self):
+        records = [
+            dict(entry("Sorted Early", "Launch 23:00 UK - 04:00 UK", user_id=1),
+                 activity="Full Group / Sorted"),
+            dict(entry("Solo Midnight", "00:00 UK - 06:00 UK", user_id=2),
+                 activity="Solo Questing"),
+            dict(entry("Open Later", "Later - 23:00 UK", user_id=3),
+                 activity="Open / Flexible"),
+            dict(entry("LFM Morning", "10:00 UK - 18:00 UK", user_id=4),
+                 activity="Group Questing (LFM)"),
+        ]
+        self.assertEqual(
+            [r["character"] for r in sorted(records, key=listing_board_key)],
+            ["LFM Morning", "Open Later", "Sorted Early", "Solo Midnight"],
+        )
+        self.assertTrue(is_solo_or_sorted("Open / Flexible, Full Group / Sorted"))
+        self.assertTrue(is_solo_or_sorted("Solo Questing + Dungeons (LFG/ Pugging)"))
+        self.assertFalse(is_solo_or_sorted("Group Questing (LFM)"))
 
     def test_updating_start_time_reorders_the_same_entry(self):
         first = entry("Alpha", "18:00 UK - 23:00 UK", user_id=1)
