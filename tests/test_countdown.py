@@ -82,7 +82,10 @@ class CountdownSafetyTests(unittest.TestCase):
                 db = sqlite3.connect(filename)
                 db.row_factory = sqlite3.Row
                 return db
-            scope = {"connect": connect}
+            scope = {
+                "connect": connect,
+                "COUNTDOWN_ICON_URL": "https://i.vgy.me/RXYsym.png",
+            }
             exec(compile(ast.Module(body=[fn], type_ignores=[]),
                          str(filename), "exec"), scope)
             scope["init_db"]()
@@ -97,7 +100,10 @@ class CountdownSafetyTests(unittest.TestCase):
                 tables = {r[0] for r in db.execute(
                     "SELECT name FROM sqlite_master WHERE type='table'"
                 )}
-                self.assertEqual(tables, {"countdowns"})
+                self.assertEqual(tables, {"countdowns", "countdown_subscribers"})
+                sub_columns = {row[1] for row in
+                               db.execute("PRAGMA table_info(countdown_subscribers)")}
+                self.assertTrue({"channel_id", "user_id", "last_notified_target"}.issubset(sub_columns))
 
     def test_owner_check_is_not_just_discord_default_permissions(self):
         self.assertIn("interaction.user.id != OWNER_ID", SOURCE)
@@ -113,10 +119,39 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("discord.ui.Thumbnail(", SOURCE)
         self.assertIn("COUNTDOWN_ICON_URL,", SOURCE)
         self.assertNotIn("## <Hyped> · Countdown / Cooldown", SOURCE)
-        self.assertNotIn('icon_url="HTTPS', SOURCE)
+        self.assertIn('image_url="Optional HTTPS artwork shown at the bottom"', SOURCE)
+        self.assertIn("gallery.add_item(", SOURCE)
+        self.assertIn("media=image_url", SOURCE)
+
+    def test_friendly_setup_wizard_uses_dropdowns_not_raw_datetime_only(self):
+        self.assertIn('@app_commands.command(name="setup"', SOURCE)
+        self.assertIn("class SetupDetailsModal", SOURCE)
+        self.assertIn("class SetupDateSelect", SOURCE)
+        self.assertIn("class SetupHourSelect", SOURCE)
+        self.assertIn("class SetupMinuteSelect", SOURCE)
+        self.assertIn("class SetupReminderSelect", SOURCE)
+        self.assertIn("class SetupRepeatSelect", SOURCE)
+        self.assertIn("class SetupReviewLayout", SOURCE)
+        self.assertIn("SetupPublishButton", SOURCE)
+
+    def test_public_remind_button_is_persistent_and_five_minutes(self):
+        self.assertIn('custom_id="hyped_countdown_remind_v1"', SOURCE)
+        self.assertIn("SUBSCRIBER_LEAD_SECONDS = 5 * 60", SOURCE)
+        self.assertIn("COUNTDOWN SUBSCRIBER DM FAILED", SOURCE)
+        self.assertIn("Ogre bonk clock! Five minutes!", SOURCE)
+        self.assertIn("countdown_subscribers", SOURCE)
+        self.assertIn("last_notified_target", SOURCE)
+        self.assertIn("self.bot.add_view(", SOURCE)
+        self.assertIn('label="Remind me"', SOURCE)
+
+    def test_legacy_stopwatch_is_not_reused_as_bottom_artwork(self):
+        self.assertIn("UPDATE countdowns SET image_url='' WHERE image_url=?", SOURCE)
+        self.assertIn("(COUNTDOWN_ICON_URL,)", SOURCE)
 
     def test_preview_is_ephemeral_public_timer_posts_in_channel(self):
-        self.assertIn("view=CountdownLayout(config, now=now, preview=True)", SOURCE)
+        self.assertIn("preview=True", SOURCE)
+        self.assertIn("include_remind=True", SOURCE)
+        self.assertIn("disabled=preview or not active", SOURCE)
         self.assertIn("ephemeral=True", SOURCE)
         self.assertIn("message = await channel.send(", SOURCE)
         self.assertIn("allowed_mentions=discord.AllowedMentions.none()", SOURCE)
@@ -125,6 +160,7 @@ class CountdownSafetyTests(unittest.TestCase):
     def test_worker_updates_existing_message_and_dms_only_owner(self):
         self.assertIn("get_partial_message(row[\"message_id\"]).edit(", SOURCE)
         self.assertIn("await owner.send(", SOURCE)
+        self.assertIn("await user.send(", SOURCE)
         self.assertIn("pre_notified_target", SOURCE)
         self.assertIn("due_notified_target", SOURCE)
         self.assertNotIn("await channel.send(content=", SOURCE)
