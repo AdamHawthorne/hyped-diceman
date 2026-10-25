@@ -47,14 +47,27 @@ def init_db():
             user_id INTEGER NOT NULL,
             character TEXT NOT NULL,
             level INTEGER NOT NULL,
+            level_label TEXT NOT NULL DEFAULT '',
+            level_sort INTEGER NOT NULL DEFAULT 1,
             class_name TEXT NOT NULL,
             role TEXT NOT NULL,
             availability TEXT NOT NULL,
             activity TEXT NOT NULL,
             notes TEXT NOT NULL DEFAULT '',
+            avatar_url TEXT NOT NULL DEFAULT '',
             board_day TEXT NOT NULL,
             PRIMARY KEY(channel_id, user_id)
         )""")
+
+        columns = {row[1] for row in db.execute("PRAGMA table_info(lfg_listings)")}
+        if "level_label" not in columns:
+            db.execute("ALTER TABLE lfg_listings ADD COLUMN level_label TEXT NOT NULL DEFAULT ''")
+            db.execute("UPDATE lfg_listings SET level_label=CAST(level AS TEXT)")
+        if "level_sort" not in columns:
+            db.execute("ALTER TABLE lfg_listings ADD COLUMN level_sort INTEGER NOT NULL DEFAULT 1")
+            db.execute("UPDATE lfg_listings SET level_sort=level")
+        if "avatar_url" not in columns:
+            db.execute("ALTER TABLE lfg_listings ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''")
 
 
 def get_board(channel_id):
@@ -77,7 +90,7 @@ def entries(channel_id):
     with connect() as db:
         return db.execute(
             "SELECT * FROM lfg_listings WHERE channel_id=? AND board_day=? "
-            "ORDER BY level DESC, character COLLATE NOCASE ASC",
+            "ORDER BY level_sort DESC, character COLLATE NOCASE ASC",
             (channel_id, today()),
         ).fetchall()
 
@@ -86,44 +99,89 @@ def safe(value):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(value)))
 
 
-def board_embed(channel_id):
+def board_embeds(channel_id, guild=None):
     roster = entries(channel_id)
-    lines = []
-    for row in roster:
-        activity = safe(row["activity"])
+
+    main = discord.Embed(
+        title="<Hyped> LFG-LFM Board",
+        description=(
+            "**Ogre want know plan.**\n"
+            "Add what you playing, when you around, and what you want do."
+            if roster else
+            "**Ogre want know plan.**\nAdd / Update below. Be first on board."
+        ),
+        color=0x8C5A3C,
+    )
+    main.set_thumbnail(url="https://i.vgy.me/2Jt4oi.png")
+    main.set_footer(text=f"{len(roster)} looking today · Resets each UK day")
+
+    embeds = [main]
+    for row in roster[:9]:
         notes = f" · {safe(row['notes'])}" if row["notes"] else ""
-        lines.append(
-            f"**Lv {row['level']} · {safe(row['character'])} · {row['class_name']} · {row['role']}**\n"
-            f"{row['availability']} · {activity}{notes}"
+        avatar_url = row["avatar_url"]
+        if not avatar_url and guild is not None:
+            member = guild.get_member(row["user_id"])
+            if member is not None:
+                avatar_url = str(member.display_avatar.url)
+
+        entry = discord.Embed(
+            description=f"{row['availability']} · {safe(row['activity'])}{notes}",
+            color=0x8C5A3C,
+        )
+        author_name = (
+            f"Lv {row['level_label'] or row['level']} · {safe(row['character'])} · "
+            f"{row['class_name']} · {row['role']}"
+        )
+        if avatar_url:
+            entry.set_author(name=author_name, icon_url=avatar_url)
+        else:
+            entry.set_author(name=author_name)
+        embeds.append(entry)
+
+    if len(roster) > 9:
+        main.add_field(
+            name="More looking",
+            value=f"{len(roster) - 9} more listing(s). Ogre board avatar layout currently shows first 9.",
+            inline=False,
         )
 
-    embed = discord.Embed(
-        title="HYPED | LFG-LFM",
-        description=(
-            "Who's around, when are they playing, and what are they looking for?\n"
-            "Add yourself or update your details below. This is a noticeboard, not a signup.\n\n"
-            + ("\n\n".join(lines) if lines else "*Nobody listed yet. Be the first!*")
-        )[:4000],
-        color=discord.Color.from_rgb(217, 154, 67),
-    )
-    embed.set_footer(text=f"{len(roster)} adventurer(s) · {today()} · Resets each UK day")
-    return embed
+    return embeds
+
+
+def parse_level(value):
+    text = value.strip().replace("–", "-").replace("—", "-").replace(" ", "")
+    if text.isdecimal():
+        number = int(text)
+        if 1 <= number <= 60:
+            return str(number), number
+        return None
+
+    if text.count("-") == 1:
+        start_text, end_text = text.split("-", 1)
+        if start_text.isdecimal() and end_text.isdecimal():
+            start, end = int(start_text), int(end_text)
+            if 1 <= start <= end <= 60:
+                return f"{start}-{end}", end
+    return None
 
 
 class Draft:
     def __init__(self, row=None):
         self.character = row["character"] if row else ""
         self.level = int(row["level"]) if row else 1
+        self.level_label = (row["level_label"] or str(row["level"])) if row else ""
+        self.level_sort = int(row["level_sort"]) if row else 1
         self.class_name = row["class_name"] if row else ""
         self.role = row["role"] if row else ""
         self.availability = row["availability"] if row else ""
         self.activity = row["activity"] if row else ""
         self.notes = row["notes"] if row else ""
+        self.avatar_url = row["avatar_url"] if row else ""
 
     def summary(self):
         bits = [
             f"**Character:** {safe(self.character or 'Not set')}",
-            f"**Level:** {self.level if self.character else 'Not set'}",
+            f"**Level:** {self.level_label if self.character else 'Not set'}",
             f"**Class:** {self.class_name or 'Not set'}",
             f"**Role:** {self.role or 'Not set'}",
             f"**Availability:** {self.availability or 'Not set'}",
@@ -172,26 +230,29 @@ class CharacterLevelModal(discord.ui.Modal, title="Tell Ogre who you're playing"
             max_length=32,
         )
         self.level = discord.ui.TextInput(
-            label="Level (1-60)",
-            placeholder="e.g. 36",
-            default=str(state.draft.level) if state.draft.character else None,
-            max_length=2,
+            label="Level or range (1-60)",
+            placeholder="e.g. 36 or 1-12",
+            default=state.draft.level_label if state.draft.character else None,
+            max_length=5,
         )
         self.add_item(self.character)
         self.add_item(self.level)
 
     async def on_submit(self, interaction):
         name = self.character.value.strip()
-        level_text = self.level.value.strip()
-        if not name or not level_text.isdecimal() or not (1 <= int(level_text) <= 60):
+        level_value = parse_level(self.level.value)
+        if not name or level_value is None:
             await interaction.response.send_message(
-                "Ogre needs a character name and a whole-number level from 1 to 60.",
+                "Ogre need character name and level like **36** or range like **1-12**.",
                 ephemeral=True,
             )
             return
 
+        level_label, level_sort = level_value
         self.state.draft.character = name
-        self.state.draft.level = int(level_text)
+        self.state.draft.level = level_sort
+        self.state.draft.level_label = level_label
+        self.state.draft.level_sort = level_sort
         await interaction.response.send_message(
             embed=step_embed(
                 "2/5",
@@ -384,7 +445,7 @@ class ReviewView(discord.ui.View):
         )
         if not all(required):
             await interaction.response.send_message(
-                "Ogre is missing something. Press Add / Update Me and run through the steps again.",
+                "Ogre missing something. Press Add / Update and run through steps again.",
                 ephemeral=True,
             )
             return
@@ -393,27 +454,34 @@ class ReviewView(discord.ui.View):
         with connect() as db:
             db.execute(
                 """INSERT INTO lfg_listings
-                (channel_id,user_id,character,level,class_name,role,availability,activity,notes,board_day)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                (channel_id,user_id,character,level,level_label,level_sort,class_name,role,
+                 availability,activity,notes,avatar_url,board_day)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(channel_id,user_id) DO UPDATE SET
                 character=excluded.character,
                 level=excluded.level,
+                level_label=excluded.level_label,
+                level_sort=excluded.level_sort,
                 class_name=excluded.class_name,
                 role=excluded.role,
                 availability=excluded.availability,
                 activity=excluded.activity,
                 notes=excluded.notes,
+                avatar_url=excluded.avatar_url,
                 board_day=excluded.board_day""",
                 (
                     self.state.channel_id,
                     self.state.owner_id,
                     draft.character,
                     draft.level,
+                    draft.level_label,
+                    draft.level_sort,
                     draft.class_name,
                     draft.role,
                     draft.availability,
                     draft.activity,
                     draft.notes,
+                    str(interaction.user.display_avatar.url),
                     today(),
                 ),
             )
@@ -453,7 +521,7 @@ class BoardView(discord.ui.View):
         self.channel_id = channel_id
 
     @discord.ui.button(
-        label="Add / Update Me",
+        label="Add / Update",
         style=discord.ButtonStyle.primary,
         custom_id="hyped_lfg_edit_v2",
     )
@@ -462,7 +530,7 @@ class BoardView(discord.ui.View):
         await interaction.response.send_modal(CharacterLevelModal(state))
 
     @discord.ui.button(
-        label="Remove Me",
+        label="Remove",
         style=discord.ButtonStyle.secondary,
         custom_id="hyped_lfg_remove_v2",
     )
@@ -528,7 +596,7 @@ class LFGPreview(commands.Cog):
 
             message = channel.get_partial_message(row["message_id"])
             await message.edit(
-                embed=board_embed(channel_id),
+                embeds=board_embeds(channel_id, getattr(channel, "guild", None)),
                 view=BoardView(self, channel_id),
             )
             return True
@@ -566,7 +634,7 @@ class LFGPreview(commands.Cog):
     async def post_new_board(self, interaction, channel):
         try:
             await interaction.response.send_message(
-                embed=board_embed(channel.id),
+                embeds=board_embeds(channel.id, interaction.guild),
                 view=BoardView(self, channel.id),
             )
             msg = await interaction.original_response()
