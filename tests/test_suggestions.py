@@ -35,7 +35,14 @@ class SuggestionsSafetyTests(unittest.TestCase):
             line for line in SOURCE.splitlines()
             if "@app_commands.command" in line
         ]
-        self.assertEqual(len(commands), 1)
+        self.assertEqual(len(commands), 2)
+        self.assertIn('name="preview"', SOURCE)
+        self.assertIn('name="setup"', SOURCE)
+
+    def test_preview_is_ephemeral_and_uses_real_panel(self):
+        self.assertIn("Preview only — submissions still go to the private leadership channel.", SOURCE)
+        self.assertIn("view=SuggestionsPanel(self)", SOURCE)
+        self.assertIn("ephemeral=True", SOURCE)
 
     def test_feature_does_not_touch_roll_database(self):
         self.assertNotIn("bot.db", SOURCE)
