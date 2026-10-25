@@ -1369,6 +1369,24 @@ def build_forever_role_embed():
     return embed
 
 
+DAILY_OGRE_TAGLINES = (
+    "You lucky today? Ogre find out.",
+    "Me got dice. You got luck?",
+    "Big roll good. Small roll bad.",
+    "Me feel lucky. You look nervous.",
+    "One roll. Big glory. No crying.",
+    "You roll hundred? Ogre impressed.",
+    "Ogre believe in luck. Sometimes.",
+    "Today your day? Maybe. Roll.",
+)
+
+def daily_ogre_tagline():
+    # Stable for each UK calendar day, including after a bot restart.
+    today = datetime.now(TZ).date().isoformat()
+    digest = hashlib.sha256(today.encode("ascii")).digest()
+    return DAILY_OGRE_TAGLINES[int.from_bytes(digest[:8], "big") % len(DAILY_OGRE_TAGLINES)]
+
+
 def build_daily_reset_embed():
     embed = discord.Embed(
         title="Hyped Rolls - Daily Reset",
@@ -1377,7 +1395,7 @@ def build_daily_reset_embed():
             "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
             "`/leaderboards` - top rollers\n"
             "`/stats` - your stats\n\n"
-            "**Are you lucky gamer today?**"
+            f"**{daily_ogre_tagline()}**"
         ),
         color=0xD19A3B
     )
