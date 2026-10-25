@@ -26,7 +26,7 @@ DB_PATH = os.getenv(
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 ACCENT = 0x8C5A3C
-COUNTDOWN_ICON_URL = "https://i.vgy.me/RXYsym.png"
+COUNTDOWN_ICON_URL = "https://i.vgy.me/MC2gD0.png"
 SUBSCRIBER_LEAD_SECONDS = 5 * 60
 
 OWNER_REMINDER_CHOICES = (
@@ -71,6 +71,7 @@ def init_db():
             message_id INTEGER NOT NULL,
             owner_id INTEGER NOT NULL,
             title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
             target_ts INTEGER NOT NULL,
             image_url TEXT NOT NULL DEFAULT '',
             remind_minutes INTEGER NOT NULL DEFAULT 0,
@@ -80,6 +81,14 @@ def init_db():
             due_notified_target INTEGER NOT NULL DEFAULT 0,
             last_render_key TEXT NOT NULL DEFAULT ''
         )""")
+        countdown_columns = {
+            row[1] for row in db.execute("PRAGMA table_info(countdowns)")
+        }
+        if "description" not in countdown_columns:
+            db.execute(
+                "ALTER TABLE countdowns "
+                "ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+            )
         db.execute("""CREATE TABLE IF NOT EXISTS countdown_subscribers (
             channel_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -113,10 +122,15 @@ def get_timer(channel_id):
     return dict(row) if row else None
 
 
-def validate_settings(title, when_uk, image_url, reminder, repeat_hours, now):
+def validate_settings(
+    title, description, when_uk, image_url, reminder, repeat_hours, now,
+):
     title = " ".join(title.split())
+    description = " ".join((description or "").split())
     if not 1 <= len(title) <= 100:
         raise ValueError("Title must be 1 to 100 characters.")
+    if len(description) > 180:
+        raise ValueError("Description must be 180 characters or fewer.")
     target = parse_uk_datetime(when_uk)
     if target <= now:
         raise ValueError("Choose a future UK date and time.")
@@ -126,6 +140,7 @@ def validate_settings(title, when_uk, image_url, reminder, repeat_hours, now):
         raise ValueError("Repeat must be 0 to 8760 hours.")
     return dict(
         title=title,
+        description=description,
         target_ts=target,
         image_url=validate_image_url(image_url),
         remind_minutes=reminder,
@@ -237,6 +252,9 @@ class CountdownLayout(discord.ui.LayoutView):
             remaining = upcoming_string(target, now)
 
         title = discord.utils.escape_markdown(config["title"])
+        description = discord.utils.escape_markdown(
+            config.get("description", "")
+        )
         subtitle = f"<t:{target}:F>"
         if preview:
             subtitle += " · DEMO PREVIEW"
@@ -244,8 +262,10 @@ class CountdownLayout(discord.ui.LayoutView):
         header = discord.ui.Section(
             discord.ui.TextDisplay(
                 f"## {title}\n"
-                f"-# {subtitle}\n"
-                f"**{remaining}**"
+                + (f"{description}\n" if description else "")
+                + f"-# {subtitle}\n"
+                + "\n"
+                + f"**{remaining}**"
             ),
             accessory=discord.ui.Thumbnail(
                 COUNTDOWN_ICON_URL,
@@ -286,6 +306,7 @@ class SetupState:
         self.guild = interaction.guild
         now = datetime.now(UK) + timedelta(hours=2)
         self.title = "Hyped Countdown"
+        self.description = ""
         self.image_url = ""
         self.date_value = now.date()
         self.hour = now.hour
@@ -304,6 +325,7 @@ class SetupState:
     def config(self):
         return validate_settings(
             self.title,
+            self.description,
             setup_target_string(self),
             self.image_url,
             self.remind_minutes,
@@ -322,6 +344,13 @@ class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
             default=state.title,
             max_length=100,
         )
+        self.description = discord.ui.TextInput(
+            label="Subtitle / description (optional)",
+            placeholder="e.g. Reserve your character name before launch",
+            default=state.description or None,
+            required=False,
+            max_length=180,
+        )
         self.artwork = discord.ui.TextInput(
             label="Bottom image URL (optional)",
             placeholder="https://i.vgy.me/....png",
@@ -330,6 +359,7 @@ class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
             max_length=1024,
         )
         self.add_item(self.event_title)
+        self.add_item(self.description)
         self.add_item(self.artwork)
 
     async def on_submit(self, interaction):
@@ -347,6 +377,7 @@ class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
         self.state.title = title
+        self.state.description = " ".join(self.description.value.split())
         self.state.image_url = image
         await interaction.response.send_message(
             content="Choose the UK date and time.",
@@ -661,6 +692,7 @@ class CountdownCog(
         existing = get_timer(interaction.channel_id)
         if existing:
             state.title = existing["title"]
+            state.description = existing.get("description", "")
             state.image_url = existing["image_url"]
             state.remind_minutes = existing["remind_minutes"]
             state.repeat_hours = existing["repeat_seconds"] // 3600
