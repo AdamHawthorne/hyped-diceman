@@ -22,7 +22,17 @@ class SuggestionsSafetyTests(unittest.TestCase):
     def test_named_and_anonymous_buttons_are_persistent(self):
         self.assertIn('custom_id="hyped_suggestions_named_v1"', SOURCE)
         self.assertIn('custom_id="hyped_suggestions_anonymous_v1"', SOURCE)
+        self.assertIn('label="Named"', SOURCE)
+        self.assertIn('label="Anon"', SOURCE)
+        self.assertNotIn('emoji="💬"', SOURCE)
+        self.assertNotIn('emoji="🥷"', SOURCE)
         self.assertIn("self.bot.add_view(SuggestionsPanel(self))", SOURCE)
+
+    def test_buttons_render_outside_text_container(self):
+        container = 'self.add_item(discord.ui.Container(\n            header,\n            accent_color=ACCENT,\n        ))'
+        row = 'self.add_item(discord.ui.ActionRow(\n            NamedSuggestionButton(),\n            AnonymousSuggestionButton(),\n        ))'
+        self.assertIn(container, SOURCE)
+        self.assertIn(row, SOURCE)
 
     def test_anonymous_submission_does_not_store_or_log_identity(self):
         self.assertNotIn("sqlite3", SOURCE)
