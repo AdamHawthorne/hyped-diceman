@@ -1,7 +1,7 @@
-"""Owner-only countdown/cooldown setup with public reminder subscriptions.
+"""Owner-only multi-reminder setup with public five-minute subscriptions.
 
-One public V2 timer per channel, private owner setup wizard, independent SQLite
-storage, optional bottom artwork, and fixed five-minute subscriber reminders.
+All reminder state is isolated in countdown.db. This module never opens bot.db,
+so daily roll history/data is outside the scope of reminder migrations.
 """
 import asyncio
 from datetime import datetime, timedelta
@@ -25,34 +25,22 @@ DB_PATH = os.getenv(
 )
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
+OFFICE_LOG_CHANNEL_ID = int(os.getenv("OFFICE_LOG_CHANNEL_ID", "0"))
 ACCENT = 0x8C5A3C
 COUNTDOWN_ICON_URL = "https://i.vgy.me/MC2gD0.png"
 SUBSCRIBER_LEAD_SECONDS = 5 * 60
 
 OWNER_REMINDER_CHOICES = (
-    ("None", 0),
-    ("5 minutes", 5),
-    ("10 minutes", 10),
-    ("15 minutes", 15),
-    ("30 minutes", 30),
-    ("1 hour", 60),
-    ("2 hours", 120),
-    ("6 hours", 360),
-    ("12 hours", 720),
+    ("None", 0), ("5 minutes", 5), ("10 minutes", 10),
+    ("15 minutes", 15), ("30 minutes", 30), ("1 hour", 60),
+    ("2 hours", 120), ("6 hours", 360), ("12 hours", 720),
     ("1 day", 1440),
 )
 REPEAT_CHOICES = (
-    ("One-off", 0),
-    ("Every 1 hour", 1),
-    ("Every 2 hours", 2),
-    ("Every 4 hours", 4),
-    ("Every 6 hours", 6),
-    ("Every 8 hours", 8),
-    ("Every 12 hours", 12),
-    ("Every 24 hours", 24),
-    ("Every 48 hours", 48),
-    ("Every 72 hours", 72),
-    ("Every 7 days", 168),
+    ("One-off", 0), ("Every 1 hour", 1), ("Every 2 hours", 2),
+    ("Every 4 hours", 4), ("Every 6 hours", 6), ("Every 8 hours", 8),
+    ("Every 12 hours", 12), ("Every 24 hours", 24), ("Every 48 hours", 48),
+    ("Every 72 hours", 72), ("Every 7 days", 168),
 )
 
 
@@ -64,14 +52,15 @@ def connect():
 
 
 def init_db():
+    # New table names deliberately avoid migrating/relying on disposable test timers.
     with connect() as db:
-        db.execute("""CREATE TABLE IF NOT EXISTS countdowns (
-            channel_id INTEGER PRIMARY KEY,
+        db.execute("""CREATE TABLE IF NOT EXISTS countdown_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER NOT NULL,
             guild_id INTEGER NOT NULL,
-            message_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL UNIQUE,
             owner_id INTEGER NOT NULL,
             title TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
             target_ts INTEGER NOT NULL,
             image_url TEXT NOT NULL DEFAULT '',
             remind_minutes INTEGER NOT NULL DEFAULT 0,
@@ -81,60 +70,41 @@ def init_db():
             due_notified_target INTEGER NOT NULL DEFAULT 0,
             last_render_key TEXT NOT NULL DEFAULT ''
         )""")
-        countdown_columns = {
-            row[1] for row in db.execute("PRAGMA table_info(countdowns)")
-        }
-        if "description" not in countdown_columns:
-            db.execute(
-                "ALTER TABLE countdowns "
-                "ADD COLUMN description TEXT NOT NULL DEFAULT ''"
-            )
-        db.execute("""CREATE TABLE IF NOT EXISTS countdown_subscribers (
-            channel_id INTEGER NOT NULL,
+        db.execute("""CREATE INDEX IF NOT EXISTS idx_countdown_reminder_channel
+                      ON countdown_reminders(channel_id)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS countdown_reminder_subscribers (
+            reminder_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             delivery TEXT NOT NULL DEFAULT 'dm',
             last_notified_target INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY(channel_id, user_id)
+            PRIMARY KEY(reminder_id, user_id)
         )""")
-        subscriber_columns = {
-            row[1] for row in db.execute(
-                "PRAGMA table_info(countdown_subscribers)"
-            )
-        }
-        if "delivery" not in subscriber_columns:
-            db.execute(
-                "ALTER TABLE countdown_subscribers "
-                "ADD COLUMN delivery TEXT NOT NULL DEFAULT 'dm'"
-            )
-        # Earlier builds stored a fixed stopwatch URL in image_url.
-        # That column now means optional bottom artwork only.
-        for legacy_icon in (
-            "https://i.vgy.me/RXYsym.png",
-            COUNTDOWN_ICON_URL,
-        ):
-            db.execute(
-                "UPDATE countdowns SET image_url='' WHERE image_url=?",
-                (legacy_icon,),
-            )
 
 
-def get_timer(channel_id):
+def get_timer(reminder_id):
+    if not reminder_id:
+        return None
     with connect() as db:
         row = db.execute(
-            "SELECT * FROM countdowns WHERE channel_id=?", (channel_id,)
+            "SELECT * FROM countdown_reminders WHERE id=?", (int(reminder_id),)
         ).fetchone()
     return dict(row) if row else None
 
 
-def validate_settings(
-    title, description, when_uk, image_url, reminder, repeat_hours, now,
-):
+def list_channel_timers(channel_id):
+    with connect() as db:
+        rows = db.execute(
+            "SELECT * FROM countdown_reminders WHERE channel_id=? "
+            "ORDER BY active DESC,target_ts ASC,id ASC",
+            (channel_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def validate_settings(title, when_uk, image_url, reminder, repeat_hours, now):
     title = " ".join(title.split())
-    description = " ".join((description or "").split())
     if not 1 <= len(title) <= 100:
-        raise ValueError("Title must be 1 to 100 characters.")
-    if len(description) > 180:
-        raise ValueError("Description must be 180 characters or fewer.")
+        raise ValueError("Event name must be 1 to 100 characters.")
     target = parse_uk_datetime(when_uk)
     if target <= now:
         raise ValueError("Choose a future UK date and time.")
@@ -144,7 +114,6 @@ def validate_settings(
         raise ValueError("Repeat must be 0 to 8760 hours.")
     return dict(
         title=title,
-        description=description,
         target_ts=target,
         image_url=validate_image_url(image_url),
         remind_minutes=reminder,
@@ -165,81 +134,70 @@ def setup_target_string(state):
 
 
 class ReminderButton(discord.ui.Button):
-    """Toggle one five-minute delivery method for this countdown."""
-
-    def __init__(self, channel_id, mode, *, disabled=False):
+    def __init__(self, reminder_id, mode, *, disabled=False):
         if mode not in ("dm", "ping"):
             raise ValueError("Reminder mode must be dm or ping")
-        self.channel_id = channel_id
+        self.reminder_id = int(reminder_id or 0)
         self.mode = mode
         super().__init__(
             label="DM" if mode == "dm" else "Ping",
             emoji="🔔",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"hyped_countdown_remind_{mode}_v1",
+            custom_id=f"hyped_countdown_{self.reminder_id}_{mode}_v2",
             disabled=disabled,
         )
 
     async def callback(self, interaction):
-        timer = get_timer(self.channel_id)
+        timer = get_timer(self.reminder_id)
         if timer is None or not timer["active"]:
             await interaction.response.send_message(
-                "Ogre find no active timer here.", ephemeral=True,
+                "Ogre find no active reminder here.", ephemeral=True,
             )
             return
 
         user_id = interaction.user.id
         with connect() as db:
             row = db.execute(
-                "SELECT delivery FROM countdown_subscribers "
-                "WHERE channel_id=? AND user_id=?",
-                (self.channel_id, user_id),
+                "SELECT delivery FROM countdown_reminder_subscribers "
+                "WHERE reminder_id=? AND user_id=?",
+                (self.reminder_id, user_id),
             ).fetchone()
-
             if row and row["delivery"] == self.mode:
                 db.execute(
-                    "DELETE FROM countdown_subscribers "
-                    "WHERE channel_id=? AND user_id=?",
-                    (self.channel_id, user_id),
+                    "DELETE FROM countdown_reminder_subscribers "
+                    "WHERE reminder_id=? AND user_id=?",
+                    (self.reminder_id, user_id),
                 )
-                subscribed = False
-                switched = False
+                subscribed, switched = False, False
             else:
                 db.execute(
-                    """INSERT INTO countdown_subscribers
-                       (channel_id,user_id,delivery,last_notified_target)
+                    """INSERT INTO countdown_reminder_subscribers
+                       (reminder_id,user_id,delivery,last_notified_target)
                        VALUES (?,?,?,0)
-                       ON CONFLICT(channel_id,user_id) DO UPDATE SET
-                           delivery=excluded.delivery,
-                           last_notified_target=0""",
-                    (self.channel_id, user_id, self.mode),
+                       ON CONFLICT(reminder_id,user_id) DO UPDATE SET
+                         delivery=excluded.delivery,last_notified_target=0""",
+                    (self.reminder_id, user_id, self.mode),
                 )
-                subscribed = True
-                switched = row is not None
+                subscribed, switched = True, row is not None
 
+        event = discord.utils.escape_markdown(timer["title"])
         if not subscribed:
             text = "🔕 **Ogre forget reminder.** No five-minute bonk for this one."
         elif self.mode == "dm":
             prefix = "🔔 **Ogre switch reminder.**" if switched else "🔔 **Ogre remember!**"
-            text = (
-                f"{prefix} Ogre bonk your **DMs** 5 minutes before "
-                f"**{discord.utils.escape_markdown(timer['title'])}**."
-            )
+            text = f"{prefix} Ogre bonk your **DMs** 5 minutes before **{event}**."
         else:
             prefix = "🔔 **Ogre switch reminder.**" if switched else "🔔 **Ogre remember!**"
             text = (
-                f"{prefix} Ogre **ping you here** 5 minutes before "
-                f"**{discord.utils.escape_markdown(timer['title'])}**, "
+                f"{prefix} Ogre **ping you here** 5 minutes before **{event}**, "
                 "then Ogre clean message away."
             )
         await interaction.response.send_message(text, ephemeral=True)
 
 
 class CountdownLayout(discord.ui.LayoutView):
-    """Compact event card with fixed right icon and optional bottom artwork."""
-
     def __init__(
-        self, config, *, now=None, preview=False, channel_id=None,
+        self, config, *, now=None, preview=False, reminder_id=0,
         include_remind=True,
     ):
         super().__init__(timeout=900 if preview else None)
@@ -255,25 +213,21 @@ class CountdownLayout(discord.ui.LayoutView):
         else:
             remaining = upcoming_string(target, now)
 
-        title = discord.utils.escape_markdown(config["title"])
-        description = discord.utils.escape_markdown(
-            config.get("description", "")
-        )
-        subtitle = f"<t:{target}:F>"
+        event = discord.utils.escape_markdown(config["title"])
+        date_line = f"<t:{target}:F>"
         if preview:
-            subtitle += " · DEMO PREVIEW"
+            date_line += " · DEMO PREVIEW"
 
         header = discord.ui.Section(
             discord.ui.TextDisplay(
-                f"## {title}\n"
-                + (f"{description}\n" if description else "")
-                + f"-# {subtitle}\n"
-                + "\n"
-                + f"**{remaining}**"
+                "## Reminder\n"
+                f"**{event}**\n"
+                f"-# {date_line}\n"
+                "\n"
+                f"**{remaining}**"
             ),
             accessory=discord.ui.Thumbnail(
-                COUNTDOWN_ICON_URL,
-                description="Hyped stopwatch icon",
+                COUNTDOWN_ICON_URL, description="Hyped reminder icon",
             ),
         )
         panel = discord.ui.Container(header, accent_color=ACCENT)
@@ -284,20 +238,16 @@ class CountdownLayout(discord.ui.LayoutView):
         self.add_item(panel)
 
         if include_remind:
-            disabled = preview or not active
+            disabled = preview or not active or not reminder_id
             self.add_item(discord.ui.ActionRow(
-                ReminderButton(channel_id or 0, "dm", disabled=disabled),
-                ReminderButton(channel_id or 0, "ping", disabled=disabled),
+                ReminderButton(reminder_id, "dm", disabled=disabled),
+                ReminderButton(reminder_id, "ping", disabled=disabled),
             ))
 
-        # Optional owner-supplied artwork is always the very bottom component.
         image_url = config.get("image_url", "")
         if image_url:
             gallery = discord.ui.MediaGallery()
-            gallery.add_item(
-                media=image_url,
-                description=f"{config['title']} artwork",
-            )
+            gallery.add_item(media=image_url, description=f"{config['title']} artwork")
             self.add_item(gallery)
 
 
@@ -307,17 +257,19 @@ class SetupState:
         self.owner_id = interaction.user.id
         self.channel_id = interaction.channel_id
         self.guild_id = interaction.guild_id
-        self.guild = interaction.guild
+        self.reminder_id = None
         now = datetime.now(UK) + timedelta(hours=2)
-        self.title = "Hyped Countdown"
-        self.description = ""
+        self.title = "Name Reservation"
         self.image_url = ""
         self.date_value = now.date()
         self.hour = now.hour
         self.minute = (now.minute // 5 * 5) % 60
         self.remind_minutes = 30
         self.repeat_hours = 0
-        self.has_existing = False
+
+    @property
+    def has_existing(self):
+        return self.reminder_id is not None
 
     async def check(self, interaction):
         if interaction.user.id != self.owner_id:
@@ -327,34 +279,33 @@ class SetupState:
             return False
         return True
 
+    def load(self, row):
+        self.reminder_id = int(row["id"])
+        self.title = row["title"]
+        self.image_url = row["image_url"]
+        self.remind_minutes = row["remind_minutes"]
+        self.repeat_hours = row["repeat_seconds"] // 3600
+        local = datetime.fromtimestamp(row["target_ts"], UK)
+        self.date_value = local.date()
+        self.hour = local.hour
+        self.minute = local.minute - (local.minute % 5)
+
     def config(self):
         return validate_settings(
-            self.title,
-            self.description,
-            setup_target_string(self),
-            self.image_url,
-            self.remind_minutes,
-            self.repeat_hours,
-            int(time.time()),
+            self.title, setup_target_string(self), self.image_url,
+            self.remind_minutes, self.repeat_hours, int(time.time()),
         )
 
 
-class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
+class SetupDetailsModal(discord.ui.Modal, title="Reminder details"):
     def __init__(self, state):
         super().__init__()
         self.state = state
         self.event_title = discord.ui.TextInput(
-            label="Event title",
-            placeholder="e.g. WoW: Forever Launch",
+            label="Event name",
+            placeholder="e.g. Name Reservation",
             default=state.title,
             max_length=100,
-        )
-        self.description = discord.ui.TextInput(
-            label="Subtitle / description (optional)",
-            placeholder="e.g. Reserve your character name before launch",
-            default=state.description or None,
-            required=False,
-            max_length=180,
         )
         self.artwork = discord.ui.TextInput(
             label="Bottom image URL (optional)",
@@ -364,7 +315,6 @@ class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
             max_length=1024,
         )
         self.add_item(self.event_title)
-        self.add_item(self.description)
         self.add_item(self.artwork)
 
     async def on_submit(self, interaction):
@@ -373,7 +323,7 @@ class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
         title = " ".join(self.event_title.value.split())
         if not title:
             await interaction.response.send_message(
-                "Give Ogre an event title.", ephemeral=True,
+                "Give Ogre an event name.", ephemeral=True,
             )
             return
         try:
@@ -382,7 +332,6 @@ class SetupDetailsModal(discord.ui.Modal, title="Countdown details"):
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
         self.state.title = title
-        self.state.description = " ".join(self.description.value.split())
         self.state.image_url = image
         await interaction.response.send_message(
             content="Choose the UK date and time.",
@@ -403,13 +352,11 @@ class SetupDateSelect(discord.ui.Select):
             elif offset == 1:
                 label += " · Tomorrow"
             options.append(discord.SelectOption(
-                label=label,
-                value=day.isoformat(),
+                label=label, value=day.isoformat(),
                 default=day == state.date_value,
             ))
         super().__init__(
-            placeholder="Date",
-            min_values=1, max_values=1, options=options, row=0,
+            placeholder="Date", min_values=1, max_values=1, options=options, row=0,
         )
 
     async def callback(self, interaction):
@@ -424,17 +371,15 @@ class SetupDateSelect(discord.ui.Select):
 
 class SetupHourSelect(discord.ui.Select):
     def __init__(self, state):
-        options = [
-            discord.SelectOption(
-                label=f"{hour:02d}:00",
-                value=str(hour),
-                default=hour == state.hour,
-            )
-            for hour in range(24)
-        ]
         super().__init__(
-            placeholder="Hour (UK)", min_values=1, max_values=1,
-            options=options, row=1,
+            placeholder="Hour (UK)", min_values=1, max_values=1, row=1,
+            options=[
+                discord.SelectOption(
+                    label=f"{hour:02d}:00", value=str(hour),
+                    default=hour == state.hour,
+                )
+                for hour in range(24)
+            ],
         )
 
     async def callback(self, interaction):
@@ -447,17 +392,15 @@ class SetupHourSelect(discord.ui.Select):
 
 class SetupMinuteSelect(discord.ui.Select):
     def __init__(self, state):
-        options = [
-            discord.SelectOption(
-                label=f":{minute:02d}",
-                value=str(minute),
-                default=minute == state.minute,
-            )
-            for minute in range(0, 60, 5)
-        ]
         super().__init__(
-            placeholder="Minute", min_values=1, max_values=1,
-            options=options, row=2,
+            placeholder="Minute", min_values=1, max_values=1, row=2,
+            options=[
+                discord.SelectOption(
+                    label=f":{minute:02d}", value=str(minute),
+                    default=minute == state.minute,
+                )
+                for minute in range(0, 60, 5)
+            ],
         )
 
     async def callback(self, interaction):
@@ -486,11 +429,11 @@ class SetupDateTimeView(discord.ui.View):
     @discord.ui.button(label="Next ›", style=discord.ButtonStyle.primary, row=3)
     async def next(self, interaction, button):
         try:
-            parse_uk_datetime(setup_target_string(self.state))
+            target = parse_uk_datetime(setup_target_string(self.state))
         except ValueError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
-        if parse_uk_datetime(setup_target_string(self.state)) <= int(time.time()):
+        if target <= int(time.time()):
             await interaction.response.send_message(
                 "That time is already gone. Ogre need future time.", ephemeral=True,
             )
@@ -504,8 +447,7 @@ class SetupDateTimeView(discord.ui.View):
 class SetupReminderSelect(discord.ui.Select):
     def __init__(self, state):
         super().__init__(
-            placeholder="Owner reminder",
-            min_values=1, max_values=1, row=0,
+            placeholder="Owner reminder", min_values=1, max_values=1, row=0,
             options=[
                 discord.SelectOption(
                     label=label, value=str(value),
@@ -526,8 +468,7 @@ class SetupReminderSelect(discord.ui.Select):
 class SetupRepeatSelect(discord.ui.Select):
     def __init__(self, state):
         super().__init__(
-            placeholder="Repeat / cooldown",
-            min_values=1, max_values=1, row=1,
+            placeholder="Repeat / cooldown", min_values=1, max_values=1, row=1,
             options=[
                 discord.SelectOption(
                     label=label, value=str(value),
@@ -570,34 +511,26 @@ class SetupOptionsView(discord.ui.View):
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
         await interaction.response.edit_message(
-            content=None,
-            view=SetupReviewLayout(self.state, config),
+            content=None, view=SetupReviewLayout(self.state, config),
         )
 
 
 class SetupReviewLayout(CountdownLayout):
     def __init__(self, state, config):
         super().__init__(
-            config, preview=True, channel_id=state.channel_id, include_remind=True,
+            config, preview=True, reminder_id=state.reminder_id or 0,
+            include_remind=True,
         )
         self.state = state
-        self.add_item(discord.ui.ActionRow(
-            SetupReviewBackButton(state),
-            SetupPublishButton(state),
-        ))
+        buttons = [SetupReviewBackButton(state), SetupPublishButton(state)]
         if state.has_existing:
-            self.add_item(discord.ui.ActionRow(
-                SetupTestDMButton(state),
-                SetupStopButton(state),
-                SetupRemoveButton(state),
-            ))
+            buttons.append(SetupRemoveButton(state))
+        self.add_item(discord.ui.ActionRow(*buttons))
 
 
 class SetupReviewBackButton(discord.ui.Button):
     def __init__(self, state):
-        super().__init__(
-            label="‹ Settings", style=discord.ButtonStyle.secondary,
-        )
+        super().__init__(label="‹ Settings", style=discord.ButtonStyle.secondary)
         self.state = state
 
     async def callback(self, interaction):
@@ -620,7 +553,7 @@ class SetupPublishButton(discord.ui.Button):
         channel = interaction.channel
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message(
-                "Use setup in the public text channel where timer should live.",
+                "Use this in the channel where the public reminder should live.",
                 ephemeral=True,
             )
             return
@@ -629,88 +562,26 @@ class SetupPublishButton(discord.ui.Button):
         except ValueError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
-        await interaction.response.defer(thinking=True)
-        try:
-            message = await self.state.cog.publish_config(
-                channel, self.state.guild_id, self.state.owner_id, config,
-            )
-        except (discord.Forbidden, discord.HTTPException) as exc:
-            print(f"COUNTDOWN SETUP PUBLISH FAILED channel={channel.id}: {exc!r}")
-            await interaction.edit_original_response(
-                content="Ogre cannot publish. Check Send Messages / Embed Links.",
-                view=None,
-            )
-            return
-        await interaction.edit_original_response(
-            content=f"✅ Ogre post timer: {message.jump_url}",
-            view=None,
-        )
-
-
-class SetupTestDMButton(discord.ui.Button):
-    def __init__(self, state):
-        super().__init__(label="Test DM", style=discord.ButtonStyle.secondary)
-        self.state = state
-
-    async def callback(self, interaction):
-        if not await self.state.check(interaction):
-            return
-        row = get_timer(self.state.channel_id)
-        title = row["title"] if row else self.state.title
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            await interaction.user.send(
-                "⏱️ **Ogre bonk clock! Five minutes!**\n"
-                f"**{discord.utils.escape_markdown(title)}** "
-                "almost here. Get ready, gamer.\n"
-                "-# Dev test from Hyped Ogre",
-                allowed_mentions=discord.AllowedMentions.none(),
+            message, reminder_id, action = await self.state.cog.publish_config(
+                channel, self.state.guild_id, self.state.owner_id,
+                config, reminder_id=self.state.reminder_id,
             )
-        except (discord.Forbidden, discord.HTTPException):
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+            print(f"COUNTDOWN PUBLISH FAILED channel={channel.id}: {exc!r}")
             await interaction.followup.send(
-                "❌ Ogre could not DM you. Check Discord privacy settings.",
-                ephemeral=True,
+                "Ogre cannot publish/update that reminder.", ephemeral=True,
             )
             return
-        await interaction.followup.send(
-            "✅ Ogre sent test DM.", ephemeral=True,
+        self.state.reminder_id = reminder_id
+        await self.state.cog.log_office(
+            interaction.guild, f"✅ Ogre {action} reminder: {message.jump_url}",
         )
-
-
-class SetupStopButton(discord.ui.Button):
-    def __init__(self, state):
-        super().__init__(label="Stop", style=discord.ButtonStyle.secondary)
-        self.state = state
-
-    async def callback(self, interaction):
-        if not await self.state.check(interaction):
-            return
-        row = get_timer(self.state.channel_id)
-        if row is None:
-            await interaction.response.send_message(
-                "No saved timer here.", ephemeral=True,
-            )
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        with connect() as db:
-            db.execute(
-                "UPDATE countdowns SET active=0,last_render_key='' "
-                "WHERE channel_id=?",
-                (self.state.channel_id,),
-            )
         try:
-            await interaction.channel.get_partial_message(row["message_id"]).edit(
-                content=None, embeds=[], attachments=[],
-                view=CountdownLayout(
-                    {**row, "active": 0},
-                    channel_id=self.state.channel_id,
-                    include_remind=True,
-                ),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            await interaction.delete_original_response()
+        except discord.HTTPException:
             pass
-        await interaction.followup.send("Timer stopped.", ephemeral=True)
 
 
 class SetupRemoveButton(discord.ui.Button):
@@ -721,10 +592,10 @@ class SetupRemoveButton(discord.ui.Button):
     async def callback(self, interaction):
         if not await self.state.check(interaction):
             return
-        row = get_timer(self.state.channel_id)
+        row = get_timer(self.state.reminder_id)
         if row is None:
             await interaction.response.send_message(
-                "No saved timer here.", ephemeral=True,
+                "No saved reminder here.", ephemeral=True,
             )
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -734,21 +605,63 @@ class SetupRemoveButton(discord.ui.Button):
             pass
         except (discord.Forbidden, discord.HTTPException):
             await interaction.followup.send(
-                "Ogre could not delete the public timer. Saved timer kept.",
-                ephemeral=True,
+                "Ogre could not delete the public reminder.", ephemeral=True,
             )
             return
         with connect() as db:
             db.execute(
-                "DELETE FROM countdown_subscribers WHERE channel_id=?",
-                (self.state.channel_id,),
+                "DELETE FROM countdown_reminder_subscribers WHERE reminder_id=?",
+                (row["id"],),
             )
-            db.execute(
-                "DELETE FROM countdowns WHERE channel_id=?",
-                (self.state.channel_id,),
+            db.execute("DELETE FROM countdown_reminders WHERE id=?", (row["id"],))
+        await self.state.cog.log_office(
+            interaction.guild,
+            f"🗑️ Ogre removed reminder **{discord.utils.escape_markdown(row['title'])}** "
+            f"from <#{row['channel_id']}>.",
+        )
+        try:
+            await interaction.delete_original_response()
+        except discord.HTTPException:
+            pass
+
+
+class EditReminderSelect(discord.ui.Select):
+    def __init__(self, state, rows):
+        options = []
+        for row in rows[:25]:
+            when = datetime.fromtimestamp(row["target_ts"], UK).strftime("%d %b %H:%M")
+            options.append(discord.SelectOption(
+                label=row["title"][:100],
+                value=str(row["id"]),
+                description=f"{when} · {'Running' if row['active'] else 'Stopped'}",
+            ))
+        super().__init__(
+            placeholder="Choose reminder to edit",
+            min_values=1, max_values=1, options=options,
+        )
+        self.state = state
+
+    async def callback(self, interaction):
+        if not await self.state.check(interaction):
+            return
+        row = get_timer(int(self.values[0]))
+        if row is None or row["channel_id"] != self.state.channel_id:
+            await interaction.response.send_message(
+                "Ogre cannot find that reminder.", ephemeral=True,
             )
-        self.state.has_existing = False
-        await interaction.followup.send("Timer removed.", ephemeral=True)
+            return
+        self.state.load(row)
+        await interaction.response.send_modal(SetupDetailsModal(self.state))
+
+
+class EditReminderView(discord.ui.View):
+    def __init__(self, state, rows):
+        super().__init__(timeout=300)
+        self.state = state
+        self.add_item(EditReminderSelect(state, rows))
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
 
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
@@ -756,7 +669,7 @@ class SetupRemoveButton(discord.ui.Button):
 @app_commands.default_permissions(manage_guild=True)
 class CountdownCog(
     commands.GroupCog, group_name="countdown",
-    group_description="Owner-only countdown setup",
+    group_description="Owner-only reminder setup",
 ):
     def __init__(self, bot):
         self.bot = bot
@@ -765,15 +678,14 @@ class CountdownCog(
 
     async def cog_load(self):
         init_db()
-        # Re-register persistent Remind buttons after restarts.
         with connect() as db:
             rows = [dict(row) for row in db.execute(
-                "SELECT * FROM countdowns"
+                "SELECT * FROM countdown_reminders"
             )]
         for row in rows:
             self.bot.add_view(
                 CountdownLayout(
-                    row, channel_id=row["channel_id"], include_remind=True,
+                    row, reminder_id=row["id"], include_remind=True,
                 ),
                 message_id=row["message_id"],
             )
@@ -789,89 +701,122 @@ class CountdownCog(
             or interaction.guild_id != GUILD_ID
         ):
             await interaction.response.send_message(
-                "Only the Hyped Ogre owner can configure countdowns.",
+                "Only the Hyped Ogre owner can configure reminders.",
                 ephemeral=True,
             )
             return False
         return True
 
-    @app_commands.command(name="setup", description="Set up a timer with friendly dropdowns")
+    async def log_office(self, guild, text):
+        channel = None
+        if OFFICE_LOG_CHANNEL_ID:
+            maybe = self.bot.get_channel(OFFICE_LOG_CHANNEL_ID)
+            if isinstance(maybe, discord.TextChannel):
+                channel = maybe
+        if channel is None and guild is not None:
+            for candidate in guild.text_channels:
+                normalized = candidate.name.lower().replace("_", "-").replace(" ", "-")
+                if normalized == "office-logs":
+                    channel = candidate
+                    break
+        if channel is None:
+            print(f"COUNTDOWN OFFICE LOG CHANNEL NOT FOUND: {text}")
+            return
+        try:
+            await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(f"COUNTDOWN OFFICE LOG FAILED channel={channel.id}: {exc!r}")
+
+    @app_commands.command(name="setup", description="Create a new reminder")
     async def setup_timer(self, interaction: discord.Interaction):
         if not isinstance(interaction.channel, discord.TextChannel):
             await interaction.response.send_message(
-                "Use this in the channel where the public timer should live.",
+                "Use this in the channel where the reminder should be posted.",
                 ephemeral=True,
             )
             return
-        state = SetupState(self, interaction)
-        existing = get_timer(interaction.channel_id)
-        if existing:
-            state.has_existing = True
-            state.title = existing["title"]
-            state.description = existing.get("description", "")
-            state.image_url = existing["image_url"]
-            state.remind_minutes = existing["remind_minutes"]
-            state.repeat_hours = existing["repeat_seconds"] // 3600
-            local = datetime.fromtimestamp(existing["target_ts"], UK)
-            state.date_value = local.date()
-            state.hour = local.hour
-            state.minute = local.minute - (local.minute % 5)
-        await interaction.response.send_modal(SetupDetailsModal(state))
+        await interaction.response.send_modal(SetupDetailsModal(SetupState(self, interaction)))
 
-    async def publish_config(self, channel, guild_id, owner_id, config):
-        async with self.lock:
-            existing = get_timer(channel.id)
-            message = None
-            if existing:
-                try:
-                    message = await channel.fetch_message(existing["message_id"])
-                except discord.NotFound:
-                    pass
-
-            view = CountdownLayout(
-                config, channel_id=channel.id, include_remind=True,
+    @app_commands.command(name="edit", description="Edit or remove a reminder in this channel")
+    async def edit_timer(self, interaction: discord.Interaction):
+        if not isinstance(interaction.channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "Use this in the channel containing the reminder.", ephemeral=True,
             )
-            if message is not None:
+            return
+        rows = list_channel_timers(interaction.channel_id)
+        if not rows:
+            await interaction.response.send_message(
+                "No reminders saved in this channel.", ephemeral=True,
+            )
+            return
+        state = SetupState(self, interaction)
+        await interaction.response.send_message(
+            "Choose a reminder to edit or remove.",
+            view=EditReminderView(state, rows),
+            ephemeral=True,
+        )
+
+    async def publish_config(
+        self, channel, guild_id, owner_id, config, *, reminder_id=None,
+    ):
+        async with self.lock:
+            existing = get_timer(reminder_id)
+            if existing:
+                if existing["channel_id"] != channel.id:
+                    raise ValueError("Reminder belongs to another channel.")
+                message = await channel.fetch_message(existing["message_id"])
                 await message.edit(
-                    content=None, embeds=[], attachments=[], view=view,
+                    content=None, embeds=[], attachments=[],
+                    view=CountdownLayout(
+                        config, reminder_id=existing["id"], include_remind=True,
+                    ),
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
-            else:
-                message = await channel.send(
-                    view=view, allowed_mentions=discord.AllowedMentions.none(),
-                )
+                with connect() as db:
+                    db.execute(
+                        """UPDATE countdown_reminders SET
+                            owner_id=?,title=?,target_ts=?,image_url=?,
+                            remind_minutes=?,repeat_seconds=?,active=1,
+                            pre_notified_target=0,due_notified_target=0,
+                            last_render_key=? WHERE id=?""",
+                        (
+                            owner_id, config["title"], config["target_ts"],
+                            config["image_url"], config["remind_minutes"],
+                            config["repeat_seconds"],
+                            render_key(config["target_ts"], int(time.time()), 1),
+                            existing["id"],
+                        ),
+                    )
+                return message, existing["id"], "updated"
 
+            message = await channel.send(
+                view=CountdownLayout(config, reminder_id=0, include_remind=False),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             with connect() as db:
-                db.execute(
-                    """INSERT INTO countdowns (
-                        channel_id, guild_id, message_id, owner_id, title,
-                        description, target_ts, image_url, remind_minutes, repeat_seconds,
-                        active, pre_notified_target, due_notified_target,
-                        last_render_key
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,0,?)
-                    ON CONFLICT(channel_id) DO UPDATE SET
-                        guild_id=excluded.guild_id,
-                        message_id=excluded.message_id,
-                        owner_id=excluded.owner_id,
-                        title=excluded.title,
-                        description=excluded.description,
-                        target_ts=excluded.target_ts,
-                        image_url=excluded.image_url,
-                        remind_minutes=excluded.remind_minutes,
-                        repeat_seconds=excluded.repeat_seconds,
-                        active=1,
-                        pre_notified_target=0,
-                        due_notified_target=0,
-                        last_render_key=excluded.last_render_key""",
+                cursor = db.execute(
+                    """INSERT INTO countdown_reminders (
+                        channel_id,guild_id,message_id,owner_id,title,target_ts,
+                        image_url,remind_minutes,repeat_seconds,active,
+                        pre_notified_target,due_notified_target,last_render_key
+                    ) VALUES (?,?,?,?,?,?,?,?,?,1,0,0,?)""",
                     (
                         channel.id, guild_id, message.id, owner_id,
-                        config["title"], config["description"],
-                        config["target_ts"], config["image_url"],
+                        config["title"], config["target_ts"], config["image_url"],
                         config["remind_minutes"], config["repeat_seconds"],
                         render_key(config["target_ts"], int(time.time()), 1),
                     ),
                 )
-            return message
+                new_id = cursor.lastrowid
+            await message.edit(
+                content=None, embeds=[], attachments=[],
+                view=CountdownLayout(
+                    config, reminder_id=new_id, include_remind=True,
+                ),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return message, new_id, "posted"
 
     async def _notify_owner(self, row, *, due):
         try:
@@ -879,13 +824,13 @@ class CountdownCog(
             if owner is None:
                 owner = await self.bot.fetch_user(row["owner_id"])
             await owner.send(
-                ("✅ **Cooldown ready!**" if due else "⏱️ **Countdown reminder**")
+                ("✅ **Cooldown ready!**" if due else "⏱️ **Reminder**")
                 + f"\n**{discord.utils.escape_markdown(row['title'])}**"
                 + f"\n{timestamp_label(row['target_ts'])}",
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except (discord.Forbidden, discord.HTTPException) as exc:
-            print(f"COUNTDOWN OWNER DM FAILED channel={row['channel_id']}: {exc!r}")
+            print(f"COUNTDOWN OWNER DM FAILED reminder={row['id']}: {exc!r}")
 
     async def _notify_subscribers(self, row, now):
         target = int(row["target_ts"])
@@ -894,9 +839,9 @@ class CountdownCog(
         with connect() as db:
             subscribers = [dict(item) for item in db.execute(
                 "SELECT user_id,delivery,last_notified_target "
-                "FROM countdown_subscribers "
-                "WHERE channel_id=? AND last_notified_target<>?",
-                (row["channel_id"], target),
+                "FROM countdown_reminder_subscribers "
+                "WHERE reminder_id=? AND last_notified_target<>?",
+                (row["id"], target),
             )]
 
         channel = None
@@ -905,15 +850,13 @@ class CountdownCog(
                 user = self.bot.get_user(subscriber["user_id"])
                 if user is None:
                     user = await self.bot.fetch_user(subscriber["user_id"])
-
                 if subscriber["delivery"] == "ping":
                     if channel is None:
                         channel = self.bot.get_channel(row["channel_id"])
                         if channel is None:
                             channel = await self.bot.fetch_channel(row["channel_id"])
                     await channel.send(
-                        f"<@{subscriber['user_id']}> ⏱️ **Ogre bonk clock! "
-                        "Five minutes!**\n"
+                        f"<@{subscriber['user_id']}> ⏱️ **Ogre bonk clock! Five minutes!**\n"
                         f"**{discord.utils.escape_markdown(row['title'])}** "
                         "almost here. Get ready, gamer.",
                         allowed_mentions=discord.AllowedMentions(
@@ -932,23 +875,18 @@ class CountdownCog(
             except (discord.Forbidden, discord.HTTPException) as exc:
                 print(
                     f"COUNTDOWN SUBSCRIBER {subscriber['delivery'].upper()} FAILED "
-                    f"channel={row['channel_id']} "
-                    f"user={subscriber['user_id']}: {exc!r}"
+                    f"reminder={row['id']} user={subscriber['user_id']}: {exc!r}"
                 )
             finally:
-                # One delivery attempt per user per target; no minute spam.
                 with connect() as db:
                     db.execute(
-                        "UPDATE countdown_subscribers "
-                        "SET last_notified_target=? "
-                        "WHERE channel_id=? AND user_id=?",
-                        (target, row["channel_id"], subscriber["user_id"]),
+                        "UPDATE countdown_reminder_subscribers "
+                        "SET last_notified_target=? WHERE reminder_id=? AND user_id=?",
+                        (target, row["id"], subscriber["user_id"]),
                     )
 
     async def _tick_one(self, row, now):
         target = int(row["target_ts"])
-
-        # Subscriber reminder comes before cycle rollover and only in final 5m.
         await self._notify_subscribers(row, now)
 
         if due_reminder_due(target, now, row["due_notified_target"]):
@@ -956,8 +894,8 @@ class CountdownCog(
                 await self._notify_owner(row, due=True)
             with connect() as db:
                 db.execute(
-                    "UPDATE countdowns SET due_notified_target=? WHERE channel_id=?",
-                    (target, row["channel_id"]),
+                    "UPDATE countdown_reminders SET due_notified_target=? WHERE id=?",
+                    (target, row["id"]),
                 )
             row["due_notified_target"] = target
 
@@ -968,9 +906,9 @@ class CountdownCog(
             row["due_notified_target"] = 0
             with connect() as db:
                 db.execute(
-                    "UPDATE countdowns SET target_ts=?,pre_notified_target=0,"
-                    "due_notified_target=0 WHERE channel_id=?",
-                    (target, row["channel_id"]),
+                    "UPDATE countdown_reminders SET target_ts=?,"
+                    "pre_notified_target=0,due_notified_target=0 WHERE id=?",
+                    (target, row["id"]),
                 )
 
         if pre_reminder_due(
@@ -979,8 +917,8 @@ class CountdownCog(
             await self._notify_owner(row, due=False)
             with connect() as db:
                 db.execute(
-                    "UPDATE countdowns SET pre_notified_target=? WHERE channel_id=?",
-                    (target, row["channel_id"]),
+                    "UPDATE countdown_reminders SET pre_notified_target=? WHERE id=?",
+                    (target, row["id"]),
                 )
 
         key = render_key(target, now, row["active"])
@@ -992,14 +930,14 @@ class CountdownCog(
         await channel.get_partial_message(row["message_id"]).edit(
             content=None, embeds=[], attachments=[],
             view=CountdownLayout(
-                row, now=now, channel_id=row["channel_id"], include_remind=True,
+                row, now=now, reminder_id=row["id"], include_remind=True,
             ),
             allowed_mentions=discord.AllowedMentions.none(),
         )
         with connect() as db:
             db.execute(
-                "UPDATE countdowns SET last_render_key=? WHERE channel_id=?",
-                (key, row["channel_id"]),
+                "UPDATE countdown_reminders SET last_render_key=? WHERE id=?",
+                (key, row["id"]),
             )
 
     async def _tick(self):
@@ -1007,15 +945,13 @@ class CountdownCog(
         async with self.lock:
             with connect() as db:
                 rows = [dict(row) for row in db.execute(
-                    "SELECT * FROM countdowns WHERE active=1"
+                    "SELECT * FROM countdown_reminders WHERE active=1"
                 )]
             for row in rows:
                 try:
                     await self._tick_one(row, now)
                 except Exception as exc:
-                    print(
-                        f"COUNTDOWN UPDATE FAILED channel={row['channel_id']}: {exc!r}"
-                    )
+                    print(f"COUNTDOWN UPDATE FAILED reminder={row['id']}: {exc!r}")
 
     async def _run(self):
         await self.bot.wait_until_ready()
