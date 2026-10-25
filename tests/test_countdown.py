@@ -117,13 +117,17 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn('f"## {title}\\n"', SOURCE)
         self.assertIn('f"-# {subtitle}\\n"', SOURCE)
         self.assertIn('f"**{remaining}**"', SOURCE)
-        self.assertIn("remaining_hours_string(target, now)", SOURCE)
+        self.assertIn("upcoming_string(target, now)", SOURCE)
         self.assertIn("discord.ui.Thumbnail(", SOURCE)
         self.assertIn("COUNTDOWN_ICON_URL,", SOURCE)
         self.assertNotIn("## <Hyped> · Countdown / Cooldown", SOURCE)
         self.assertIn('image_url="Optional HTTPS artwork shown at the bottom"', SOURCE)
         self.assertIn("gallery.add_item(", SOURCE)
         self.assertIn("media=image_url", SOURCE)
+
+    def test_public_card_hides_owner_reminder_and_uses_day_hour_minute_format(self):
+        self.assertIn("upcoming_string(target, now)", SOURCE)
+        self.assertNotIn("Owner reminder {config['remind_minutes']}m before", SOURCE)
 
     def test_friendly_setup_wizard_uses_dropdowns_not_raw_datetime_only(self):
         self.assertIn('@app_commands.command(name="setup"', SOURCE)
