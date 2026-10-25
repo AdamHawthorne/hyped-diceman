@@ -66,7 +66,7 @@ class LFGVisualTests(unittest.TestCase):
         self.assertIn("class BoardLayout(discord.ui.LayoutView)", source)
         self.assertIn("for row in visible:", source)
         self.assertIn("container = discord.ui.Container(accent_color=ACCENT)", source)
-        self.assertIn("container.add_item(discord.ui.Separator())", source)
+        self.assertNotIn("container.add_item(discord.ui.Separator())", source)
         self.assertNotIn("not_lfm_embed", source)
         self.assertNotIn("class EntryLayout", source)
 

@@ -221,6 +221,13 @@ def show_lfm_emoji(activity):
     return is_open_lfm(activity)
 
 
+def contact_line(row, *, preview=False):
+    """Clickable member contact without exposing fake IDs in demo previews."""
+    if preview:
+        return "-# **Contact:** @Demo player"
+    return f"-# **Contact:** <@{int(row['user_id'])}>"
+
+
 def compact_availability(value):
     return " / ".join(part.strip() for part in value.replace("\r", "").split("\n") if part.strip())
 
@@ -1041,6 +1048,7 @@ class BoardPageButton(discord.ui.Button):
                 view=BoardLayout(layout.cog, layout.channel_id,
                                  interaction.guild, page_index=page,
                                  roster=roster),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             with connect() as db:
                 db.execute(
@@ -1129,6 +1137,7 @@ class BoardLayout(discord.ui.LayoutView):
             if notes:
                 lines.append(f"-# **Notes:** {notes}")
             lines.append(f"-# **Starting Zone:** {zone}")
+            lines.append(contact_line(row, preview=preview))
 
             # Separate V2 containers are still part of this ONE message.
             container = discord.ui.Container(accent_color=ACCENT)
@@ -1139,7 +1148,7 @@ class BoardLayout(discord.ui.LayoutView):
                     description=f"{character} Discord avatar",
                 ),
             ))
-            container.add_item(discord.ui.Separator())
+            # Containers separate players visually; no extra horizontal rule.
             self.add_item(container)
 
         if not visible:
@@ -1193,6 +1202,7 @@ class LFGPreview(commands.Cog):
                 content=None, embeds=[], attachments=[],
                 view=BoardLayout(self, channel_id, guild,
                                  page_index=page, roster=roster),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
 
             with connect() as db:
@@ -1227,38 +1237,59 @@ class LFGPreview(commands.Cog):
                     )
 
     async def post_new_board(self, interaction, channel):
+        """Recreate a missing public board without deleting any saved plans.
+
+        A stale message ID (including an obsolete ephemeral test response)
+        must not block launch. The LFG listing table is never touched here.
+        """
         try:
-            await interaction.response.send_message(
-                view=BoardLayout(self, channel.id, interaction.guild),
+            # channel.send is always a PUBLIC server message, unlike the
+            # command's private acknowledgement or /lfg-preview.
+            # Reuse the stored page when restoring a missing message.
+            existing = get_board(channel.id)
+            page = existing["page_index"] if existing else 0
+            msg = await channel.send(
+                view=BoardLayout(self, channel.id, interaction.guild,
+                                 page_index=page),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
-            msg = await interaction.original_response()
             with connect() as db:
                 db.execute(
-                    "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day) "
-                    "VALUES(?,?,?,'launch') "
+                    "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day,page_index) "
+                    "VALUES(?,?,?,'launch',?) "
                     "ON CONFLICT(channel_id) DO UPDATE SET "
                     "message_id=excluded.message_id,"
                     "guild_id=excluded.guild_id,"
-                    "board_day='launch'",
-                    (channel.id, interaction.guild_id, msg.id),
+                    "board_day='launch',"
+                    "page_index=excluded.page_index",
+                    (channel.id, interaction.guild_id, msg.id, page),
                 )
+            # Old multi-message versions may have posted individual entries.
+            # Clean up only those explicitly tracked messages.
             await self.refresh(channel.id)
+            await interaction.followup.send(
+                f"✅ Public LFG-LFM board ready: {msg.jump_url}",
+                ephemeral=True,
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(f"LFG BOARD POST FAILED channel={channel.id} error={exc!r}")
+            await interaction.followup.send(
+                "Ogre couldn't publish the public board. Check that the bot "
+                "can Send Messages, Embed Links and use external images in "
+                "this channel, then check Fly logs.",
+                ephemeral=True,
+            )
         except Exception as exc:
             print(f"LFG BOARD POST FAILED channel={channel.id} error={exc!r}")
-            if interaction.response.is_done():
-                await interaction.followup.send(
-                    "Ogre couldn't finish setting up board. Check Fly log.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.response.send_message(
-                    "Ogre couldn't post board. Check Fly log.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                "Ogre couldn't finish setting up the public board. "
+                "Saved member plans are untouched; check Fly logs.",
+                ephemeral=True,
+            )
 
     @app_commands.command(
         name="postlfglfm",
-        description="Post or refresh the live Hyped LFG-LFM launch board",
+        description="Post or restore the public Hyped LFG-LFM launch board",
     )
     @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
@@ -1266,41 +1297,68 @@ class LFGPreview(commands.Cog):
     async def post_lfg_lfm(self, interaction: discord.Interaction):
         if interaction.guild_id != int(os.environ["HYPED_GUILD_ID"]):
             await interaction.response.send_message(
-                "Only available in Hyped.",
-                ephemeral=True,
+                "Only available in Hyped.", ephemeral=True,
             )
             return
 
         channel = interaction.channel
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message(
-                "Use this in a server text channel.",
-                ephemeral=True,
+                "Use this in a server text channel.", ephemeral=True,
             )
             return
 
+        # Acknowledge immediately; public message is posted via channel.send.
+        # This PRIVATE status response does not make the board ephemeral.
+        await interaction.response.defer(thinking=True, ephemeral=True)
         row = get_board(channel.id)
         if row:
-            await interaction.response.defer(thinking=True, ephemeral=True)
             try:
-                board_message = await channel.fetch_message(row["message_id"])
-                await self.refresh(channel.id)
-                await interaction.followup.send(
-                    f"Ogre found board: {board_message.jump_url}",
-                    ephemeral=True,
-                )
-                return
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                existing = await channel.fetch_message(row["message_id"])
+            except discord.NotFound:
+                # Only the board message is gone, NOT member listings.
                 print(
-                    f"LFG EXISTING BOARD INVALID channel={channel.id} "
+                    f"LFG BOARD MISSING channel={channel.id} "
+                    f"message={row['message_id']}; restoring public board"
+                )
+                await self.post_new_board(interaction, channel)
+                return
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                # A temporary API problem or missing permission is not proof
+                # that the board was deleted: avoid duplicating public boards.
+                print(
+                    f"LFG BOARD LOOKUP FAILED channel={channel.id} "
                     f"message={row['message_id']} error={exc!r}"
                 )
                 await interaction.followup.send(
-                    "The previous board message is missing. Please ask an officer "
-                    "to restore the board; saved plans are still safe.",
+                    "Couldn't check the existing public board. It may still be "
+                    "there; check bot permissions and Fly logs. No new board "
+                    "was posted, and saved plans were not changed.",
                     ephemeral=True,
                 )
                 return
+            try:
+                await self.refresh(channel.id)
+            except discord.NotFound:
+                # The anchor can disappear between fetch and edit.
+                await self.post_new_board(interaction, channel)
+                return
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                print(
+                    f"LFG BOARD REFRESH FAILED channel={channel.id} "
+                    f"message={row['message_id']} error={exc!r}"
+                )
+                await interaction.followup.send(
+                    "Ogre found the board but couldn't refresh it. Saved plans "
+                    "are safe; check the bot's channel permissions and Fly logs.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.followup.send(
+                f"✅ Public LFG-LFM board refreshed: {existing.jump_url}",
+                ephemeral=True,
+            )
+            return
 
         await self.post_new_board(interaction, channel)
 
