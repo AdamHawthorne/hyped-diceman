@@ -19,6 +19,7 @@ import os
 import discord
 from cogs.forever_role import ForeverRoleView, build_forever_role_embed
 from cogs.flameboard import FlameboardEvents
+from cogs.roll_reactions import RollReactions
 import logging
 import json
 import hmac
@@ -1111,6 +1112,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="diceman_", intents=intents)
+roll_reactions = RollReactions(bot, ROLL_CHANNEL_ID, db, today_range, log_error)
 
 async def fetch_guild_member(guild: discord.Guild, user_id: int):
     member = guild.get_member(user_id)
@@ -1777,6 +1779,7 @@ async def on_ready():
     if cleaned > 0:
         print(f"Cleaned {cleaned} stale guild entries")
 
+    await roll_reactions.sync()
     await sync_high_roller_role()
 
     if os.getenv("ENABLE_WEBHOOK") == "true":
@@ -1858,9 +1861,9 @@ async def bot_daily_roll():
 
             try:
                 if value == 100:
-                    await channel.send(f"{BOT_NAME} rolled 💯 🎲")
+                    await channel.send(f"Me rolled 💯 🎲")
                 else:
-                    await channel.send(f"{BOT_NAME} rolled **{value}** 🎲")
+                    await channel.send(f"Me rolled **{value}** 🎲")
             except discord.Forbidden:
                 try:
                     guild = bot.get_guild(guild_id)
@@ -2262,6 +2265,7 @@ async def perform_roll(interaction: discord.Interaction):
                 f"{interaction.user.mention} rolled **{value}** 🎲"
             )
 
+        await roll_reactions.sync()
         await sync_high_roller_role()
         return
 
@@ -2347,6 +2351,7 @@ async def perform_roll(interaction: discord.Interaction):
                 content=f"{interaction.user.mention} rolled **{display_value:,}** 🎲"
             )
 
+    await roll_reactions.sync()
     await sync_high_roller_role()
 
 
@@ -3270,3 +3275,4 @@ if missing_config:
     )
 
 bot.run(TOKEN)
+
