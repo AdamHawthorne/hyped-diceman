@@ -1,30 +1,56 @@
-"""Hyped guild LFG board, piloted through /lfg-preview.
+"""Hyped WoW: Forever launch-planning board, piloted through /lfg-preview.
 
-The board is live in the chosen test channel, but stored in its own SQLite file.
+The board is live in the chosen test channel and stored in its own SQLite file.
 Existing dice, Flameboard and Forever-role systems are untouched.
 """
 import asyncio
-from datetime import datetime
 import os
 from pathlib import Path
 import sqlite3
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 
-TZ = ZoneInfo("Europe/London")
-PATH = os.getenv("LFG_DB_PATH", "/data/lfg_board.db" if Path("/data").is_dir() else "lfg_board.db")
+PATH = os.getenv(
+    "LFG_DB_PATH",
+    "/data/lfg_board.db" if Path("/data").is_dir() else "lfg_board.db",
+)
 
-CLASSES = ("Warrior", "Paladin", "Hunter", "Rogue", "Priest", "Shaman", "Mage", "Warlock", "Druid")
-ROLES = ("Tank", "Healer", "DPS", "Flexible")
-WHEN = ("On now", "All day", "After work", "Evening", "Late night", "Flexible")
-WHAT = ("Dungeons", "Group questing", "Levelling", "PvP", "Farming", "Anything")
-
-
-def today():
-    return datetime.now(TZ).date().isoformat()
+RACES = ("Orc", "Troll", "Tauren", "Undead", "Skyborne (Windshaper)")
+STARTING_ZONES = {
+    "Orc": "Durotar",
+    "Troll": "Durotar",
+    "Tauren": "Mulgore",
+    "Undead": "Tirisfal Glades",
+    "Skyborne (Windshaper)": "Zephras Isle",
+}
+RACE_CLASSES = {
+    "Orc": ("Hunter", "Mage", "Rogue", "Shaman", "Warlock", "Warrior"),
+    "Troll": ("Hunter", "Mage", "Priest", "Rogue", "Shaman", "Warlock", "Warrior"),
+    "Tauren": ("Druid", "Hunter", "Shaman", "Warrior"),
+    "Undead": ("Mage", "Paladin", "Priest", "Rogue", "Warlock", "Warrior"),
+    "Skyborne (Windshaper)": ("Druid", "Hunter", "Rogue", "Shaman", "Warrior"),
+}
+ROLES = ("Tank", "Healer", "DPS")
+PLAY_WINDOWS = (
+    "Launch 23:00",
+    "00:00",
+    "04:00",
+    "Morning",
+    "Daytime",
+    "Evening",
+    "All day",
+    "Flexible",
+)
+INTENTIONS = (
+    "Solo Questing",
+    "Group Questing",
+    "Group Questing / Dungeon",
+    "Dungeon Focused",
+    "Flexible",
+)
+DAYS_OFF = ("None", "1 day", "2 days", "3 days", "4 days", "5 days", "1 week+", "Varies")
 
 
 def connect():
@@ -40,14 +66,14 @@ def init_db():
             channel_id INTEGER PRIMARY KEY,
             guild_id INTEGER NOT NULL,
             message_id INTEGER NOT NULL,
-            board_day TEXT NOT NULL
+            board_day TEXT NOT NULL DEFAULT 'launch'
         )""")
         db.execute("""CREATE TABLE IF NOT EXISTS lfg_listings (
             channel_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             character TEXT NOT NULL,
-            level INTEGER NOT NULL,
-            level_label TEXT NOT NULL DEFAULT '',
+            level INTEGER NOT NULL DEFAULT 1,
+            level_label TEXT NOT NULL DEFAULT '1',
             level_sort INTEGER NOT NULL DEFAULT 1,
             class_name TEXT NOT NULL,
             role TEXT NOT NULL,
@@ -55,19 +81,29 @@ def init_db():
             activity TEXT NOT NULL,
             notes TEXT NOT NULL DEFAULT '',
             avatar_url TEXT NOT NULL DEFAULT '',
-            board_day TEXT NOT NULL,
+            race TEXT NOT NULL DEFAULT '',
+            starting_zone TEXT NOT NULL DEFAULT '',
+            days_off TEXT NOT NULL DEFAULT '',
+            board_day TEXT NOT NULL DEFAULT 'launch',
             PRIMARY KEY(channel_id, user_id)
         )""")
 
         columns = {row[1] for row in db.execute("PRAGMA table_info(lfg_listings)")}
-        if "level_label" not in columns:
-            db.execute("ALTER TABLE lfg_listings ADD COLUMN level_label TEXT NOT NULL DEFAULT ''")
-            db.execute("UPDATE lfg_listings SET level_label=CAST(level AS TEXT)")
-        if "level_sort" not in columns:
-            db.execute("ALTER TABLE lfg_listings ADD COLUMN level_sort INTEGER NOT NULL DEFAULT 1")
-            db.execute("UPDATE lfg_listings SET level_sort=level")
-        if "avatar_url" not in columns:
-            db.execute("ALTER TABLE lfg_listings ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''")
+        additions = {
+            "level_label": "TEXT NOT NULL DEFAULT '1'",
+            "level_sort": "INTEGER NOT NULL DEFAULT 1",
+            "avatar_url": "TEXT NOT NULL DEFAULT ''",
+            "race": "TEXT NOT NULL DEFAULT ''",
+            "starting_zone": "TEXT NOT NULL DEFAULT ''",
+            "days_off": "TEXT NOT NULL DEFAULT ''",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                db.execute(f"ALTER TABLE lfg_listings ADD COLUMN {name} {declaration}")
+
+        # Pre-launch plans persist until a member updates or removes them.
+        db.execute("UPDATE lfg_listings SET board_day='launch'")
+        db.execute("UPDATE lfg_boards SET board_day='launch'")
 
 
 def get_board(channel_id):
@@ -81,17 +117,17 @@ def get_board(channel_id):
 def current_listing(channel_id, user_id):
     with connect() as db:
         return db.execute(
-            "SELECT * FROM lfg_listings WHERE channel_id=? AND user_id=? AND board_day=?",
-            (channel_id, user_id, today()),
+            "SELECT * FROM lfg_listings WHERE channel_id=? AND user_id=?",
+            (channel_id, user_id),
         ).fetchone()
 
 
 def entries(channel_id):
     with connect() as db:
         return db.execute(
-            "SELECT * FROM lfg_listings WHERE channel_id=? AND board_day=? "
-            "ORDER BY level_sort DESC, character COLLATE NOCASE ASC",
-            (channel_id, today()),
+            "SELECT * FROM lfg_listings WHERE channel_id=? "
+            "ORDER BY character COLLATE NOCASE ASC",
+            (channel_id,),
         ).fetchall()
 
 
@@ -109,19 +145,408 @@ def player_avatar_url(row, guild=None):
     return ""
 
 
+def format_roles(value):
+    return " / ".join(part.strip() for part in value.split(",") if part.strip())
+
+
+class Draft:
+    def __init__(self, row=None):
+        self.character = row["character"] if row else ""
+        self.race = row["race"] if row else ""
+        self.starting_zone = row["starting_zone"] if row else ""
+        self.class_name = row["class_name"] if row else ""
+        self.role = row["role"] if row else ""
+        self.availability = row["availability"] if row else ""
+        self.activity = row["activity"] if row else ""
+        self.days_off = row["days_off"] if row else ""
+
+    def summary(self):
+        fields = [
+            f"**Planned character:** {safe(self.character or 'Not set')}",
+            f"**Race:** {self.race or 'Not set'}",
+            f"**Class:** {self.class_name or 'Not set'}",
+            f"**Role(s):** {format_roles(self.role) or 'Not set'}",
+            f"**Playing:** {safe(self.availability or 'Not set')}",
+            f"**Plan:** {safe(self.activity or 'Not set')}",
+            f"**Days off:** {self.days_off or 'Not set'}",
+        ]
+        if self.starting_zone:
+            fields.insert(2, f"**Starting zone:** {self.starting_zone}")
+        return "\n".join(fields)
+
+
+class WizardState:
+    def __init__(self, cog, channel_id, owner_id):
+        self.cog = cog
+        self.channel_id = channel_id
+        self.owner_id = owner_id
+        self.draft = Draft(current_listing(channel_id, owner_id))
+
+    async def check(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "This Ogre conversation belongs to someone else.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+
+def wizard_embed(title, prompt, state):
+    embed = discord.Embed(
+        title=title,
+        description=f"{prompt}\n\n{state.draft.summary()}",
+        color=0x8C5A3C,
+    )
+    embed.set_footer(text="Only you can see this. Nothing changes until you save.")
+    return embed
+
+
+class PlannedNameModal(discord.ui.Modal, title="Planned character"):
+    def __init__(self, state):
+        super().__init__()
+        self.state = state
+        self.character = discord.ui.TextInput(
+            label="Planned character name",
+            placeholder="First name or First Last",
+            default=state.draft.character or None,
+            max_length=48,
+        )
+        self.add_item(self.character)
+
+    async def on_submit(self, interaction):
+        name = " ".join(self.character.value.split())
+        if not name:
+            await interaction.response.send_message(
+                "Ogre need planned character name.",
+                ephemeral=True,
+            )
+            return
+
+        self.state.draft.character = name
+        await interaction.response.send_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Character Plan",
+                "What race you planning?",
+                self.state,
+            ),
+            view=RaceView(self.state),
+            ephemeral=True,
+        )
+
+
+class RaceSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Choose planned race",
+            options=[
+                discord.SelectOption(
+                    label=race,
+                    value=race,
+                    description=STARTING_ZONES[race],
+                )
+                for race in RACES
+            ],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        race = self.values[0]
+        state.draft.race = race
+        state.draft.starting_zone = STARTING_ZONES[race]
+
+        # If an existing class is invalid for the new race, clear it.
+        if state.draft.class_name not in RACE_CLASSES[race]:
+            state.draft.class_name = ""
+
+        await interaction.response.edit_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Character Plan",
+                f"{state.draft.starting_zone}. What class?",
+                state,
+            ),
+            view=ClassView(state),
+        )
+
+
+class RaceView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(RaceSelect())
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+class ClassSelect(discord.ui.Select):
+    def __init__(self, race):
+        super().__init__(
+            placeholder="Choose planned class",
+            options=[
+                discord.SelectOption(label=value, value=value)
+                for value in RACE_CLASSES[race]
+            ],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        state.draft.class_name = self.values[0]
+        await interaction.response.edit_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Roles",
+                "What role(s) you happy to play? Choose all that apply.",
+                state,
+            ),
+            view=RoleView(state),
+        )
+
+
+class ClassView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(ClassSelect(state.draft.race))
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+class RoleSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Choose role(s)",
+            min_values=1,
+            max_values=len(ROLES),
+            options=[discord.SelectOption(label=value, value=value) for value in ROLES],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        state.draft.role = ", ".join(self.values)
+        await interaction.response.edit_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Launch Time",
+                "When you planning to play? Pick up to two.",
+                state,
+            ),
+            view=PlayWindowView(state),
+        )
+
+
+class RoleView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(RoleSelect())
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+class PlayWindowSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Choose start / play time",
+            min_values=1,
+            max_values=2,
+            options=[discord.SelectOption(label=value, value=value) for value in PLAY_WINDOWS],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        state.draft.availability = " + ".join(self.values)
+        await interaction.response.edit_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Levelling Plan",
+                "How you planning to level?",
+                state,
+            ),
+            view=IntentionView(state),
+        )
+
+
+class PlayWindowView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(PlayWindowSelect())
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+class IntentionSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Choose levelling intention",
+            options=[discord.SelectOption(label=value, value=value) for value in INTENTIONS],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        state.draft.activity = self.values[0]
+        await interaction.response.edit_message(
+            embed=wizard_embed(
+                "Hyped Ogre LFG · Time Off",
+                "How much time you got off around launch?",
+                state,
+            ),
+            view=DaysOffView(state),
+        )
+
+
+class IntentionView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(IntentionSelect())
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+class DaysOffSelect(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Choose days off",
+            options=[discord.SelectOption(label=value, value=value) for value in DAYS_OFF],
+        )
+
+    async def callback(self, interaction):
+        state = self.view.state
+        state.draft.days_off = self.values[0]
+        await interaction.response.edit_message(
+            embed=review_embed(state),
+            view=ReviewView(state),
+        )
+
+
+class DaysOffView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(DaysOffSelect())
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+
+def review_embed(state):
+    embed = discord.Embed(
+        title="Hyped Ogre LFG · Review",
+        description=(
+            "**Ogre got plan.** Save it to board?\n\n"
+            + state.draft.summary()
+        ),
+        color=0x8C5A3C,
+    )
+    embed.set_footer(text="Only you can see this review")
+    return embed
+
+
+class ReviewView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+    @discord.ui.button(label="Save", style=discord.ButtonStyle.success)
+    async def save(self, interaction, button):
+        draft = self.state.draft
+        required = (
+            draft.character,
+            draft.race,
+            draft.class_name,
+            draft.role,
+            draft.availability,
+            draft.activity,
+            draft.days_off,
+        )
+        if not all(required):
+            await interaction.response.send_message(
+                "Ogre missing something. Press Add / Update and run through plan again.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer()
+        with connect() as db:
+            db.execute(
+                """INSERT INTO lfg_listings
+                (channel_id,user_id,character,level,level_label,level_sort,class_name,role,
+                 availability,activity,notes,avatar_url,race,starting_zone,days_off,board_day)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(channel_id,user_id) DO UPDATE SET
+                character=excluded.character,
+                level=1,
+                level_label='1',
+                level_sort=1,
+                class_name=excluded.class_name,
+                role=excluded.role,
+                availability=excluded.availability,
+                activity=excluded.activity,
+                avatar_url=excluded.avatar_url,
+                race=excluded.race,
+                starting_zone=excluded.starting_zone,
+                days_off=excluded.days_off,
+                board_day='launch'""",
+                (
+                    self.state.channel_id,
+                    self.state.owner_id,
+                    draft.character,
+                    1,
+                    "1",
+                    1,
+                    draft.class_name,
+                    draft.role,
+                    draft.availability,
+                    draft.activity,
+                    "",
+                    str(interaction.user.display_avatar.url),
+                    draft.race,
+                    draft.starting_zone,
+                    draft.days_off,
+                    "launch",
+                ),
+            )
+
+        try:
+            await self.state.cog.refresh(self.state.channel_id)
+            message = "Saved. Ogre updated board."
+        except Exception as exc:
+            print(
+                f"LFG BOARD REFRESH FAILED channel={self.state.channel_id} "
+                f"user={self.state.owner_id} error={exc!r}"
+            )
+            message = "Plan saved, but Ogre could not refresh board. Tell an officer."
+
+        await interaction.edit_original_response(
+            content=message,
+            embed=None,
+            view=None,
+        )
+
+    @discord.ui.button(label="Start Again", style=discord.ButtonStyle.secondary)
+    async def restart(self, interaction, button):
+        await interaction.response.send_modal(PlannedNameModal(self.state))
+
+
 class AddUpdateButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
         super().__init__(
             label="Add / Update",
             style=discord.ButtonStyle.primary,
-            custom_id="hyped_lfg_edit_v3",
+            custom_id="hyped_lfg_edit_v4",
         )
         self.cog = cog
         self.channel_id = channel_id
 
     async def callback(self, interaction):
         state = WizardState(self.cog, self.channel_id, interaction.user.id)
-        await interaction.response.send_modal(CharacterLevelModal(state))
+        await interaction.response.send_modal(PlannedNameModal(state))
 
 
 class RemoveButton(discord.ui.Button):
@@ -129,7 +554,7 @@ class RemoveButton(discord.ui.Button):
         super().__init__(
             label="Remove",
             style=discord.ButtonStyle.secondary,
-            custom_id="hyped_lfg_remove_v3",
+            custom_id="hyped_lfg_remove_v4",
         )
         self.cog = cog
         self.channel_id = channel_id
@@ -152,11 +577,11 @@ class RemoveButton(discord.ui.Button):
             )
 
         if result.rowcount and refreshed:
-            text = "Ogre removed you from the board."
+            text = "Ogre removed your plan."
         elif result.rowcount:
-            text = "You were removed, but Ogre could not refresh the board display."
+            text = "Plan removed, but Ogre could not refresh board."
         else:
-            text = "You don't currently have a listing on this board."
+            text = "You don't have a plan on board."
 
         await interaction.response.send_message(text, ephemeral=True)
 
@@ -164,9 +589,6 @@ class RemoveButton(discord.ui.Button):
 class BoardLayout(discord.ui.LayoutView):
     def __init__(self, cog, channel_id, guild=None):
         super().__init__(timeout=None)
-        self.cog = cog
-        self.channel_id = channel_id
-
         roster = entries(channel_id)
         visible = roster[:8]
 
@@ -180,428 +602,53 @@ class BoardLayout(discord.ui.LayoutView):
                 description="Hyped LFG-LFM",
             ),
         )
-
-        container = discord.ui.Container(
-            header,
-            accent_color=0x8C5A3C,
-        )
+        container = discord.ui.Container(header, accent_color=0x8C5A3C)
 
         if visible:
             container.add_item(discord.ui.Separator())
             for index, row in enumerate(visible):
-                notes = f" · {safe(row['notes'])}" if row["notes"] else ""
-                level_label = row["level_label"] or str(row["level"])
+                race = row["race"] or "Race not set"
+                zone = row["starting_zone"] or STARTING_ZONES.get(race, "Starting zone not set")
+                roles = format_roles(row["role"]) or "Role not set"
+                days = row["days_off"] or "Days off not set"
                 text = (
-                    f"### Lv {level_label} · {safe(row['character'])} · "
-                    f"{row['class_name']} · {row['role']}\n"
-                    f"{row['availability']} · {safe(row['activity'])}{notes}"
+                    f"### {safe(row['character'])} · {race} {row['class_name']} · {roles}\n"
+                    f"{zone} · **{safe(row['availability'])}** · "
+                    f"{safe(row['activity'])} · **{days} off**"
                 )
                 avatar = player_avatar_url(row, guild)
-                if avatar:
-                    section = discord.ui.Section(
+                thumbnail = discord.ui.Thumbnail(
+                    avatar or "https://i.vgy.me/2Jt4oi.png",
+                    description=f"{safe(row['character'])} Discord avatar",
+                )
+                container.add_item(
+                    discord.ui.Section(
                         discord.ui.TextDisplay(text),
-                        accessory=discord.ui.Thumbnail(
-                            avatar,
-                            description=f"{safe(row['character'])}'s Discord avatar",
-                        ),
+                        accessory=thumbnail,
                     )
-                else:
-                    section = discord.ui.Section(
-                        discord.ui.TextDisplay(text),
-                        accessory=discord.ui.Thumbnail(
-                            "https://i.vgy.me/2Jt4oi.png",
-                            description="Hyped",
-                        ),
-                    )
-                container.add_item(section)
+                )
                 if index != len(visible) - 1:
                     container.add_item(discord.ui.Separator())
         else:
             container.add_item(discord.ui.Separator())
-            container.add_item(
-                discord.ui.TextDisplay("*Nobody on board yet.*")
-            )
+            container.add_item(discord.ui.TextDisplay("*Nobody on board yet.*"))
 
         if len(roster) > len(visible):
             container.add_item(discord.ui.Separator())
             container.add_item(
                 discord.ui.TextDisplay(
-                    f"-# {len(roster) - len(visible)} more listing(s) not shown on this test board."
+                    f"-# {len(roster) - len(visible)} more plan(s) not shown on this test board."
                 )
             )
 
         container.add_item(discord.ui.Separator())
-        buttons = discord.ui.ActionRow(
-            AddUpdateButton(cog, channel_id),
-            RemoveButton(cog, channel_id),
+        container.add_item(
+            discord.ui.ActionRow(
+                AddUpdateButton(cog, channel_id),
+                RemoveButton(cog, channel_id),
+            )
         )
-        container.add_item(buttons)
         self.add_item(container)
-
-def parse_level(value):
-    text = value.strip().replace("–", "-").replace("—", "-").replace(" ", "")
-    if text.isdecimal():
-        number = int(text)
-        if 1 <= number <= 60:
-            return str(number), number
-        return None
-
-    if text.count("-") == 1:
-        start_text, end_text = text.split("-", 1)
-        if start_text.isdecimal() and end_text.isdecimal():
-            start, end = int(start_text), int(end_text)
-            if 1 <= start <= end <= 60:
-                return f"{start}-{end}", end
-    return None
-
-
-class Draft:
-    def __init__(self, row=None):
-        self.character = row["character"] if row else ""
-        self.level = int(row["level"]) if row else 1
-        self.level_label = (row["level_label"] or str(row["level"])) if row else ""
-        self.level_sort = int(row["level_sort"]) if row else 1
-        self.class_name = row["class_name"] if row else ""
-        self.role = row["role"] if row else ""
-        self.availability = row["availability"] if row else ""
-        self.activity = row["activity"] if row else ""
-        self.notes = row["notes"] if row else ""
-        self.avatar_url = row["avatar_url"] if row else ""
-
-    def summary(self):
-        bits = [
-            f"**Character:** {safe(self.character or 'Not set')}",
-            f"**Level:** {self.level_label if self.character else 'Not set'}",
-            f"**Class:** {self.class_name or 'Not set'}",
-            f"**Role:** {self.role or 'Not set'}",
-            f"**Availability:** {self.availability or 'Not set'}",
-            f"**Looking for:** {safe(self.activity or 'Not set')}",
-        ]
-        if self.notes:
-            bits.append(f"**Notes:** {safe(self.notes)}")
-        return "\n".join(bits)
-
-
-class WizardState:
-    def __init__(self, cog, channel_id, owner_id):
-        self.cog = cog
-        self.channel_id = channel_id
-        self.owner_id = owner_id
-        self.draft = Draft(current_listing(channel_id, owner_id))
-
-    async def check(self, interaction):
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message(
-                "This Ogre conversation belongs to someone else.",
-                ephemeral=True,
-            )
-            return False
-        return True
-
-
-def step_embed(step, title, prompt, state):
-    embed = discord.Embed(
-        title=f"Hyped Ogre LFG · Step {step}",
-        description=f"{prompt}\n\n{state.draft.summary()}",
-        color=discord.Color.blurple(),
-    )
-    embed.set_footer(text="Only you can see this. Nothing changes until you save.")
-    return embed
-
-
-class CharacterLevelModal(discord.ui.Modal, title="Tell Ogre who you're playing"):
-    def __init__(self, state):
-        super().__init__()
-        self.state = state
-        self.character = discord.ui.TextInput(
-            label="Character name",
-            placeholder="e.g. Kami",
-            default=state.draft.character or None,
-            max_length=32,
-        )
-        self.level = discord.ui.TextInput(
-            label="Level or range (1-60)",
-            placeholder="e.g. 36 or 1-12",
-            default=state.draft.level_label if state.draft.character else None,
-            max_length=5,
-        )
-        self.add_item(self.character)
-        self.add_item(self.level)
-
-    async def on_submit(self, interaction):
-        name = self.character.value.strip()
-        level_value = parse_level(self.level.value)
-        if not name or level_value is None:
-            await interaction.response.send_message(
-                "Ogre need character name and level like **36** or range like **1-12**.",
-                ephemeral=True,
-            )
-            return
-
-        level_label, level_sort = level_value
-        self.state.draft.character = name
-        self.state.draft.level = level_sort
-        self.state.draft.level_label = level_label
-        self.state.draft.level_sort = level_sort
-        await interaction.response.send_message(
-            embed=step_embed(
-                "2/5",
-                "Pick your class",
-                "Good. What class are you playing?",
-                self.state,
-            ),
-            view=ClassView(self.state),
-            ephemeral=True,
-        )
-
-
-class ClassSelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose your class",
-            options=[discord.SelectOption(label=value, value=value) for value in CLASSES],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.class_name = self.values[0]
-        await interaction.response.edit_message(
-            embed=step_embed(
-                "3/5",
-                "Choose your role",
-                "What job are you looking to fill?",
-                state,
-            ),
-            view=RoleView(state),
-        )
-
-
-class ClassView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(ClassSelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-class RoleButton(discord.ui.Button):
-    def __init__(self, value):
-        super().__init__(
-            label=value,
-            style=discord.ButtonStyle.primary if value != "Flexible" else discord.ButtonStyle.secondary,
-        )
-        self.value = value
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.role = self.value
-        await interaction.response.edit_message(
-            embed=step_embed(
-                "4/5",
-                "When are you around?",
-                "Pick the availability that best describes today.",
-                state,
-            ),
-            view=AvailabilityView(state),
-        )
-
-
-class RoleView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        for value in ROLES:
-            self.add_item(RoleButton(value))
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-class AvailabilityButton(discord.ui.Button):
-    def __init__(self, value, row):
-        super().__init__(
-            label=value,
-            style=discord.ButtonStyle.secondary,
-            row=row,
-        )
-        self.value = value
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.availability = self.value
-        await interaction.response.edit_message(
-            embed=step_embed(
-                "5/5",
-                "What are you looking for?",
-                "Choose up to three things. You'll review everything before Ogre posts it.",
-                state,
-            ),
-            view=ActivityView(state),
-        )
-
-
-class AvailabilityView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        for index, value in enumerate(WHEN):
-            self.add_item(AvailabilityButton(value, 0 if index < 5 else 1))
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-class ActivitySelect(discord.ui.Select):
-    def __init__(self):
-        super().__init__(
-            placeholder="Choose up to 3 activities",
-            min_values=1,
-            max_values=3,
-            options=[discord.SelectOption(label=value, value=value) for value in WHAT],
-        )
-
-    async def callback(self, interaction):
-        state = self.view.state
-        state.draft.activity = ", ".join(self.values)
-        await interaction.response.edit_message(
-            embed=review_embed(state),
-            view=ReviewView(state),
-        )
-
-
-class ActivityView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(ActivitySelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-
-def review_embed(state):
-    embed = discord.Embed(
-        title="Hyped Ogre LFG · Review",
-        description=(
-            "Ogre thinks this is what you mean. Add an optional note or save it to the board.\n\n"
-            + state.draft.summary()
-        ),
-        color=discord.Color.from_rgb(217, 154, 67),
-    )
-    embed.set_footer(text="Only you can see this review")
-    return embed
-
-
-class NoteModal(discord.ui.Modal, title="Optional LFG note"):
-    def __init__(self, state):
-        super().__init__()
-        self.state = state
-        self.note = discord.ui.TextInput(
-            label="Dungeon / quest / extra note",
-            placeholder="e.g. SM Cath, happy to tank",
-            default=state.draft.notes or None,
-            required=False,
-            max_length=80,
-        )
-        self.add_item(self.note)
-
-    async def on_submit(self, interaction):
-        self.state.draft.notes = self.note.value.strip()
-        await interaction.response.edit_message(
-            embed=review_embed(self.state),
-            view=ReviewView(self.state),
-        )
-
-
-class ReviewView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
-
-    @discord.ui.button(label="Save Listing", style=discord.ButtonStyle.success)
-    async def save(self, interaction, button):
-        draft = self.state.draft
-        required = (
-            draft.character,
-            draft.class_name,
-            draft.role,
-            draft.availability,
-            draft.activity,
-        )
-        if not all(required):
-            await interaction.response.send_message(
-                "Ogre missing something. Press Add / Update and run through steps again.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer()
-        with connect() as db:
-            db.execute(
-                """INSERT INTO lfg_listings
-                (channel_id,user_id,character,level,level_label,level_sort,class_name,role,
-                 availability,activity,notes,avatar_url,board_day)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(channel_id,user_id) DO UPDATE SET
-                character=excluded.character,
-                level=excluded.level,
-                level_label=excluded.level_label,
-                level_sort=excluded.level_sort,
-                class_name=excluded.class_name,
-                role=excluded.role,
-                availability=excluded.availability,
-                activity=excluded.activity,
-                notes=excluded.notes,
-                avatar_url=excluded.avatar_url,
-                board_day=excluded.board_day""",
-                (
-                    self.state.channel_id,
-                    self.state.owner_id,
-                    draft.character,
-                    draft.level,
-                    draft.level_label,
-                    draft.level_sort,
-                    draft.class_name,
-                    draft.role,
-                    draft.availability,
-                    draft.activity,
-                    draft.notes,
-                    str(interaction.user.display_avatar.url),
-                    today(),
-                ),
-            )
-
-        try:
-            await self.state.cog.refresh(self.state.channel_id)
-            message = "Saved. Ogre has updated the board."
-        except Exception as exc:
-            print(
-                f"LFG BOARD REFRESH FAILED channel={self.state.channel_id} "
-                f"user={self.state.owner_id} error={exc!r}"
-            )
-            message = (
-                "Your listing was saved, but Ogre could not refresh the board. "
-                "Tell an officer so we can check the bot log."
-            )
-
-        await interaction.edit_original_response(
-            content=message,
-            embed=None,
-            view=None,
-        )
-
-    @discord.ui.button(label="Add Note", style=discord.ButtonStyle.secondary)
-    async def note(self, interaction, button):
-        await interaction.response.send_modal(NoteModal(self.state))
-
-    @discord.ui.button(label="Start Again", style=discord.ButtonStyle.secondary)
-    async def restart(self, interaction, button):
-        await interaction.response.send_modal(CharacterLevelModal(self.state))
 
 
 class LFGPreview(commands.Cog):
@@ -613,19 +660,17 @@ class LFGPreview(commands.Cog):
         init_db()
         with connect() as db:
             boards = db.execute(
-                "SELECT channel_id, message_id FROM lfg_boards"
+                "SELECT channel_id, guild_id, message_id FROM lfg_boards"
             ).fetchall()
-
         for board in boards:
             self.bot.add_view(
-                BoardLayout(self, board["channel_id"], self.bot.get_guild(board["guild_id"]) if "guild_id" in board.keys() else None),
+                BoardLayout(
+                    self,
+                    board["channel_id"],
+                    self.bot.get_guild(board["guild_id"]),
+                ),
                 message_id=board["message_id"],
             )
-
-        self.daily_refresh.start()
-
-    async def cog_unload(self):
-        self.daily_refresh.cancel()
 
     async def refresh(self, channel_id):
         async with self.lock:
@@ -642,39 +687,12 @@ class LFGPreview(commands.Cog):
                 content=None,
                 embeds=[],
                 attachments=[],
-                view=BoardLayout(self, channel_id, getattr(channel, "guild", None)),
+                view=BoardLayout(
+                    self,
+                    channel_id,
+                    getattr(channel, "guild", None),
+                ),
             )
-            return True
-
-    @tasks.loop(minutes=1)
-    async def daily_refresh(self):
-        with connect() as db:
-            rows = db.execute(
-                "SELECT channel_id FROM lfg_boards WHERE board_day != ?",
-                (today(),),
-            ).fetchall()
-            if rows:
-                db.execute(
-                    "DELETE FROM lfg_listings WHERE board_day != ?",
-                    (today(),),
-                )
-                db.execute(
-                    "UPDATE lfg_boards SET board_day=?",
-                    (today(),),
-                )
-
-        for row in rows:
-            try:
-                await self.refresh(row["channel_id"])
-            except Exception as exc:
-                print(
-                    f"LFG DAILY REFRESH FAILED channel={row['channel_id']} "
-                    f"error={exc!r}"
-                )
-
-    @daily_refresh.before_loop
-    async def ready_for_refresh(self):
-        await self.bot.wait_until_ready()
 
     async def post_new_board(self, interaction, channel):
         try:
@@ -685,29 +703,29 @@ class LFGPreview(commands.Cog):
             with connect() as db:
                 db.execute(
                     "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day) "
-                    "VALUES(?,?,?,?) "
+                    "VALUES(?,?,?,'launch') "
                     "ON CONFLICT(channel_id) DO UPDATE SET "
                     "message_id=excluded.message_id,"
                     "guild_id=excluded.guild_id,"
-                    "board_day=excluded.board_day",
-                    (channel.id, interaction.guild_id, msg.id, today()),
+                    "board_day='launch'",
+                    (channel.id, interaction.guild_id, msg.id),
                 )
         except Exception as exc:
             print(f"LFG BOARD POST FAILED channel={channel.id} error={exc!r}")
             if interaction.response.is_done():
                 await interaction.followup.send(
-                    "Ogre couldn't finish setting up the board. Check the Fly log for the exact error.",
+                    "Ogre couldn't finish setting up board. Check Fly log.",
                     ephemeral=True,
                 )
             else:
                 await interaction.response.send_message(
-                    "Ogre couldn't post the board. Check the Fly log for the exact error.",
+                    "Ogre couldn't post board. Check Fly log.",
                     ephemeral=True,
                 )
 
     @app_commands.command(
         name="lfg-preview",
-        description="Create or reopen the interactive Hyped LFG test board",
+        description="Create or reopen the Hyped Forever launch-planning board",
     )
     @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
@@ -734,7 +752,7 @@ class LFGPreview(commands.Cog):
                 board_message = await channel.fetch_message(row["message_id"])
                 await self.refresh(channel.id)
                 await interaction.response.send_message(
-                    f"Ogre found the existing board: {board_message.jump_url}",
+                    f"Ogre found board: {board_message.jump_url}",
                     ephemeral=True,
                 )
                 return
