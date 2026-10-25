@@ -103,7 +103,9 @@ class CountdownSafetyTests(unittest.TestCase):
                 self.assertEqual(tables, {"countdowns", "countdown_subscribers"})
                 sub_columns = {row[1] for row in
                                db.execute("PRAGMA table_info(countdown_subscribers)")}
-                self.assertTrue({"channel_id", "user_id", "last_notified_target"}.issubset(sub_columns))
+                self.assertTrue({
+                    "channel_id", "user_id", "delivery", "last_notified_target"
+                }.issubset(sub_columns))
 
     def test_owner_check_is_not_just_discord_default_permissions(self):
         self.assertIn("interaction.user.id != OWNER_ID", SOURCE)
@@ -134,15 +136,31 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("class SetupReviewLayout", SOURCE)
         self.assertIn("SetupPublishButton", SOURCE)
 
-    def test_public_remind_button_is_persistent_and_five_minutes(self):
-        self.assertIn('custom_id="hyped_countdown_remind_v1"', SOURCE)
+    def test_public_dm_and_ping_buttons_are_persistent_and_five_minutes(self):
+        self.assertIn('custom_id=f"hyped_countdown_remind_{mode}_v1"', SOURCE)
+        self.assertIn('label="DM" if mode == "dm" else "Ping"', SOURCE)
+        self.assertIn('ReminderButton(channel_id or 0, "dm"', SOURCE)
+        self.assertIn('ReminderButton(channel_id or 0, "ping"', SOURCE)
+        self.assertNotIn("Remind me = Ogre DM 5 minutes before", SOURCE)
         self.assertIn("SUBSCRIBER_LEAD_SECONDS = 5 * 60", SOURCE)
-        self.assertIn("COUNTDOWN SUBSCRIBER DM FAILED", SOURCE)
         self.assertIn("Ogre bonk clock! Five minutes!", SOURCE)
         self.assertIn("countdown_subscribers", SOURCE)
         self.assertIn("last_notified_target", SOURCE)
+        self.assertIn("delivery TEXT NOT NULL DEFAULT 'dm'", SOURCE)
         self.assertIn("self.bot.add_view(", SOURCE)
-        self.assertIn('label="Remind me"', SOURCE)
+
+    def test_ping_reminder_mentions_then_self_deletes(self):
+        self.assertIn('subscriber["delivery"] == "ping"', SOURCE)
+        self.assertIn("allowed_mentions=discord.AllowedMentions(", SOURCE)
+        self.assertIn("users=True, roles=False, everyone=False", SOURCE)
+        self.assertIn("delete_after=60", SOURCE)
+
+    def test_owner_testdm_uses_real_ogre_reminder_copy(self):
+        self.assertIn('name="testdm"', SOURCE)
+        self.assertIn("user: discord.User | None = None", SOURCE)
+        self.assertIn("target_user = user or interaction.user", SOURCE)
+        self.assertIn("await target_user.send(", SOURCE)
+        self.assertIn("Dev test from Hyped Ogre", SOURCE)
 
     def test_legacy_stopwatch_is_not_reused_as_bottom_artwork(self):
         self.assertIn("UPDATE countdowns SET image_url='' WHERE image_url=?", SOURCE)
@@ -161,6 +179,8 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("get_partial_message(row[\"message_id\"]).edit(", SOURCE)
         self.assertIn("await owner.send(", SOURCE)
         self.assertIn("await user.send(", SOURCE)
+        self.assertIn("await channel.send(", SOURCE)
+        self.assertIn("delivery", SOURCE)
         self.assertIn("pre_notified_target", SOURCE)
         self.assertIn("due_notified_target", SOURCE)
         self.assertNotIn("await channel.send(content=", SOURCE)
