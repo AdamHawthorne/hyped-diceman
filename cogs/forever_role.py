@@ -3,7 +3,7 @@ import discord
 
 ACCENT = 0x8C5A3C
 FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"
-FOREVER_IMAGE = "https://i.vgy.me/WGNGdr.png"
+FOREVER_IMAGE = "https://i.vgy.me/pJaxaB.png"
 LEADERSHIP_APPLICATIONS_CHANNEL_ID = 1225020051418255370
 
 LEADERSHIP_INTERESTS = (
@@ -133,7 +133,7 @@ class LeadershipApplicationPost(discord.ui.LayoutView):
                 "## Leadership Application\n"
                 f"**Interested in:** {interest}\n\n"
                 f"**Experience**\n{experience}\n\n"
-                f"**What skills could we utilise?**\n{skills}\n\n"
+                f"**How could you help Hyped?**\n{skills}\n\n"
                 f"-# Sent by <@{int(applicant_id)}>"
             ),
             accent_color=ACCENT,
@@ -165,8 +165,8 @@ class LeadershipApplicationModal(discord.ui.Modal):
             max_length=1000,
         )
         self.skills = discord.ui.TextInput(
-            label="What skills could we utilise?",
-            placeholder="What are you good at, or where could you help?",
+            label="How could you help Hyped?",
+            placeholder="What could you bring to the guild?",
             style=discord.TextStyle.paragraph,
             required=True,
             min_length=3,
@@ -304,7 +304,6 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
 
         async def leadership_callback(interaction):
             await interaction.response.send_message(
-                "What are you interested in?",
                 view=LeadershipInterestView(interaction.user.id),
                 ephemeral=True,
             )
