@@ -766,19 +766,15 @@ class BoardLayout(discord.ui.LayoutView):
                 days = row["days_off"] or "Not set"
                 character = safe(row["character"]) if row["character"] else "Name TBD"
                 notes = safe(row["notes"]) if row["notes"] else ""
-                details_line = (
-                    f"**Starting:** {zone} · "
-                    f"**Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}"
-                )
-                plan_line = f"**Plan:** {safe(row['activity'])}"
+                lines = [
+                    f"**{character} · {race} {row['class_name']} · {roles}**",
+                    f"-# **Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}",
+                    f"-# **Plan:** {safe(row['activity'])}",
+                ]
                 if notes:
-                    plan_line += f" · **Notes:** {notes}"
-
-                text = (
-                    f"**{character} · {race} {row['class_name']} · {roles}**\n"
-                    f"-# {details_line}\n"
-                    f"-# {plan_line}"
-                )
+                    lines.append(f"-# **Notes:** {notes}")
+                lines.append(f"-# **Starting Zone:** {zone}")
+                text = "\n".join(lines)
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
                     avatar or HEADER_IMAGE,
