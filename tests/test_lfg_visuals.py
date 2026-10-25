@@ -7,7 +7,7 @@ import unittest
 
 SOURCE = Path(__file__).resolve().parents[1] / "cogs" / "lfg_preview.py"
 TREE = ast.parse(SOURCE.read_text(encoding="utf-8"))
-HELPERS = {"show_lfm_emoji", "visible_board_entries", "format_roles"}
+HELPERS = {"show_lfm_emoji", "format_roles"}
 NODES = [
     node for node in TREE.body
     if isinstance(node, ast.FunctionDef) and node.name in HELPERS
@@ -58,13 +58,14 @@ class LFGVisualTests(unittest.TestCase):
         self.assertNotIn("guild_lfg_emoji", source)
         self.assertNotIn("LFG_EMOJI_NAME", source)
 
-    def test_inline_emoji_does_not_reduce_board_capacity(self):
-        open_rows = [{"activity": "Open / Flexible"} for _ in range(8)]
-        solo_rows = [{"activity": "Solo Questing"} for _ in range(8)]
-        self.assertEqual(len(CONTEXT["visible_board_entries"](open_rows)), 7)
-        self.assertEqual(len(CONTEXT["visible_board_entries"](solo_rows)), 7)
-        self.assertEqual(len(CONTEXT["visible_board_entries"](open_rows[:6])), 6)
-        self.assertEqual(len(CONTEXT["visible_board_entries"](open_rows[:1])), 1)
+    def test_open_marker_is_inside_same_v2_member_container(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("class BoardLayout(discord.ui.LayoutView)", source)
+        self.assertIn("for row in visible:", source)
+        self.assertIn("container = discord.ui.Container(accent_color=ACCENT)", source)
+        self.assertIn("container.add_item(discord.ui.Separator())", source)
+        self.assertNotIn("not_lfm_embed", source)
+        self.assertNotIn("class EntryLayout", source)
 
 
 if __name__ == "__main__":
