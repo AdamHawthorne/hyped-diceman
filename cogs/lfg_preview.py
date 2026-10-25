@@ -389,16 +389,26 @@ class LFGPreview(commands.Cog):
                 return
             except discord.NotFound:
                 pass
-        await interaction.response.defer(ephemeral=True)
-        msg = await channel.send(embed=board_embed(channel.id), view=BoardView(self, channel.id))
-        with connect() as db:
-            db.execute(
-                "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day) VALUES(?,?,?,?) "
-                "ON CONFLICT(channel_id) DO UPDATE SET message_id=excluded.message_id,"
-                "guild_id=excluded.guild_id,board_day=excluded.board_day",
-                (channel.id, interaction.guild_id, msg.id, today()),
+        await interaction.response.send_message(
+            embed=board_embed(channel.id),
+            view=BoardView(self, channel.id),
+        )
+        msg = await interaction.original_response()
+        try:
+            with connect() as db:
+                db.execute(
+                    "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day) VALUES(?,?,?,?) "
+                    "ON CONFLICT(channel_id) DO UPDATE SET message_id=excluded.message_id,"
+                    "guild_id=excluded.guild_id,board_day=excluded.board_day",
+                    (channel.id, interaction.guild_id, msg.id, today()),
+                )
+        except Exception as exc:
+            print(f"LFG BOARD TRACKING FAILED channel={channel.id} error={exc!r}")
+            await interaction.followup.send(
+                "The board was posted, but Hyped Ogre could not save its board reference. "
+                "Check the Fly logs before using the command again.",
+                ephemeral=True,
             )
-        await interaction.followup.send(f"Board posted: {msg.jump_url}", ephemeral=True)
 
 
 async def setup(bot):
