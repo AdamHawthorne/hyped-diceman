@@ -62,7 +62,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("from .lfg_sort import listing_board_key, is_solo_or_sorted", source)
         self.assertIn("<Hyped> LFG-LFM Board", source)
         self.assertIn("discord.ui.LayoutView", source)
-        self.assertIn("discord.ui.Separator", source)
+        self.assertNotIn("discord.ui.Separator", source)
         self.assertIn("discord.ui.Section", source)
         self.assertIn("https://i.vgy.me/2Jt4oi.png", source)
         self.assertIn("Skyborne (Windshaper)", source)
