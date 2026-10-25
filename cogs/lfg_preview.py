@@ -99,54 +99,144 @@ def safe(value):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(value)))
 
 
-def board_embeds(channel_id, guild=None):
-    roster = entries(channel_id)
+def player_avatar_url(row, guild=None):
+    if row["avatar_url"]:
+        return row["avatar_url"]
+    if guild is not None:
+        member = guild.get_member(row["user_id"])
+        if member is not None:
+            return str(member.display_avatar.url)
+    return ""
 
-    main = discord.Embed(
-        title="<Hyped> LFG-LFM Board",
-        description=(
-            "**Ogre want know plan.**\n"
-            "Add what you playing, when you around, and what you want do."
-            if roster else
-            "**Ogre want know plan.**\nAdd / Update below. Be first on board."
-        ),
-        color=0x8C5A3C,
-    )
-    main.set_thumbnail(url="https://i.vgy.me/2Jt4oi.png")
-    main.set_footer(text=f"{len(roster)} looking today · Resets each UK day")
 
-    embeds = [main]
-    for row in roster[:9]:
-        notes = f" · {safe(row['notes'])}" if row["notes"] else ""
-        avatar_url = row["avatar_url"]
-        if not avatar_url and guild is not None:
-            member = guild.get_member(row["user_id"])
-            if member is not None:
-                avatar_url = str(member.display_avatar.url)
-
-        entry = discord.Embed(
-            description=f"{row['availability']} · {safe(row['activity'])}{notes}",
-            color=0x8C5A3C,
+class AddUpdateButton(discord.ui.Button):
+    def __init__(self, cog, channel_id):
+        super().__init__(
+            label="Add / Update",
+            style=discord.ButtonStyle.primary,
+            custom_id="hyped_lfg_edit_v3",
         )
-        author_name = (
-            f"Lv {row['level_label'] or row['level']} · {safe(row['character'])} · "
-            f"{row['class_name']} · {row['role']}"
+        self.cog = cog
+        self.channel_id = channel_id
+
+    async def callback(self, interaction):
+        state = WizardState(self.cog, self.channel_id, interaction.user.id)
+        await interaction.response.send_modal(CharacterLevelModal(state))
+
+
+class RemoveButton(discord.ui.Button):
+    def __init__(self, cog, channel_id):
+        super().__init__(
+            label="Remove",
+            style=discord.ButtonStyle.secondary,
+            custom_id="hyped_lfg_remove_v3",
         )
-        if avatar_url:
-            entry.set_author(name=author_name, icon_url=avatar_url)
+        self.cog = cog
+        self.channel_id = channel_id
+
+    async def callback(self, interaction):
+        with connect() as db:
+            result = db.execute(
+                "DELETE FROM lfg_listings WHERE channel_id=? AND user_id=?",
+                (self.channel_id, interaction.user.id),
+            )
+
+        try:
+            await self.cog.refresh(self.channel_id)
+            refreshed = True
+        except Exception as exc:
+            refreshed = False
+            print(
+                f"LFG BOARD REFRESH FAILED channel={self.channel_id} "
+                f"user={interaction.user.id} error={exc!r}"
+            )
+
+        if result.rowcount and refreshed:
+            text = "Ogre removed you from the board."
+        elif result.rowcount:
+            text = "You were removed, but Ogre could not refresh the board display."
         else:
-            entry.set_author(name=author_name)
-        embeds.append(entry)
+            text = "You don't currently have a listing on this board."
 
-    if len(roster) > 9:
-        main.add_field(
-            name="More looking",
-            value=f"{len(roster) - 9} more listing(s). Ogre board avatar layout currently shows first 9.",
-            inline=False,
+        await interaction.response.send_message(text, ephemeral=True)
+
+
+class BoardLayout(discord.ui.LayoutView):
+    def __init__(self, cog, channel_id, guild=None):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.channel_id = channel_id
+
+        roster = entries(channel_id)
+        visible = roster[:8]
+
+        header = discord.ui.Section(
+            discord.ui.TextDisplay(
+                "## <Hyped> LFG-LFM Board\n"
+                "**Ogre want know plan.**"
+            ),
+            accessory=discord.ui.Thumbnail(
+                "https://i.vgy.me/2Jt4oi.png",
+                description="Hyped LFG-LFM",
+            ),
         )
 
-    return embeds
+        container = discord.ui.Container(
+            header,
+            accent_color=0x8C5A3C,
+        )
 
+        if visible:
+            container.add_item(discord.ui.Separator())
+            for index, row in enumerate(visible):
+                notes = f" · {safe(row['notes'])}" if row["notes"] else ""
+                level_label = row["level_label"] or str(row["level"])
+                text = (
+                    f"### Lv {level_label} · {safe(row['character'])} · "
+                    f"{row['class_name']} · {row['role']}\n"
+                    f"{row['availability']} · {safe(row['activity'])}{notes}"
+                )
+                avatar = player_avatar_url(row, guild)
+                if avatar:
+                    section = discord.ui.Section(
+                        discord.ui.TextDisplay(text),
+                        accessory=discord.ui.Thumbnail(
+                            avatar,
+                            description=f"{safe(row['character'])}'s Discord avatar",
+                        ),
+                    )
+                else:
+                    section = discord.ui.Section(
+                        discord.ui.TextDisplay(text),
+                        accessory=discord.ui.Thumbnail(
+                            "https://i.vgy.me/2Jt4oi.png",
+                            description="Hyped",
+                        ),
+                    )
+                container.add_item(section)
+                if index != len(visible) - 1:
+                    container.add_item(discord.ui.Separator())
+        else:
+            container.add_item(discord.ui.Separator())
+            container.add_item(
+                discord.ui.TextDisplay("*Nobody on board yet.*")
+            )
+
+        if len(roster) > len(visible):
+            container.add_item(discord.ui.Separator())
+            container.add_item(
+                discord.ui.TextDisplay(
+                    f"-# {len(roster) - len(visible)} more listing(s) not shown on this test board."
+                )
+            )
+
+        container.add_item(discord.ui.Separator())
+        buttons = discord.ui.ActionRow(
+            AddUpdateButton(cog, channel_id),
+            RemoveButton(cog, channel_id),
+        )
+        container.add_item(buttons)
+        self.add_item(container)
 
 def parse_level(value):
     text = value.strip().replace("–", "-").replace("—", "-").replace(" ", "")
@@ -514,53 +604,6 @@ class ReviewView(discord.ui.View):
         await interaction.response.send_modal(CharacterLevelModal(self.state))
 
 
-class BoardView(discord.ui.View):
-    def __init__(self, cog, channel_id):
-        super().__init__(timeout=None)
-        self.cog = cog
-        self.channel_id = channel_id
-
-    @discord.ui.button(
-        label="Add / Update",
-        style=discord.ButtonStyle.primary,
-        custom_id="hyped_lfg_edit_v2",
-    )
-    async def edit(self, interaction, button):
-        state = WizardState(self.cog, self.channel_id, interaction.user.id)
-        await interaction.response.send_modal(CharacterLevelModal(state))
-
-    @discord.ui.button(
-        label="Remove",
-        style=discord.ButtonStyle.secondary,
-        custom_id="hyped_lfg_remove_v2",
-    )
-    async def remove(self, interaction, button):
-        with connect() as db:
-            result = db.execute(
-                "DELETE FROM lfg_listings WHERE channel_id=? AND user_id=?",
-                (self.channel_id, interaction.user.id),
-            )
-
-        try:
-            await self.cog.refresh(self.channel_id)
-            refreshed = True
-        except Exception as exc:
-            refreshed = False
-            print(
-                f"LFG BOARD REFRESH FAILED channel={self.channel_id} "
-                f"user={interaction.user.id} error={exc!r}"
-            )
-
-        if result.rowcount and refreshed:
-            text = "Ogre removed you from the board."
-        elif result.rowcount:
-            text = "You were removed, but Ogre could not refresh the board display."
-        else:
-            text = "You don't currently have a listing on this board."
-
-        await interaction.response.send_message(text, ephemeral=True)
-
-
 class LFGPreview(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -575,7 +618,7 @@ class LFGPreview(commands.Cog):
 
         for board in boards:
             self.bot.add_view(
-                BoardView(self, board["channel_id"]),
+                BoardLayout(self, board["channel_id"], self.bot.get_guild(board["guild_id"]) if "guild_id" in board.keys() else None),
                 message_id=board["message_id"],
             )
 
@@ -596,8 +639,10 @@ class LFGPreview(commands.Cog):
 
             message = channel.get_partial_message(row["message_id"])
             await message.edit(
-                embeds=board_embeds(channel_id, getattr(channel, "guild", None)),
-                view=BoardView(self, channel_id),
+                content=None,
+                embeds=[],
+                attachments=[],
+                view=BoardLayout(self, channel_id, getattr(channel, "guild", None)),
             )
             return True
 
@@ -634,8 +679,7 @@ class LFGPreview(commands.Cog):
     async def post_new_board(self, interaction, channel):
         try:
             await interaction.response.send_message(
-                embeds=board_embeds(channel.id, interaction.guild),
-                view=BoardView(self, channel.id),
+                view=BoardLayout(self, channel.id, interaction.guild),
             )
             msg = await interaction.original_response()
             with connect() as db:
