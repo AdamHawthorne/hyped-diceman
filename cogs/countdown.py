@@ -83,9 +83,20 @@ def init_db():
         db.execute("""CREATE TABLE IF NOT EXISTS countdown_subscribers (
             channel_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
+            delivery TEXT NOT NULL DEFAULT 'dm',
             last_notified_target INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(channel_id, user_id)
         )""")
+        subscriber_columns = {
+            row[1] for row in db.execute(
+                "PRAGMA table_info(countdown_subscribers)"
+            )
+        }
+        if "delivery" not in subscriber_columns:
+            db.execute(
+                "ALTER TABLE countdown_subscribers "
+                "ADD COLUMN delivery TEXT NOT NULL DEFAULT 'dm'"
+            )
         # PR #30 briefly stored the fixed stopwatch in image_url. That field
         # now means optional bottom artwork only, so remove only that legacy value.
         db.execute(
@@ -134,16 +145,21 @@ def setup_target_string(state):
     )
 
 
-class RemindButton(discord.ui.Button):
-    def __init__(self, channel_id, *, disabled=False):
+class ReminderButton(discord.ui.Button):
+    """Toggle one five-minute delivery method for this countdown."""
+
+    def __init__(self, channel_id, mode, *, disabled=False):
+        if mode not in ("dm", "ping"):
+            raise ValueError("Reminder mode must be dm or ping")
+        self.channel_id = channel_id
+        self.mode = mode
         super().__init__(
-            label="Remind me",
+            label="DM" if mode == "dm" else "Ping",
             emoji="🔔",
             style=discord.ButtonStyle.secondary,
-            custom_id="hyped_countdown_remind_v1",
+            custom_id=f"hyped_countdown_remind_{mode}_v1",
             disabled=disabled,
         )
-        self.channel_id = channel_id
 
     async def callback(self, interaction):
         timer = get_timer(self.channel_id)
@@ -152,36 +168,50 @@ class RemindButton(discord.ui.Button):
                 "Ogre find no active timer here.", ephemeral=True,
             )
             return
+
         user_id = interaction.user.id
         with connect() as db:
             row = db.execute(
-                "SELECT 1 FROM countdown_subscribers "
+                "SELECT delivery FROM countdown_subscribers "
                 "WHERE channel_id=? AND user_id=?",
                 (self.channel_id, user_id),
             ).fetchone()
-            if row:
+
+            if row and row["delivery"] == self.mode:
                 db.execute(
                     "DELETE FROM countdown_subscribers "
                     "WHERE channel_id=? AND user_id=?",
                     (self.channel_id, user_id),
                 )
                 subscribed = False
+                switched = False
             else:
                 db.execute(
-                    "INSERT INTO countdown_subscribers "
-                    "(channel_id,user_id,last_notified_target) VALUES (?,?,0)",
-                    (self.channel_id, user_id),
+                    """INSERT INTO countdown_subscribers
+                       (channel_id,user_id,delivery,last_notified_target)
+                       VALUES (?,?,?,0)
+                       ON CONFLICT(channel_id,user_id) DO UPDATE SET
+                           delivery=excluded.delivery,
+                           last_notified_target=0""",
+                    (self.channel_id, user_id, self.mode),
                 )
                 subscribed = True
+                switched = row is not None
 
-        if subscribed:
+        if not subscribed:
+            text = "🔕 **Ogre forget reminder.** No five-minute bonk for this one."
+        elif self.mode == "dm":
+            prefix = "🔔 **Ogre switch reminder.**" if switched else "🔔 **Ogre remember!**"
             text = (
-                "🔔 **Ogre remember!** Ogre bonk your DMs **5 minutes before** "
+                f"{prefix} Ogre bonk your **DMs** 5 minutes before "
                 f"**{discord.utils.escape_markdown(timer['title'])}**."
             )
         else:
+            prefix = "🔔 **Ogre switch reminder.**" if switched else "🔔 **Ogre remember!**"
             text = (
-                "🔕 **Ogre forget reminder.** No five-minute bonk for this one."
+                f"{prefix} Ogre **ping you here** 5 minutes before "
+                f"**{discord.utils.escape_markdown(timer['title'])}**, "
+                "then Ogre clean message away."
             )
         await interaction.response.send_message(text, ephemeral=True)
 
@@ -233,14 +263,10 @@ class CountdownLayout(discord.ui.LayoutView):
         self.add_item(panel)
 
         if include_remind:
+            disabled = preview or not active
             self.add_item(discord.ui.ActionRow(
-                RemindButton(
-                    channel_id or 0,
-                    disabled=preview or not active,
-                )
-            ))
-            self.add_item(discord.ui.TextDisplay(
-                "-# 🔔 Remind me = Ogre DM 5 minutes before"
+                ReminderButton(channel_id or 0, "dm", disabled=disabled),
+                ReminderButton(channel_id or 0, "ping", disabled=disabled),
             ))
 
         # Optional owner-supplied artwork is always the very bottom component.
@@ -782,6 +808,47 @@ class CountdownCog(
                 )
             return message
 
+    @app_commands.command(
+        name="testdm",
+        description="Developer: send the real five-minute reminder DM now",
+    )
+    @app_commands.describe(user="Member to test; defaults to yourself")
+    async def testdm(
+        self,
+        interaction: discord.Interaction,
+        user: discord.User | None = None,
+    ):
+        target_user = user or interaction.user
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        title = "Countdown DM Test"
+        row = get_timer(interaction.channel_id)
+        if row:
+            title = row["title"]
+        try:
+            await target_user.send(
+                "⏱️ **Ogre bonk clock! Five minutes!**\n"
+                f"**{discord.utils.escape_markdown(title)}** "
+                "almost here. Get ready, gamer.\n"
+                "-# Dev test from Hyped Ogre",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(
+                f"COUNTDOWN TEST DM FAILED user={target_user.id}: {exc!r}"
+            )
+            await interaction.followup.send(
+                f"❌ Ogre could not DM <@{target_user.id}>. "
+                "Their Discord privacy settings may block bot DMs.",
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+        await interaction.followup.send(
+            f"✅ Ogre sent test DM to <@{target_user.id}>.",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
     @app_commands.command(name="status", description="Show this channel's timer settings")
     async def status(self, interaction: discord.Interaction):
         row = get_timer(interaction.channel_id)
@@ -791,17 +858,23 @@ class CountdownCog(
             )
             return
         with connect() as db:
-            subscribers = db.execute(
-                "SELECT COUNT(*) FROM countdown_subscribers WHERE channel_id=?",
-                (interaction.channel_id,),
-            ).fetchone()[0]
+            counts = {
+                item["delivery"]: item["count"]
+                for item in db.execute(
+                    "SELECT delivery,COUNT(*) AS count "
+                    "FROM countdown_subscribers WHERE channel_id=? "
+                    "GROUP BY delivery",
+                    (interaction.channel_id,),
+                )
+            }
         await interaction.response.send_message(
             f"**{discord.utils.escape_markdown(row['title'])}**\n"
             f"Status: {'Running' if row['active'] else 'Stopped'}\n"
             f"Target: {timestamp_label(row['target_ts'])}\n"
             f"Owner reminder: {row['remind_minutes']} minutes before\n"
             f"Repeat: {row['repeat_seconds'] // 3600} hours\n"
-            f"Public five-minute subscribers: {subscribers}",
+            f"5-minute reminders: {counts.get('dm', 0)} DM · "
+            f"{counts.get('ping', 0)} Ping",
             ephemeral=True,
         )
 
@@ -884,32 +957,54 @@ class CountdownCog(
             return
         with connect() as db:
             subscribers = [dict(item) for item in db.execute(
-                "SELECT user_id,last_notified_target FROM countdown_subscribers "
+                "SELECT user_id,delivery,last_notified_target "
+                "FROM countdown_subscribers "
                 "WHERE channel_id=? AND last_notified_target<>?",
                 (row["channel_id"], target),
             )]
+
+        channel = None
         for subscriber in subscribers:
             try:
                 user = self.bot.get_user(subscriber["user_id"])
                 if user is None:
                     user = await self.bot.fetch_user(subscriber["user_id"])
-                await user.send(
-                    "⏱️ **Ogre bonk clock! Five minutes!**\n"
-                    f"**{discord.utils.escape_markdown(row['title'])}** almost here. "
-                    "Get ready, gamer.\n"
-                    f"{timestamp_label(target)}",
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
+
+                if subscriber["delivery"] == "ping":
+                    if channel is None:
+                        channel = self.bot.get_channel(row["channel_id"])
+                        if channel is None:
+                            channel = await self.bot.fetch_channel(row["channel_id"])
+                    await channel.send(
+                        f"<@{subscriber['user_id']}> ⏱️ **Ogre bonk clock! "
+                        "Five minutes!**\n"
+                        f"**{discord.utils.escape_markdown(row['title'])}** "
+                        "almost here. Get ready, gamer.",
+                        allowed_mentions=discord.AllowedMentions(
+                            users=True, roles=False, everyone=False,
+                        ),
+                        delete_after=60,
+                    )
+                else:
+                    await user.send(
+                        "⏱️ **Ogre bonk clock! Five minutes!**\n"
+                        f"**{discord.utils.escape_markdown(row['title'])}** "
+                        "almost here. Get ready, gamer.\n"
+                        f"{timestamp_label(target)}",
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
             except (discord.Forbidden, discord.HTTPException) as exc:
                 print(
-                    f"COUNTDOWN SUBSCRIBER DM FAILED channel={row['channel_id']} "
+                    f"COUNTDOWN SUBSCRIBER {subscriber['delivery'].upper()} FAILED "
+                    f"channel={row['channel_id']} "
                     f"user={subscriber['user_id']}: {exc!r}"
                 )
             finally:
-                # One attempt per user per target; no minute-by-minute DM spam.
+                # One delivery attempt per user per target; no minute spam.
                 with connect() as db:
                     db.execute(
-                        "UPDATE countdown_subscribers SET last_notified_target=? "
+                        "UPDATE countdown_subscribers "
+                        "SET last_notified_target=? "
                         "WHERE channel_id=? AND user_id=?",
                         (target, row["channel_id"], subscriber["user_id"]),
                     )
