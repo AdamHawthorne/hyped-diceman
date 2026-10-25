@@ -32,7 +32,7 @@ class PlayingDaysTests(unittest.TestCase):
             with self.subTest(start=start):
                 self.assertEqual(s['merge_playing_days'](start, [s['LAUNCH_DAYS'][0]]), s['LAUNCH_DAYS'][1])
                 self.assertNotIn(s['LAUNCH_DAYS'][0], s['selectable_playing_days'](start))
-                self.assertNotIn(s['LAUNCH_DAYS'][1], s['selectable_playing_days'](start))
+                self.assertIn(s['LAUNCH_DAYS'][1], s['selectable_playing_days'](start))
 
     def test_additional_days_are_sorted_and_deduplicated(self):
         s = self.scope
@@ -49,3 +49,15 @@ class PlayingDaysTests(unittest.TestCase):
         s = self.scope
         days = s['LAUNCH_DAYS']
         self.assertEqual(s['merge_playing_days']('12:00 UK', [days[0], days[3]]), ', '.join([days[1], days[3]]))
+
+    def test_thursday_only_can_be_submitted(self):
+        s = self.scope
+        thursday = s['LAUNCH_DAYS'][1]
+        self.assertEqual(s['merge_playing_days']('12:00 UK', [thursday]), thursday)
+        self.assertEqual(s['merge_playing_days']('Launch 23:00 UK', [thursday]),
+                         ', '.join(s['LAUNCH_DAYS'][:2]))
+
+    def test_all_start_options_offer_thursday_through_sunday(self):
+        s = self.scope
+        for start in s['START_TIMES']:
+            self.assertEqual(s['selectable_playing_days'](start), tuple(s['LAUNCH_DAYS'][1:]))

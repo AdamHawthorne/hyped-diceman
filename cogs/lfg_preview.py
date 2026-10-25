@@ -205,9 +205,8 @@ def automatic_start_days(start_time):
 
 
 def selectable_playing_days(start_time):
-    automatic = automatic_start_days(start_time)
-    # Launch night is only valid for the explicit launch start.
-    return tuple(day for day in LAUNCH_DAYS[1:] if day not in automatic)
+    # Only launch night is hidden; Thursday must remain selectable.
+    return tuple(LAUNCH_DAYS[1:])
 
 
 def merge_playing_days(start_time, selected):
@@ -222,7 +221,7 @@ def playing_days_prompt(state):
     if automatic:
         return (
             f"{automatic[0]} is already included from your start time. "
-            "Choose the additional days you plan to play."
+            "Select your playing days below, including any extra days."
         )
     return "Choose the days you plan to play, from Thu 5 Nov onwards."
 
@@ -556,7 +555,7 @@ class LaunchDaysSelect(discord.ui.Select):
         days = selectable_playing_days(start_time)
         selected = state.draft.days_off.split(", ")
         super().__init__(
-            placeholder="Additional playing days" if automatic_start_days(start_time) else "Playing on",
+            placeholder="Playing on",
             min_values=1,
             max_values=len(days),
             options=[discord.SelectOption(label=value, value=value, default=value in selected)
