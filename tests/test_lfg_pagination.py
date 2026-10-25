@@ -3,7 +3,7 @@
 import unittest
 
 from cogs.lfg_pagination import PAGE_SIZE, clamp_page, page_count, page_rows
-from cogs.lfg_sort import listing_board_key
+from cogs.lfg_sort import listing_board_key, is_open_lfm
 
 
 def listing(index, activity):
@@ -37,7 +37,8 @@ class BoardPaginationTests(unittest.TestCase):
             listing(5, "Grinding (Dungeons, grind spots etc)"),
         ]
         ordered = sorted(roster, key=listing_board_key)
-        self.assertEqual([r["user_id"] for r in ordered][-2:], [1, 3])
+        self.assertEqual([r["user_id"] for r in ordered][:2], [2, 4])
+        self.assertTrue(all(not is_open_lfm(r["activity"]) for r in ordered[2:]))
         self.assertEqual(
             [r["user_id"] for p in range(page_count(len(ordered)))
              for r in page_rows(ordered, p)],
