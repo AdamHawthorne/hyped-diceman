@@ -229,11 +229,6 @@ def show_lfm_emoji(activity):
     })
 
 
-def visible_board_entries(roster):
-    """Seven compact listings fit the board's 40-component budget."""
-    return roster[:7]
-
-
 def compact_availability(value):
     return " / ".join(part.strip() for part in value.replace("\r", "").split("\n") if part.strip())
 
