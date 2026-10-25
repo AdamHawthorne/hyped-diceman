@@ -18,3 +18,16 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Verify Docker build includes modules
         run: docker build -t hyped-ogre-test .
+      - name: Construct countdown V2 views in real runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs.countdown import CountdownLayout
+          sample = {"title": "Hyped Test", "target_ts": 1793833200,
+                    "image_url": "", "remind_minutes": 30,
+                    "repeat_seconds": 0, "active": 1}
+          for icon in ("", "https://i.vgy.me/example.png"):
+              sample["image_url"] = icon
+              view = CountdownLayout(sample, now=1793800000, preview=True)
+              assert 0 < view.total_children_count < 40
+          print("V2 countdown views built successfully")
+          '
