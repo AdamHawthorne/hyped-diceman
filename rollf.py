@@ -2842,6 +2842,34 @@ async def setchannel(interaction: discord.Interaction, channel: discord.TextChan
 if ADMIN_MODE:
 
     @bot.tree.command(
+        name="previewroll",
+        description="Owner-only safe preview of the daily roll panel",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def previewroll_admin(interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        # Use the production embed with an inactive button.
+        preview_view = discord.ui.View(timeout=60)
+        preview_view.add_item(discord.ui.Button(
+            label="Roll",
+            emoji="🎲",
+            style=discord.ButtonStyle.primary,
+            disabled=True
+        ))
+
+        await interaction.response.send_message(
+            content="Preview only: no roll, reset or role changes.",
+            embed=build_daily_reset_embed(),
+            view=preview_view,
+            ephemeral=True
+        )
+
+        log_event(f"DAILY ROLL PREVIEW user={interaction.user.id}")
+
+    @bot.tree.command(
         name="postroll",
         description="Owner-only post of the daily roll panel",
         guild=discord.Object(id=ADMIN_GUILD_ID)
