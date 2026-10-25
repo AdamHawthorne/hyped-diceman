@@ -12,6 +12,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .lfg_sort import listing_start_key
+
 PATH = os.getenv(
     "LFG_DB_PATH",
     "/data/lfg_board.db" if Path("/data").is_dir() else "lfg_board.db",
@@ -164,11 +166,12 @@ def current_listing(channel_id, user_id):
 
 def entries(channel_id):
     with connect() as db:
-        return db.execute(
-            "SELECT * FROM lfg_listings WHERE channel_id=? "
-            "ORDER BY character COLLATE NOCASE ASC",
+        roster = db.execute(
+            "SELECT * FROM lfg_listings WHERE channel_id=?",
             (channel_id,),
         ).fetchall()
+    # Recompute after every save/update; the board uses entries() on refresh.
+    return sorted(roster, key=listing_start_key)
 
 
 def safe(value):
