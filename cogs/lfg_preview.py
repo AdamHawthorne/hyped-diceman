@@ -564,12 +564,12 @@ class LFGPreview(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def post_new_board(self, interaction, channel):
-        await interaction.response.defer(ephemeral=True)
         try:
-            msg = await channel.send(
+            await interaction.response.send_message(
                 embed=board_embed(channel.id),
                 view=BoardView(self, channel.id),
             )
+            msg = await interaction.original_response()
             with connect() as db:
                 db.execute(
                     "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day) "
@@ -580,16 +580,18 @@ class LFGPreview(commands.Cog):
                     "board_day=excluded.board_day",
                     (channel.id, interaction.guild_id, msg.id, today()),
                 )
-            await interaction.followup.send(
-                f"Ogre posted the LFG board: {msg.jump_url}",
-                ephemeral=True,
-            )
         except Exception as exc:
             print(f"LFG BOARD POST FAILED channel={channel.id} error={exc!r}")
-            await interaction.followup.send(
-                "Ogre couldn't post the board. Check the Fly log for the exact error.",
-                ephemeral=True,
-            )
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "Ogre couldn't finish setting up the board. Check the Fly log for the exact error.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "Ogre couldn't post the board. Check the Fly log for the exact error.",
+                    ephemeral=True,
+                )
 
     @app_commands.command(
         name="lfg-preview",
