@@ -49,9 +49,15 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
     def test_preview_component_budget(self):
-        # Container + header section/text/thumb + divider +
-        # ten player sections/text/thumb + four separating dividers.
-        self.assertLessEqual(1 + 3 + 1 + 10 * 3 + 4, 40)
+        # Two containers, header section/text/thumb, one header separator,
+        # ten player sections/text/thumb, two between-player dividers.
+        self.assertLessEqual(2 + 3 + 1 + 10 * 3 + 2, 40)
+        # Direct container children are bounded at ten each.
+        self.assertLessEqual(1 + 1 + 5 + 1, 10)
+        self.assertLessEqual(5 + 1, 10)
+        source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
+        self.assertIn("if preview and index == 5:", source)
+        self.assertIn("if preview and index in (2, 7):", source)
 
 
 if __name__ == "__main__":
