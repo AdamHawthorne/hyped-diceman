@@ -23,6 +23,17 @@ PLAYING_DAYS = (
 )
 
 
+def is_solo_or_sorted(activity):
+    """Solo and already-sorted groups should be displayed at the bottom."""
+    value = str(activity or "")
+    return "Full Group / Sorted" in value or "Solo Questing" in value
+
+
+def listing_board_key(row):
+    """Show players seeking a group first, then solo/sorted plans, by time."""
+    return (int(is_solo_or_sorted(row["activity"])), listing_start_key(row))
+
+
 def listing_start_key(row):
     """Sort earliest planned start first; equal starts sort by character.
 
