@@ -232,9 +232,12 @@ class CountdownLayout(discord.ui.LayoutView):
             panel.add_item(discord.ui.TextDisplay("-# " + " · ".join(details)))
         self.add_item(panel)
 
-        if include_remind and channel_id is not None:
+        if include_remind:
             self.add_item(discord.ui.ActionRow(
-                RemindButton(channel_id, disabled=not active)
+                RemindButton(
+                    channel_id or 0,
+                    disabled=preview or not active,
+                )
             ))
             self.add_item(discord.ui.TextDisplay(
                 "-# 🔔 Remind me = Ogre DM 5 minutes before"
@@ -516,7 +519,7 @@ class SetupOptionsView(discord.ui.View):
 class SetupReviewLayout(CountdownLayout):
     def __init__(self, state, config):
         super().__init__(
-            config, preview=True, channel_id=None, include_remind=False,
+            config, preview=True, channel_id=state.channel_id, include_remind=True,
         )
         self.state = state
         self.add_item(discord.ui.ActionRow(
@@ -672,7 +675,7 @@ class CountdownCog(
         await interaction.response.send_message(
             view=CountdownLayout(
                 config, now=now, preview=True,
-                channel_id=None, include_remind=False,
+                channel_id=interaction.channel_id, include_remind=True,
             ),
             ephemeral=True,
         )
