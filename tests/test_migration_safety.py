@@ -112,6 +112,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertEqual(options.count("Open / Flexible"), 1)
         self.assertIn("Group Questing (LFM)", options)
         self.assertIn("Group Questing + Dungeons (LFM)", options)
+        self.assertEqual(options[-1], "Full Group / Sorted")
         self.assertNotIn("Flexible", options)
         self.assertLessEqual(len(options), 25)
 
