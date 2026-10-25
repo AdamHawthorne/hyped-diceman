@@ -266,6 +266,7 @@ class SetupState:
         self.minute = (now.minute // 5 * 5) % 60
         self.remind_minutes = 30
         self.repeat_hours = 0
+        self.date_range_start = 0
 
     @property
     def has_existing(self):
@@ -289,6 +290,9 @@ class SetupState:
         self.date_value = local.date()
         self.hour = local.hour
         self.minute = local.minute - (local.minute % 5)
+        today = datetime.now(UK).date()
+        offset = max(0, (self.date_value - today).days)
+        self.date_range_start = min((offset // 25) * 25, 75)
 
     def config(self):
         return validate_settings(
@@ -340,11 +344,43 @@ class SetupDetailsModal(discord.ui.Modal, title="Reminder details"):
         )
 
 
+class SetupDateRangeSelect(discord.ui.Select):
+    def __init__(self, state):
+        today = datetime.now(UK).date()
+        options = []
+        for start in (0, 25, 50, 75):
+            end = start + 24
+            first = today + timedelta(days=start)
+            last = today + timedelta(days=end)
+            label = f"{first.strftime('%d %b')} – {last.strftime('%d %b')}"
+            options.append(discord.SelectOption(
+                label=label,
+                value=str(start),
+                default=start == state.date_range_start,
+            ))
+        super().__init__(
+            placeholder="Date range", min_values=1, max_values=1,
+            options=options, row=0,
+        )
+
+    async def callback(self, interaction):
+        self.view.state.date_range_start = int(self.values[0])
+        today = datetime.now(UK).date()
+        first = today + timedelta(days=self.view.state.date_range_start)
+        last = first + timedelta(days=24)
+        if not (first <= self.view.state.date_value <= last):
+            self.view.state.date_value = first
+        await interaction.response.edit_message(
+            content="Choose the UK date and time.",
+            view=SetupDateTimeView(self.view.state),
+        )
+
+
 class SetupDateSelect(discord.ui.Select):
     def __init__(self, state):
         today = datetime.now(UK).date()
         options = []
-        for offset in range(25):
+        for offset in range(state.date_range_start, state.date_range_start + 25):
             day = today + timedelta(days=offset)
             label = day.strftime("%a %-d %b")
             if offset == 0:
@@ -356,7 +392,7 @@ class SetupDateSelect(discord.ui.Select):
                 default=day == state.date_value,
             ))
         super().__init__(
-            placeholder="Date", min_values=1, max_values=1, options=options, row=0,
+            placeholder="Date", min_values=1, max_values=1, options=options, row=1,
         )
 
     async def callback(self, interaction):
@@ -372,7 +408,7 @@ class SetupDateSelect(discord.ui.Select):
 class SetupHourSelect(discord.ui.Select):
     def __init__(self, state):
         super().__init__(
-            placeholder="Hour (UK)", min_values=1, max_values=1, row=1,
+            placeholder="Hour (UK)", min_values=1, max_values=1, row=2,
             options=[
                 discord.SelectOption(
                     label=f"{hour:02d}:00", value=str(hour),
@@ -393,7 +429,7 @@ class SetupHourSelect(discord.ui.Select):
 class SetupMinuteSelect(discord.ui.Select):
     def __init__(self, state):
         super().__init__(
-            placeholder="Minute", min_values=1, max_values=1, row=2,
+            placeholder="Minute", min_values=1, max_values=1, row=3,
             options=[
                 discord.SelectOption(
                     label=f":{minute:02d}", value=str(minute),
@@ -415,6 +451,7 @@ class SetupDateTimeView(discord.ui.View):
     def __init__(self, state):
         super().__init__(timeout=900)
         self.state = state
+        self.add_item(SetupDateRangeSelect(state))
         self.add_item(SetupDateSelect(state))
         self.add_item(SetupHourSelect(state))
         self.add_item(SetupMinuteSelect(state))
@@ -422,11 +459,11 @@ class SetupDateTimeView(discord.ui.View):
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
 
-    @discord.ui.button(label="‹ Details", style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.button(label="‹ Details", style=discord.ButtonStyle.secondary, row=4)
     async def back(self, interaction, button):
         await interaction.response.send_modal(SetupDetailsModal(self.state))
 
-    @discord.ui.button(label="Next ›", style=discord.ButtonStyle.primary, row=3)
+    @discord.ui.button(label="Next ›", style=discord.ButtonStyle.primary, row=4)
     async def next(self, interaction, button):
         try:
             target = parse_uk_datetime(setup_target_string(self.state))
