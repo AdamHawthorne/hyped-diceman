@@ -92,8 +92,8 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
-# The LFG emoji is installed in Hyped. Resolve its guild-specific ID at render time.
-LFG_EMOJI_NAME = "LFG"
+# Native Unicode emoji stays sharp and requires no guild emoji permissions.
+OPEN_LFM_MARKER = "🟢"
 ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
 ACCENT = 0x8C5A3C
 
@@ -195,7 +195,8 @@ def format_roles(value, *, icons=False):
     roles = [part.strip() for part in value.split(",") if part.strip()]
     if icons:
         return " / ".join(
-            f"{ROLE_EMOJIS.get(role, '')} {role}".strip() for role in roles
+            f"{role} {ROLE_EMOJIS[role]}" if role in ROLE_EMOJIS else role
+            for role in roles
         )
     return " / ".join(roles)
 
@@ -211,14 +212,6 @@ def show_lfm_emoji(activity):
         "Group Questing (LFM)",
         "Group Questing + Dungeons (LFM)",
     })
-
-
-def guild_lfg_emoji(guild):
-    """Use Hyped's own :LFG: emoji ID rather than the old Warcraft server ID."""
-    if guild is None:
-        return ""
-    emoji = discord.utils.get(getattr(guild, "emojis", ()), name=LFG_EMOJI_NAME)
-    return str(emoji) if emoji else ""
 
 
 def visible_board_entries(roster):
@@ -1019,7 +1012,6 @@ class BoardLayout(discord.ui.LayoutView):
             ),
         )
         container = discord.ui.Container(header, accent_color=ACCENT)
-        lfg_emoji = guild_lfg_emoji(guild)
 
         if visible:
             container.add_item(discord.ui.Separator())
@@ -1030,15 +1022,15 @@ class BoardLayout(discord.ui.LayoutView):
                 days = row["days_off"] or "Not set"
                 character = safe(row["character"]) if row["character"] else "Name TBD"
                 notes = safe(row["notes"]) if row["notes"] else ""
+                open_marker = f" {OPEN_LFM_MARKER}" if show_lfm_emoji(row["activity"]) else ""
                 lines = [
                     f"**{character} · {race} {row['class_name']} · {roles}**",
                     f"-# **Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}",
-                    f"-# **Plan:** {safe(row['activity'])}",
+                    f"-# **Plan:** {safe(row['activity'])}{open_marker}",
                 ]
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
-                open_marker = f" {lfg_emoji}" if lfg_emoji and show_lfm_emoji(row["activity"]) else ""
-                lines.append(f"-# **Starting Zone:** {zone}{open_marker}")
+                lines.append(f"-# **Starting Zone:** {zone}")
                 text = "\n".join(lines)
                 avatar = player_avatar_url(row, guild)
                 thumbnail = discord.ui.Thumbnail(
