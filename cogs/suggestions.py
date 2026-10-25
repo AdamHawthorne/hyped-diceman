@@ -12,6 +12,7 @@ DESTINATION_CHANNEL_ID = int(
     os.getenv("SUGGESTIONS_DEST_CHANNEL_ID", "1554621739017707591")
 )
 ACCENT = 0x8C5A3C
+SUGGESTIONS_ICON_URL = "https://i.vgy.me/mN6c1j.png"
 COOLDOWN_SECONDS = 30
 
 
@@ -150,13 +151,20 @@ class SuggestionsPanel(discord.ui.LayoutView):
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
-        self.add_item(discord.ui.Container(
+        header = discord.ui.Section(
             discord.ui.TextDisplay(
-                "## Suggestions & Feedback\n"
-                "Have an idea, suggestion or feedback for **Hyped**? "
+                "## Suggestions:\n"
+                "Give Ogre ideas or feedback to pass on. "
                 "Choose whether to send it with your name or anonymously.\n\n"
                 "-# Submissions are sent privately to leadership."
             ),
+            accessory=discord.ui.Thumbnail(
+                SUGGESTIONS_ICON_URL,
+                description="Hyped suggestions icon",
+            ),
+        )
+        self.add_item(discord.ui.Container(
+            header,
             discord.ui.ActionRow(
                 NamedSuggestionButton(),
                 AnonymousSuggestionButton(),
