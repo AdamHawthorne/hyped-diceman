@@ -12,7 +12,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .lfg_sort import listing_start_key
+from .lfg_sort import listing_board_key, is_solo_or_sorted
+from .lfg_demo import demo_entries, display_race, display_uk_times
 
 PATH = os.getenv(
     "LFG_DB_PATH",
@@ -174,7 +175,7 @@ def entries(channel_id):
             (channel_id,),
         ).fetchall()
     # Recompute after every save/update; the board uses entries() on refresh.
-    return sorted(roster, key=listing_start_key)
+    return sorted(roster, key=listing_board_key)
 
 
 def safe(value):
@@ -276,7 +277,7 @@ class Draft:
             f"**Race:** {self.race or 'Not set'}",
             f"**Class:** {self.class_name or 'Not set'}",
             f"**Role(s):** {format_roles(self.role) or 'Not set'}",
-            f"**Playing:** {safe(compact_availability(self.availability) or 'Not set')}",
+            f"**Playing:** {safe(display_uk_times(compact_availability(self.availability) or 'Not set'))}",
             f"**Days:** {safe(self.days_off or 'Not set')}",
             f"**Levelling plan:** {safe(self.activity or 'Not set')}",
             f"**Notes:** {safe(self.notes or 'None')}",
@@ -995,16 +996,18 @@ class RemoveButton(discord.ui.Button):
 
 
 class BoardLayout(discord.ui.LayoutView):
-    def __init__(self, cog, channel_id, guild=None):
+    def __init__(self, cog, channel_id, guild=None, *, preview=False):
         super().__init__(timeout=None)
-        roster = entries(channel_id)
-        # Inline emoji keeps the 40-component budget unchanged.
-        visible = visible_board_entries(roster)
+        # A preview is entirely synthetic and never queries the live listings.
+        roster = demo_entries() if preview else entries(channel_id)
+        # The preview fits ten sections with four dividers and no controls.
+        visible = roster if preview else visible_board_entries(roster)
 
         header = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> LFG-LFM Board\n"
                 "**Ogre want know launch plans.**"
+                + ("\n-# DEMO PREVIEW · 10 fictional players · nothing saved" if preview else "")
             ),
             accessory=discord.ui.Thumbnail(
                 HEADER_IMAGE,
@@ -1016,6 +1019,10 @@ class BoardLayout(discord.ui.LayoutView):
         if visible:
             container.add_item(discord.ui.Separator())
             for index, row in enumerate(visible):
+                if preview and index == 5:
+                    # Two compact containers keep each under ten direct items.
+                    self.add_item(container)
+                    container = discord.ui.Container(accent_color=ACCENT)
                 race = row["race"] or "Race not set"
                 zone = row["starting_zone"] or STARTING_ZONES.get(race, "Starting zone not set")
                 roles = format_roles(row["role"], icons=True) or "Role not set"
@@ -1024,10 +1031,13 @@ class BoardLayout(discord.ui.LayoutView):
                 notes = safe(row["notes"]) if row["notes"] else ""
                 open_marker = f" {OPEN_LFM_MARKER}" if show_lfm_emoji(row["activity"]) else ""
                 lines = [
-                    f"**{character} · {race} {row['class_name']} · {roles}**",
-                    f"-# **Playing:** {safe(compact_availability(row['availability']))} · {safe(compact_days(days))}",
-                    f"-# **Plan:** {safe(row['activity'])}{open_marker}",
+                    f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
                 ]
+                if not is_solo_or_sorted(row["activity"]):
+                    lines.append(
+                        f"-# **Playing:** {safe(display_uk_times(compact_availability(row['availability'])))} · {safe(compact_days(days))}"
+                    )
+                lines.append(f"-# **Plan:** {safe(row['activity'])}{open_marker}")
                 if notes:
                     lines.append(f"-# **Notes:** {notes}")
                 lines.append(f"-# **Starting Zone:** {zone}")
@@ -1043,30 +1053,34 @@ class BoardLayout(discord.ui.LayoutView):
                         accessory=thumbnail,
                     )
                 )
-                if index != len(visible) - 1:
+                # V2 containers hold at most 10 direct items. Two dividers
+                # across the 10-entry preview keep it compact and valid.
+                if preview and index in (2, 7):
+                    container.add_item(discord.ui.Separator())
+                elif not preview and index == 3 and len(visible) > 4:
                     container.add_item(discord.ui.Separator())
         else:
             container.add_item(discord.ui.Separator())
             container.add_item(discord.ui.TextDisplay("*Nobody on board yet.*"))
 
-        if len(roster) > len(visible):
-            container.add_item(discord.ui.Separator())
-            container.add_item(
-                discord.ui.TextDisplay(
-                    f"-# {len(roster) - len(visible)} more plan(s) not shown on this test board."
-                )
-            )
-
         self.add_item(container)
 
-        self.add_item(
-            discord.ui.ActionRow(
-                AddUpdateButton(cog, channel_id),
-                CharacterEditButton(cog, channel_id, "race"),
-                CharacterEditButton(cog, channel_id, "class"),
-                RemoveButton(cog, channel_id),
+        if not preview and len(roster) > len(visible):
+            # This stays outside the container so seven entries never exceed
+            # the container's direct-child limit.
+            self.add_item(discord.ui.TextDisplay(
+                f"-# {len(roster) - len(visible)} more plan(s) not shown on this board."
+            ))
+
+        if not preview:
+            self.add_item(
+                discord.ui.ActionRow(
+                    AddUpdateButton(cog, channel_id),
+                    CharacterEditButton(cog, channel_id, "race"),
+                    CharacterEditButton(cog, channel_id, "class"),
+                    RemoveButton(cog, channel_id),
+                )
             )
-        )
 
 
 class LFGPreview(commands.Cog):
@@ -1142,13 +1156,13 @@ class LFGPreview(commands.Cog):
                 )
 
     @app_commands.command(
-        name="lfg-preview",
-        description="Create or reopen the Hyped Forever launch-planning board",
+        name="postlfglfm",
+        description="Post or refresh the live Hyped LFG-LFM launch board",
     )
     @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
-    async def lfg_preview(self, interaction: discord.Interaction):
+    async def post_lfg_lfm(self, interaction: discord.Interaction):
         if interaction.guild_id != int(os.environ["HYPED_GUILD_ID"]):
             await interaction.response.send_message(
                 "Only available in Hyped.",
@@ -1181,6 +1195,23 @@ class LFGPreview(commands.Cog):
                 )
 
         await self.post_new_board(interaction, channel)
+
+    @app_commands.command(
+        name="lfg-preview",
+        description="Show 10 fictional LFG entries without changing real data",
+    )
+    @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_guild=True)
+    async def lfg_preview(self, interaction: discord.Interaction):
+        if interaction.guild_id != int(os.environ["HYPED_GUILD_ID"]):
+            await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
+            return
+        # Ephemeral, read-only mockup. Never posts or changes a live board.
+        await interaction.response.send_message(
+            view=BoardLayout(self, interaction.channel_id, interaction.guild, preview=True),
+            ephemeral=True,
+        )
 
 
 async def setup(bot):
