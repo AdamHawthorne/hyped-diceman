@@ -70,7 +70,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("class StartTimeView", source)
         self.assertIn("class FinishTimeView", source)
         self.assertIn("class LaunchDaysView", source)
-        self.assertIn("Group Questing + Dungeons", source)
+        self.assertIn("Group Questing + Dungeons (LFM)", source)
         self.assertIn("Grinding (Dungeons, grind spots etc)", source)
         self.assertIn("Ogre want know launch plans.", source)
         self.assertIn('label="Character name"', source)
@@ -80,7 +80,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("LAUNCH_DAYS", source)
         self.assertIn("Launch Night · Wed 4 Nov", source)
         self.assertIn("Solo Questing + Dungeons (LFG/ Pugging)", source)
-        self.assertIn("Flexible", source)
+        self.assertIn("Open / Flexible", source)
         self.assertIn("class NotesModal", source)
         self.assertIn("**Starting:**", source)
         self.assertIn("**Playing:**", source)
@@ -97,6 +97,24 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn('name="lfg-preview"', source)
         self.assertNotIn("DROP TABLE", source)
         self.assertNotIn("DELETE FROM rolls", source)
+
+    def test_lfg_levelling_plan_options(self):
+        source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        options = next(
+            ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "INTENTIONS"
+        )
+        self.assertEqual(options[0], "Open / Flexible")
+        self.assertEqual(options.count("Open / Flexible"), 1)
+        self.assertIn("Group Questing (LFM)", options)
+        self.assertIn("Group Questing + Dungeons (LFM)", options)
+        self.assertNotIn("Flexible", options)
+        self.assertLessEqual(len(options), 25)
 
     def test_lfg_select_menus_stay_within_discord_limit(self):
         source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
