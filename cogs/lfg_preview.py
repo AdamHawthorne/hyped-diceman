@@ -12,7 +12,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .lfg_sort import listing_board_key, is_solo_or_sorted
+from .lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
 from .lfg_pagination import PAGE_SIZE, page_count, clamp_page, page_rows
 from .lfg_demo import demo_entries, display_race, display_uk_times
 
@@ -217,16 +217,8 @@ def format_roles(value, *, icons=False):
 
 
 def show_lfm_emoji(activity):
-    """Only explicitly open/LFM plans display the emoji, never solo/sorted."""
-    plans = {part.strip() for part in activity.split(",")}
-    if "Full Group / Sorted" in plans or any("Solo Questing" in part for part in plans):
-        return False
-    return bool(plans & {
-        "Open / Flexible",
-        "Flexible",  # Old saved listings before the option was renamed.
-        "Group Questing (LFM)",
-        "Group Questing + Dungeons (LFM)",
-    })
+    """The marker and board sorting use the same Open/LFM rule."""
+    return is_open_lfm(activity)
 
 
 def compact_availability(value):
