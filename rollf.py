@@ -3355,6 +3355,17 @@ if ADMIN_MODE:
             ephemeral=True
         )
 
+# Load optional guild features as separate Cogs without modifying existing commands.
+async def load_hyped_extensions():
+    for extension in ("cogs.lfg_preview",):
+        try:
+            await bot.load_extension(extension)
+            print(f"Loaded extension: {extension}")
+        except Exception:
+            logging.exception("Failed to load Hyped extension %s", extension)
+
+bot.setup_hook = load_hyped_extensions
+
 # ---------------- RUN ----------------
 required_config = {
     "DISCORD_TOKEN": TOKEN,
