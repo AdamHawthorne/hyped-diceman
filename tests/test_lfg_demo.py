@@ -47,14 +47,15 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
-    def test_preview_individual_messages_and_final_footer(self):
+    def test_preview_edits_only_one_ephemeral_message(self):
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
-        self.assertIn("class EntryLayout", source)
-        self.assertIn("class FooterLayout", source)
-        self.assertIn("for row in open_rows:", source)
-        self.assertIn("view=EntryLayout(row, interaction.guild)", source)
-        self.assertIn("await interaction.followup.send(view=FooterLayout()", source)
+        self.assertIn("class BoardPageButton", source)
+        self.assertIn("await interaction.response.edit_message(", source)
+        self.assertIn("view=BoardLayout(self, interaction.channel_id,", source)
         self.assertIn("preview=True", source)
+        self.assertNotIn("await interaction.followup.send(view=FooterLayout()", source)
+        self.assertIn("gallery.add_item(media=BOTTOM_IMAGE", source)
+        self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
 
 if __name__ == "__main__":
