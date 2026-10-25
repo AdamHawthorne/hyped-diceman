@@ -44,3 +44,18 @@ jobs:
           assert 0 < anon.total_children_count < 20
           print("V2 suggestions views built successfully")
           '
+      - name: Construct Forever leadership V2 preview in real runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs.forever_role import ForeverRoleV2Panel, LeadershipApplicationPost
+          panel = ForeverRoleV2Panel(1, 2, lambda message: None)
+          post = LeadershipApplicationPost(
+              applicant_id=123,
+              interest="Raid Leader",
+              experience="Test experience",
+              skills="Test skills",
+          )
+          assert 0 < panel.total_children_count < 30
+          assert 0 < post.total_children_count < 20
+          print("V2 Forever leadership preview built successfully")
+          '

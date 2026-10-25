@@ -17,7 +17,7 @@ import csv
 import io
 import os
 import discord
-from cogs.forever_role import ForeverRoleView, build_forever_role_embed
+from cogs.forever_role import ForeverRoleView, ForeverRoleV2Panel, build_forever_role_embed
 from cogs.flameboard import FlameboardEvents
 from cogs.roll_reactions import RollReactions
 import logging
@@ -2804,6 +2804,38 @@ if ADMIN_MODE:
         )
 
         log_event(f"MANUAL DAILY RESET user={interaction.user.id}")
+
+    @bot.tree.command(
+        name="previewroles",
+        description="Owner-only preview of the V2 Forever and leadership panel",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def previewroles_admin(interaction: discord.Interaction):
+
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+
+        if interaction.guild is None or interaction.guild.id != HYPED_GUILD_ID:
+            await interaction.response.send_message(
+                "Role panel is only available in Hyped.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            view=ForeverRoleV2Panel(
+                HYPED_GUILD_ID,
+                FOREVER_ROLE_ID,
+                log_event,
+            ),
+            ephemeral=True,
+        )
+
+        log_event(
+            f"FOREVER ROLE V2 PREVIEW user={interaction.user.id} "
+            f"channel={interaction.channel_id}"
+        )
 
     @bot.tree.command(
         name="postroles",
