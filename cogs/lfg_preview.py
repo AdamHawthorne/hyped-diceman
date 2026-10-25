@@ -196,6 +196,37 @@ def compact_days(value):
     return value.replace(" Nov", "")
 
 
+def automatic_start_days(start_time):
+    if start_time == "Launch 23:00 UK":
+        return (LAUNCH_DAYS[0],)
+    if start_time in START_TIMES and start_time != "Later":
+        return (LAUNCH_DAYS[1],)
+    return ()
+
+
+def selectable_playing_days(start_time):
+    automatic = automatic_start_days(start_time)
+    # Launch night is only valid for the explicit launch start.
+    return tuple(day for day in LAUNCH_DAYS[1:] if day not in automatic)
+
+
+def merge_playing_days(start_time, selected):
+    allowed = selectable_playing_days(start_time)
+    chosen = set(automatic_start_days(start_time))
+    chosen.update(day for day in selected if day in allowed)
+    return ", ".join(day for day in LAUNCH_DAYS if day in chosen)
+
+
+def playing_days_prompt(state):
+    automatic = automatic_start_days(getattr(state, "start_time", "Later"))
+    if automatic:
+        return (
+            f"{automatic[0]} is already included from your start time. "
+            "Choose additional days, or press Only this day."
+        )
+    return "Choose the days you plan to play, from Thu 5 Nov onwards."
+
+
 class Draft:
     def __init__(self, row=None):
         self.character = row["character"] if row else ""
@@ -409,12 +440,22 @@ class StartTimeSelect(discord.ui.Select):
     def __init__(self):
         super().__init__(
             placeholder="Choose start time",
-            options=[discord.SelectOption(label=value, value=value) for value in START_TIMES],
+            options=[
+                discord.SelectOption(
+                    label=value, value=value,
+                    description=("Wed 4 Nov" if value == "Launch 23:00 UK"
+                                 else "Choose playing days later" if value == "Later"
+                                 else "Thu 5 Nov"),
+                )
+                for value in START_TIMES
+            ],
         )
 
     async def callback(self, interaction):
         state = self.view.state
         state.start_time = self.values[0]
+        state.draft.days_off = merge_playing_days(
+            state.start_time, state.draft.days_off.split(", "))
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Finish Time",
@@ -461,7 +502,7 @@ class FinishTimeSelect(discord.ui.Select):
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Playing On",
-                "Which days you planning to play? Choose any that apply.",
+                playing_days_prompt(state),
                 state,
             ),
             view=LaunchDaysView(state),
@@ -492,7 +533,7 @@ class LongSessionSelect(discord.ui.Select):
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Playing On",
-                "Which days you planning to play? Choose any that apply.",
+                playing_days_prompt(state),
                 state,
             ),
             view=LaunchDaysView(state),
@@ -510,17 +551,43 @@ class LongSessionView(discord.ui.View):
 
 
 class LaunchDaysSelect(discord.ui.Select):
-    def __init__(self):
+    def __init__(self, state):
+        start_time = getattr(state, "start_time", "Later")
+        days = selectable_playing_days(start_time)
+        selected = state.draft.days_off.split(", ")
         super().__init__(
-            placeholder="Playing on",
+            placeholder="Additional playing days" if automatic_start_days(start_time) else "Playing on",
             min_values=1,
-            max_values=len(LAUNCH_DAYS),
-            options=[discord.SelectOption(label=value, value=value) for value in LAUNCH_DAYS],
+            max_values=len(days),
+            options=[discord.SelectOption(label=value, value=value, default=value in selected)
+                     for value in days],
         )
 
     async def callback(self, interaction):
-        state = self.view.state
-        state.draft.days_off = ", ".join(self.values)
+        await self.view.finish(interaction, self.values)
+
+
+class LaunchDaysView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=900)
+        self.state = state
+        self.add_item(LaunchDaysSelect(state))
+        if automatic_start_days(getattr(state, "start_time", "Later")):
+            only_day = discord.ui.Button(
+                label="Only this day", style=discord.ButtonStyle.secondary)
+            only_day.callback = self.only_start_day
+            self.add_item(only_day)
+
+    async def interaction_check(self, interaction):
+        return await self.state.check(interaction)
+
+    async def only_start_day(self, interaction):
+        await self.finish(interaction, [])
+
+    async def finish(self, interaction, selected):
+        state = self.state
+        state.draft.days_off = merge_playing_days(
+            getattr(state, "start_time", "Later"), selected)
         await interaction.response.edit_message(
             embed=wizard_embed(
                 "Hyped Ogre LFG · Levelling Plan",
@@ -530,15 +597,6 @@ class LaunchDaysSelect(discord.ui.Select):
             view=IntentionView(state),
         )
 
-
-class LaunchDaysView(discord.ui.View):
-    def __init__(self, state):
-        super().__init__(timeout=900)
-        self.state = state
-        self.add_item(LaunchDaysSelect())
-
-    async def interaction_check(self, interaction):
-        return await self.state.check(interaction)
 
 class IntentionSelect(discord.ui.Select):
     def __init__(self):
