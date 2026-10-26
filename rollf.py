@@ -936,7 +936,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="diceman_", intents=intents)
-roll_reactions = RollReactions(bot, ROLL_CHANNEL_ID, db, today_range, log_error)
+roll_reactions = RollReactions(bot, ROLL_CHANNEL_ID, db, today_range, log_error, HYPED_GUILD_ID)
 
 async def fetch_guild_member(guild: discord.Guild, user_id: int):
     member = guild.get_member(user_id)
