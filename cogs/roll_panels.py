@@ -17,8 +17,7 @@ class DailyRollPanel(discord.ui.LayoutView):
                 discord.ui.TextDisplay(
                     "## Hyped Rolls · Daily Reset\n"
                     f"**{tagline}**\n\n"
-                    "Roll once per day. Highest roll at the end of the day "
-                    f"keeps the coin {coin_emoji}"
+                    f"One roll per day. Ogre give coin to highest {coin_emoji}"
                 ),
                 accessory=discord.ui.Thumbnail(OGRE_IMAGE, description="Hyped Ogre"),
             ),
