@@ -1106,28 +1106,88 @@ class DailyRollView(discord.ui.View):
         await daily_roll_action(interaction)
 
 
-def daily_ogre_tagline():
-    return "Are you lucky gamer today?"
+def ogre_coin_emoji():
+    """Resolve the real guild emoji ID; plain text until :ogrecoin: is uploaded."""
+    guild = bot.get_guild(HYPED_GUILD_ID)
+    emoji = discord.utils.get(guild.emojis, name="ogrecoin") if guild else None
+    return str(emoji) if emoji else "gold coin"
+
+
+def daily_ogre_tagline(day=None):
+    """Date-stable variety, so restarts never change today's panel copy."""
+    day = day or datetime.now(TZ).date()
+    lines = (
+        "Feeling lucky today?",
+        "Give the dice a shake, gamer.",
+        "One roll. One shot at glory.",
+        "Think you've got the high roll?",
+        "Ogre wants to see your best roll.",
+        "Fortune favours the bold rollers.",
+        "Today's crown is up for grabs.",
+        "Big rolls, bigger bragging rights.",
+    )
+    return lines[day.toordinal() % len(lines)]
+
+
+def coin_winner_message(day):
+    """Ordinary Discord message, not a V2 component or embed."""
+    finished = day - timedelta(days=1)
+    winner = day_award(db(), HYPED_GUILD_ID, finished.isoformat())
+    if not winner:
+        return None
+    weekday = finished.strftime("%A")
+    total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
+    return (
+        f"**Coin winner!** {ogre_coin_emoji()}\\n"
+        f"<@{winner['user_id']}> had the highest roll for **{weekday}'s roll** "
+        f"with **{winner['winning_roll']}**, earning **1 gold coin** {ogre_coin_emoji()} "
+        f"and bringing their lifetime total to **{total}**."
+    )
 
 
 def build_daily_roll_panel(*, preview=False, day=None):
     day = day or datetime.now(TZ).date()
-    yesterday = (day - timedelta(days=1)).isoformat()
-    winner = day_award(db(), HYPED_GUILD_ID, yesterday)
-    if winner:
-        total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
-        winner_text = (
-            f"<@{winner['user_id']}> had the highest roll on **{yesterday}** "
-            f"with **{winner['winning_roll']}** and earned **1 gold coin**.\n"
-            f"**Total gold coins: {total}**"
-        )
-    else:
-        winner_text = f"No winning roll recorded for {yesterday}. No coin awarded."
     return DailyRollPanel(
-        day=day.isoformat(), winner_text=winner_text, tagline=daily_ogre_tagline(),
+        day=day.isoformat(), winner_text="", tagline=daily_ogre_tagline(day),
         top_five=coin_standings(db(), HYPED_GUILD_ID)[:5],
+        coin_emoji=ogre_coin_emoji(),
         on_roll=daily_roll_action, on_leaderboard=show_coin_leaderboard,
         on_stats=show_my_stats, preview=preview,
+    )
+
+
+async def announce_coin_winner(channel, day):
+    """Only announce a completed day's winner near the actual UK midnight.
+
+    Backfills and normal daytime deploys never generate historical announcements.
+    """
+    now = datetime.now(TZ)
+    if now.date() != day or now.hour != 0 or now.minute >= 10:
+        return
+    text = coin_winner_message(day)
+    if not text:
+        return
+    con = db()
+    con.execute("""CREATE TABLE IF NOT EXISTS roll_coin_announcements (
+        guild_id INTEGER NOT NULL, roll_date TEXT NOT NULL,
+        message_id INTEGER NOT NULL, PRIMARY KEY(guild_id, roll_date)
+    )""")
+    finished = (day - timedelta(days=1)).isoformat()
+    if con.execute(
+        "SELECT 1 FROM roll_coin_announcements WHERE guild_id=? AND roll_date=?",
+        (HYPED_GUILD_ID, finished),
+    ).fetchone():
+        return
+    try:
+        message = await channel.send(
+            text, allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log_error(f"COIN WINNER ANNOUNCEMENT FAILED date={finished}: {exc!r}")
+        return
+    con.execute(
+        "INSERT OR IGNORE INTO roll_coin_announcements (guild_id, roll_date, message_id) VALUES (?, ?, ?)",
+        (HYPED_GUILD_ID, finished, message.id),
     )
 
 
@@ -1146,7 +1206,7 @@ async def show_coin_leaderboard(interaction):
         return
     await interaction.response.send_message(
         view=CoinLeaderboard(coin_standings(db(), HYPED_GUILD_ID),
-                             owner_id=interaction.user.id),
+                             owner_id=interaction.user.id, coin_emoji=ogre_coin_emoji()),
         allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
     )
 
@@ -1196,7 +1256,7 @@ async def post_daily_reset_message():
         try:
             # Recover a message sent just before a crash, before its ID was saved.
             # The date marker is unique to this daily V2 panel.
-            marker = f"Roll day: {today} · Europe/London"
+            marker = "Hyped Rolls · Daily Reset"
             async for recent in channel.history(limit=100):
                 if recent.author.id == bot.user.id and any(
                     marker in json.dumps(component.to_dict(), ensure_ascii=False)
@@ -1219,6 +1279,7 @@ async def post_daily_reset_message():
             (today, channel.id, message.id),
         )
         log_event(f"DAILY RESET POST message={message.id}")
+        await announce_coin_winner(channel, now.date())
         return True
 
 
