@@ -1138,7 +1138,7 @@ def coin_winner_message(day):
     weekday = finished.strftime("%A")
     total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
     return (
-        f"**Coin winner!** {ogre_coin_emoji()}\\n"
+        f"**Coin winner!** {ogre_coin_emoji()}\n"
         f"<@{winner['user_id']}> had the highest roll for **{weekday}'s roll** "
         f"with **{winner['winning_roll']}**, earning **1 gold coin** {ogre_coin_emoji()} "
         f"and bringing their lifetime total to **{total}**."
@@ -1215,7 +1215,7 @@ async def show_my_stats(interaction):
     await stats.callback(interaction)
 
 
-async def post_daily_reset_message():
+async def post_daily_reset_message(*, refresh_existing=False):
     # Both the scheduler and startup can arrive here at midnight.
     async with DAILY_POST_LOCK:
         now = datetime.now(TZ)
@@ -1237,6 +1237,8 @@ async def post_daily_reset_message():
             (today,),
         ).fetchone()
         if existing and existing[0] == channel.id:
+            if not refresh_existing:
+                return True
             try:
                 posted = await channel.fetch_message(existing[1])
                 if posted.author.id != bot.user.id:
@@ -1258,10 +1260,12 @@ async def post_daily_reset_message():
             # The date marker is unique to this daily V2 panel.
             marker = "Hyped Rolls · Daily Reset"
             async for recent in channel.history(limit=100):
-                if recent.author.id == bot.user.id and any(
+                if (recent.author.id == bot.user.id
+                    and getattr(recent, "created_at", now).astimezone(TZ).date() == now.date()
+                    and any(
                     marker in json.dumps(component.to_dict(), ensure_ascii=False)
                     for component in recent.components
-                ):
+                )):
                     message = recent
                     break
             else:
@@ -2346,7 +2350,7 @@ if ADMIN_MODE:
             return
         await interaction.response.defer(ephemeral=True)
         if interaction.channel_id == ROLL_CHANNEL_ID:
-            posted = await post_daily_reset_message()
+            posted = await post_daily_reset_message(refresh_existing=True)
             await interaction.followup.send(
                 "Daily roll panel refreshed." if posted else
                 "Coins are saved, but the panel could not be refreshed. Check bot permissions/logs.",
