@@ -114,7 +114,7 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coin_total(self.con, 9, 1), 1)
         self.channel.send.assert_awaited_once()
         self.assertEqual(self.message.edit.await_count, 0)
-        self.ns["announce_coin_winner"].assert_awaited_once()
+        self.assertEqual(self.ns["announce_coin_winner"].await_count, 3)
 
     async def test_send_failure_keeps_one_award_and_retry_can_post(self):
         self.channel.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason='Denied'), 'Denied')
