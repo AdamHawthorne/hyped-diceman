@@ -1,5 +1,6 @@
 """Forever opt-in role panel and leadership applications."""
 import discord
+from cogs.ogre_voice import pick as ogre_say
 
 ACCENT = 0x8C5A3C
 FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"
@@ -56,7 +57,7 @@ async def toggle_forever_role(interaction, guild_id, role_id, log_event):
                 reason="Forever role removed via Hyped Ogre role panel",
             )
             await interaction.response.send_message(
-                "**Forever** role removed.",
+                "**Forever** role removed. " + ogre_say("success"),
                 ephemeral=True,
             )
             log_event(f"FOREVER ROLE REMOVED user={member.id}")
@@ -224,7 +225,7 @@ class LeadershipApplicationModal(discord.ui.Modal):
             return
 
         await interaction.response.send_message(
-            "✅ **Application sent to leadership.** We'll have a look and get back to you.",
+            "✅ **Application sent to leadership.** Ogre passed it on. Leadership will review.",
             ephemeral=True,
         )
 
