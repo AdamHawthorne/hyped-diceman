@@ -1192,7 +1192,7 @@ async def announce_coin_winner(channel, day):
         return
     try:
         message = await channel.send(
-            text, allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+            text, allowed_mentions=discord.AllowedMentions.none(),
         )
     except (discord.Forbidden, discord.HTTPException) as exc:
         log_error(f"COIN WINNER ANNOUNCEMENT FAILED date={finished}: {exc!r}")
