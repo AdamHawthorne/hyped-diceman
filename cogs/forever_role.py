@@ -148,9 +148,9 @@ class LeadershipApplicationPost(discord.ui.LayoutView):
 class LeadershipApplicationModal(discord.ui.Modal):
     def __init__(self, *, interest):
         super().__init__(title="Leadership Application")
-        self.interest = interest
+        self.interests = (interest,) if isinstance(interest, str) else tuple(interest)
 
-        if interest == "Other":
+        if "Other" in self.interests:
             self.other_interest = discord.ui.TextInput(
                 label="What are you interested in?",
                 placeholder="Tell us where you'd like to help",
@@ -181,10 +181,11 @@ class LeadershipApplicationModal(discord.ui.Modal):
         self.add_item(self.extra)
 
     async def on_submit(self, interaction):
-        interest = (
-            self.other_interest.value.strip()
-            if self.other_interest is not None
-            else self.interest
+        interest = ", ".join(
+            f"Other: {self.other_interest.value.strip()}"
+            if item == "Other" and self.other_interest is not None
+            else item
+            for item in self.interests
         )
 
         channel = interaction.client.get_channel(
@@ -231,9 +232,9 @@ class LeadershipApplicationModal(discord.ui.Modal):
 class LeadershipInterestSelect(discord.ui.Select):
     def __init__(self):
         super().__init__(
-            placeholder="What are you interested in?",
+            placeholder="Select all interests that apply",
             min_values=1,
-            max_values=1,
+            max_values=len(LEADERSHIP_INTERESTS),
             options=[
                 discord.SelectOption(label=interest, value=interest)
                 for interest in LEADERSHIP_INTERESTS
@@ -241,16 +242,29 @@ class LeadershipInterestSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction):
-        await interaction.response.send_modal(
-            LeadershipApplicationModal(interest=self.values[0])
-        )
+        self.view.interests = tuple(self.values)
+        for option in self.options:
+            option.default = option.value in self.values
+        await interaction.response.edit_message(view=self.view)
 
 
 class LeadershipInterestView(discord.ui.View):
     def __init__(self, owner_id):
         super().__init__(timeout=300)
         self.owner_id = owner_id
+        self.interests = ()
         self.add_item(LeadershipInterestSelect())
+
+    @discord.ui.button(label="Next ›", style=discord.ButtonStyle.secondary, row=1)
+    async def next_button(self, interaction, button):
+        if not self.interests:
+            await interaction.response.send_message(
+                "Choose at least one interest before moving on.", ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(
+            LeadershipApplicationModal(interest=self.interests)
+        )
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.owner_id:
