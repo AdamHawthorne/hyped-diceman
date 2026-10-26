@@ -49,14 +49,27 @@ class CoinAccountingTests(unittest.TestCase):
         settle_completed_days(self.con, 9, self.now)
         self.assertEqual(day_award(self.con, 9, '2026-10-25')['user_id'], 20)
 
-    def test_ogre_and_unfinished_day_are_excluded(self):
+    def test_ogre_can_win_coin_and_appear_on_leaderboard(self):
         self.roll(0, 100, '2026-10-25T01:00:00', 'bot')
-        self.roll(1, 1, '2026-10-25T23:59:59')
+        self.roll(1, 90, '2026-10-25T23:59:59')
         self.roll(2, 100, '2026-10-26T00:00:00')
         self.assertEqual(settle_completed_days(self.con, 9, self.now), 1)
-        self.assertEqual(coin_total(self.con, 9, 0), 0)
+        self.assertEqual(coin_total(self.con, 9, 0), 1)
         self.assertEqual(coin_total(self.con, 9, 2), 0)
+        self.assertEqual(day_award(self.con, 9, '2026-10-25')['user_id'], 0)
+        self.assertEqual(coin_standings(self.con, 9)[0]['user_id'], 0)
+
+    def test_ogre_and_user_tie_awards_earliest_roll(self):
+        self.roll(1, 99, '2026-10-25T01:00:00')
+        self.roll(0, 99, '2026-10-25T02:00:00', 'bot')
+        self.assertEqual(settle_completed_days(self.con, 9, self.now), 1)
         self.assertEqual(day_award(self.con, 9, '2026-10-25')['user_id'], 1)
+
+    def test_ogre_can_win_tie_if_he_rolls_first(self):
+        self.roll(0, 99, '2026-10-25T01:00:00', 'bot')
+        self.roll(1, 99, '2026-10-25T02:00:00')
+        self.assertEqual(settle_completed_days(self.con, 9, self.now), 1)
+        self.assertEqual(day_award(self.con, 9, '2026-10-25')['user_id'], 0)
 
     def test_summer_midnight_uses_uk_not_legacy_utc_roll_date(self):
         self.roll(1, 80, '2026-07-02T00:05:00')
