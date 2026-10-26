@@ -46,7 +46,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         text = json.dumps(ranked.to_components())
         self.assertIn("Coin count", text)
         self.assertNotIn("First roll wins a tie.", text)
-        self.assertIn("keeps the coin", text)
+        self.assertIn("One roll per day. Ogre give coin to highest", text)
         self.assertLess(text.index("Hyped Rolls"), text.index("Coin count"))
         self.assertIn("keeps the coin", text)
         self.assertNotIn("`/leaderboard`", text)
