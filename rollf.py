@@ -1238,6 +1238,7 @@ async def post_daily_reset_message(*, refresh_existing=False):
         ).fetchone()
         if existing and existing[0] == channel.id:
             if not refresh_existing:
+                await announce_coin_winner(channel, now.date())
                 return True
             try:
                 posted = await channel.fetch_message(existing[1])
@@ -1257,7 +1258,7 @@ async def post_daily_reset_message(*, refresh_existing=False):
 
         try:
             # Recover a message sent just before a crash, before its ID was saved.
-            # The date marker is unique to this daily V2 panel.
+            # Match only today's actual reset panel; exclude earlier dates.
             marker = "Hyped Rolls · Daily Reset"
             async for recent in channel.history(limit=100):
                 if (recent.author.id == bot.user.id
