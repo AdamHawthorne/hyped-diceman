@@ -90,7 +90,7 @@ class CoinAccountingTests(unittest.TestCase):
         self.assertEqual(coin_total(self.con, 9, 2), 1)
 
     def test_invalid_and_unfinished_manual_dates_are_rejected(self):
-        for day, value in [('bad', 50), ('2026-10-26', 50), ('2026-10-27', 50),
+        for day, value in [('bad', 50), ('20261024', 50), ('2026-10-26', 50), ('2026-10-27', 50),
                            ('2026-10-24', 0), ('2026-10-24', 101)]:
             with self.subTest(day=day, value=value), self.assertRaises(ValueError):
                 award_missing_day(self.con, 9, day, 1, 'one', value, 99, self.now)
