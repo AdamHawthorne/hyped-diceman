@@ -25,6 +25,7 @@ from cogs.roll_coins import (
     coin_standings, award_missing_day,
 )
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
+from cogs.ogre_voice import pick as ogre_say
 import logging
 import json
 import hmac
@@ -1114,19 +1115,9 @@ def ogre_coin_emoji():
 
 
 def daily_ogre_tagline(day=None):
-    """Date-stable variety, so restarts never change today's panel copy."""
+    """One Ogre prompt per UK day; stable across restarts."""
     day = day or datetime.now(TZ).date()
-    lines = (
-        "Feeling lucky today, gamer?",
-        "Give dice a shake. See what happens.",
-        "One roll. One shot at glory.",
-        "Think you got high roll?",
-        "Ogre wants to see big number.",
-        "Big roll wins. Simple.",
-        "Coin waiting for lucky gamer.",
-        "Who rolls biggest today?",
-    )
-    return lines[day.toordinal() % len(lines)]
+    return ogre_say("daily_prompt", seed=day.isoformat())
 
 
 def coin_winner_message(day):
@@ -1137,24 +1128,19 @@ def coin_winner_message(day):
         return None
     weekday = finished.strftime("%A")
     total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
-    # Date-stable variation: retries/restarts keep same copy for a given day.
-    lines = (
-        "{name} highest roll for **{day}** with **{roll}**. He keep today's coin {coin}.",
-        "{name} rolled highest on **{day}**: **{roll}**. Coin goes to him {coin}.",
-        "{name} wins **{day}** with **{roll}**. Another coin for him {coin}.",
-        "{name} top roll on **{day}**, **{roll}**. He take coin {coin}.",
-        "{name} had best roll on **{day}**: **{roll}**. He keep coin {coin}.",
+    line = ogre_say(
+        "coin_winner_ogre" if winner["user_id"] == 0 else "coin_winner",
+        seed=finished.isoformat(),
+        name=(f"<@{bot.user.id}>" if winner["user_id"] == 0 and bot.user else
+              f"<@{winner['user_id']}>"),
+        day=weekday, roll=winner["winning_roll"], coin=ogre_coin_emoji(),
     )
-    coin_word = "coin" if total == 1 else "coins"
     return (
         f"**Coin winner!** {ogre_coin_emoji()}\n"
-        + lines[finished.toordinal() % len(lines)].format(
-            name=(f"<@{bot.user.id}>" if winner["user_id"] == 0 and bot.user else
-                  f"<@{winner['user_id']}>"), day=weekday,
-            roll=winner["winning_roll"], coin=ogre_coin_emoji(),
-        )
-        + f"\n**{total} {coin_word}** now."
+        + line
+        + f"\n**{total} {'coin' if total == 1 else 'coins'}** now."
     )
+
 
 
 def build_daily_roll_panel(*, preview=False, day=None):
