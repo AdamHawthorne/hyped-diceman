@@ -11,6 +11,7 @@ import sqlite3
 import time
 
 import discord
+from cogs.ogre_voice import pick as ogre_say
 from discord import app_commands
 from discord.ext import commands
 
@@ -891,7 +892,7 @@ class CountdownCog(
                     await channel.send(
                         f"<@{subscriber['user_id']}> ⏱️ **Ogre bonk clock! Five minutes!**\n"
                         f"**{discord.utils.escape_markdown(row['title'])}** "
-                        "almost here. Get ready, gamer.",
+                        "almost here. Get ready, gamer. " + ogre_say("reset"),
                         allowed_mentions=discord.AllowedMentions(
                             users=True, roles=False, everyone=False,
                         ),
