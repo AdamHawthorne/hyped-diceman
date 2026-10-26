@@ -2,6 +2,16 @@
 from pathlib import Path
 import ast
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+try:
+    import discord
+    from cogs.forever_role import (
+        LEADERSHIP_INTERESTS, LeadershipInterestView, LeadershipApplicationModal,
+    )
+except ImportError:
+    discord = None
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "cogs" / "forever_role.py").read_text(encoding="utf-8")
@@ -117,6 +127,50 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
         self.assertNotIn("sqlite3", SOURCE)
         self.assertNotIn("bot.db", SOURCE)
         self.assertNotIn("rolls", SOURCE.lower())
+
+
+@unittest.skipIf(discord is None, "discord.py runtime required")
+class LeadershipInterestFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_all_interests_stay_selected_until_next(self):
+        view = LeadershipInterestView(123)
+        select = next(item for item in view.children if isinstance(item, discord.ui.Select))
+        self.assertEqual(select.max_values, len(LEADERSHIP_INTERESTS))
+        select._values = list(LEADERSHIP_INTERESTS)
+        interaction = SimpleNamespace(response=AsyncMock())
+        await select.callback(interaction)
+        self.assertEqual(view.interests, LEADERSHIP_INTERESTS)
+        self.assertTrue(all(option.default for option in select.options))
+        interaction.response.send_modal.assert_not_awaited()
+        await view.next_button.callback(interaction)
+        modal = interaction.response.send_modal.call_args.args[0]
+        self.assertEqual(modal.interests, LEADERSHIP_INTERESTS)
+        self.assertIsNotNone(modal.other_interest)
+
+    async def test_next_requires_a_selection_and_owner(self):
+        view = LeadershipInterestView(123)
+        interaction = SimpleNamespace(response=AsyncMock(), user=SimpleNamespace(id=456))
+        self.assertFalse(await view.interaction_check(interaction))
+        await view.next_button.callback(interaction)
+        interaction.response.send_modal.assert_not_awaited()
+
+    async def test_submission_keeps_named_and_other_interests(self):
+        modal = LeadershipApplicationModal(interest=("Leading", "Coding", "Other"))
+        modal.other_interest._value = "Events"
+        modal.experience._value = "Guild experience"
+        modal.extra._value = ""
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+        interaction = SimpleNamespace(
+            response=AsyncMock(), user=SimpleNamespace(id=123),
+            client=SimpleNamespace(get_channel=lambda channel_id: channel),
+        )
+        await modal.on_submit(interaction)
+        post = channel.send.call_args.kwargs["view"]
+        content = "\n".join(
+            item.content for item in post.walk_children()
+            if isinstance(item, discord.ui.TextDisplay)
+        )
+        self.assertIn("Leading, Coding, Other: Events", content)
 
 
 if __name__ == "__main__":
