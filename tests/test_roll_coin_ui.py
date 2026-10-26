@@ -66,6 +66,20 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
                                   preview=True)
         self.assertTrue(all(x.disabled for x in preview.walk_children() if isinstance(x, discord.ui.Button)))
 
+    async def test_ogre_winner_displays_real_bot_mention(self):
+        callbacks = [AsyncMock() for _ in range(3)]
+        standings = [{"rank": 1, "user_id": 0, "coins": 2}]
+        panel = DailyRollPanel(
+            day="2026-10-26", winner_text="", tagline="Test",
+            on_roll=callbacks[0], on_leaderboard=callbacks[1], on_stats=callbacks[2],
+            top_five=standings, ogre_id=123456, coin_emoji="<:ogrecoin:789>",
+        )
+        contents = json.dumps(panel.to_components())
+        self.assertIn("<@123456>", contents)
+        self.assertNotIn("<@0>", contents)
+        board = CoinLeaderboard(standings, owner_id=7, ogre_id=123456)
+        self.assertIn("<@123456>", json.dumps(board.to_components()))
+
     async def test_leaderboard_pagination_ownership_and_empty_state(self):
         rows = [{'rank': i, 'user_id': i, 'coins': 40 - i} for i in range(1, 37)]
         panel = CoinLeaderboard(rows, owner_id=7)
