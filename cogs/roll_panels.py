@@ -22,7 +22,7 @@ class DailyRollPanel(discord.ui.LayoutView):
                 accessory=discord.ui.Thumbnail(OGRE_IMAGE, description="Hyped Ogre"),
             ),
             discord.ui.TextDisplay(
-                "## Coin winners\n"
+                "## Lucky gamers\n"
                 + ("\n".join(
                     f"**{row['rank']}.** <@{row['user_id']}> · **{row['coins']}** "
                     + coin_emoji
@@ -39,6 +39,7 @@ class DailyRollPanel(discord.ui.LayoutView):
         ):
             button = discord.ui.Button(
                 label=label, custom_id=custom_id,
+                emoji="🎲" if label == "Roll" else None,
                 style=(discord.ButtonStyle.success if label == "Roll" else discord.ButtonStyle.secondary),
                 disabled=preview,
             )
