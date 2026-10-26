@@ -2336,6 +2336,23 @@ if ADMIN_MODE:
         log_event(f"DAILY ROLL PREVIEW user={interaction.user.id}")
 
     @bot.tree.command(
+        name="previewcoin",
+        description="Privately preview the most recent gold coin winner announcement",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def previewcoin_admin(interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID or interaction.guild_id != HYPED_GUILD_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+        message = coin_winner_message(datetime.now(TZ).date())
+        await interaction.response.send_message(
+            message or "No gold coin winner was recorded for yesterday.",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        log_event(f"GOLD COIN ANNOUNCEMENT PREVIEW user={interaction.user.id}")
+
+    @bot.tree.command(
         name="postroll",
         description="Owner-only post of the daily roll panel",
         guild=discord.Object(id=ADMIN_GUILD_ID)
