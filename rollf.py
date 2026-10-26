@@ -1106,22 +1106,8 @@ class DailyRollView(discord.ui.View):
         await daily_roll_action(interaction)
 
 
-DAILY_OGRE_TAGLINES = (
-    "You lucky today? Ogre find out.",
-    "Me got dice. You got luck?",
-    "Big roll good. Small roll bad.",
-    "Me feel lucky. You look nervous.",
-    "One roll. Big glory. No crying.",
-    "You roll hundred? Ogre impressed.",
-    "Ogre believe in luck. Sometimes.",
-    "Today your day? Maybe. Roll.",
-)
-
 def daily_ogre_tagline():
-    # Stable for each UK calendar day, including after a bot restart.
-    today = datetime.now(TZ).date().isoformat()
-    digest = hashlib.sha256(today.encode("ascii")).digest()
-    return DAILY_OGRE_TAGLINES[int.from_bytes(digest[:8], "big") % len(DAILY_OGRE_TAGLINES)]
+    return "Are you lucky gamer today?"
 
 
 def build_daily_roll_panel(*, preview=False, day=None):
