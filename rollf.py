@@ -1125,6 +1125,7 @@ def build_daily_roll_panel(*, preview=False, day=None):
         winner_text = f"No winning roll recorded for {yesterday}. No coin awarded."
     return DailyRollPanel(
         day=day.isoformat(), winner_text=winner_text, tagline=daily_ogre_tagline(),
+        top_five=coin_standings(db(), HYPED_GUILD_ID)[:5],
         on_roll=daily_roll_action, on_leaderboard=show_coin_leaderboard,
         on_stats=show_my_stats, preview=preview,
     )
