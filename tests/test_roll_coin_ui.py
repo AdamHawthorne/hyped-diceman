@@ -43,8 +43,8 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
                                 on_roll=callbacks[0], on_leaderboard=callbacks[1],
                                 on_stats=callbacks[2])
         text = json.dumps(ranked.to_components())
-        self.assertIn("Coin winners", text)
-        self.assertLess(text.index("Hyped Rolls"), text.index("Coin winners"))
+        self.assertIn("Lucky gamers", text)
+        self.assertLess(text.index("Hyped Rolls"), text.index("Lucky gamers"))
         self.assertIn("keeps the coin", text)
         self.assertNotIn("`/leaderboard`", text)
         self.assertNotIn("`/stats`", text)
@@ -57,6 +57,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         buttons = [x for x in panel.walk_children() if isinstance(x, discord.ui.Button)]
         self.assertEqual(len({x.custom_id for x in buttons}), 3)
         self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
+        self.assertEqual(str(buttons[0].emoji), "🎲")
         for button, callback in zip(buttons, callbacks):
             await button.callback(None)
             callback.assert_awaited_once()
@@ -104,6 +105,8 @@ class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**97**", msg)
             self.assertIn("<:ogrecoin:12345>", msg)
             self.assertNotIn("2026-10-26", msg)
+            self.assertIn("\n**1 coin** now.", msg)
+            self.assertNotIn("**1 coins**", msg)
             day = datetime(2026, 10, 27, tzinfo=UK).date()
             self.assertEqual(ns["daily_ogre_tagline"](day), ns["daily_ogre_tagline"](day))
             self.assertNotEqual(ns["daily_ogre_tagline"](day), ns["daily_ogre_tagline"](day + timedelta(days=1)))
