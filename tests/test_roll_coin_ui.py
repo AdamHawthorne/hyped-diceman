@@ -34,6 +34,18 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(panel.total_children_count, 40)
         self.assertIsInstance(panel.children[-1], discord.ui.MediaGallery)
         self.assertIn(COIN_IMAGE, json.dumps(panel.to_components()))
+        self.assertIn("No gold coins awarded yet.", json.dumps(panel.to_components()))
+        standings = [{"rank": i, "user_id": i, "coins": 7 - i} for i in range(1, 8)]
+        ranked = DailyRollPanel(day="2026-10-26", winner_text="Winner",
+                                tagline="Are you lucky gamer today?", top_five=standings,
+                                on_roll=callbacks[0], on_leaderboard=callbacks[1],
+                                on_stats=callbacks[2])
+        text = json.dumps(ranked.to_components())
+        self.assertIn("Lifetime gold coin leaders", text)
+        for i in range(1, 6):
+            self.assertIn(f"<@{i}>", text)
+        self.assertNotIn("<@6>", text)
+        self.assertIn("Are you lucky gamer today?", text)
         buttons = [x for x in panel.walk_children() if isinstance(x, discord.ui.Button)]
         self.assertEqual(len({x.custom_id for x in buttons}), 3)
         for button, callback in zip(buttons, callbacks):
