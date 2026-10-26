@@ -26,18 +26,20 @@ def load_functions(names, namespace):
 
 
 class PanelTests(unittest.IsolatedAsyncioTestCase):
-    async def test_persistent_controls_and_coin_image_at_bottom(self):
+    async def test_persistent_controls_and_inline_coin_emoji(self):
         callbacks = [AsyncMock() for _ in range(3)]
         panel = DailyRollPanel(day='2026-10-26', winner_text='Winner', tagline='Test',
                                on_roll=callbacks[0], on_leaderboard=callbacks[1], on_stats=callbacks[2])
         self.assertTrue(panel.is_persistent())
         self.assertLess(panel.total_children_count, 40)
-        self.assertIsInstance(panel.children[-1], discord.ui.MediaGallery)
-        self.assertIn(COIN_IMAGE, json.dumps(panel.to_components()))
+        self.assertFalse(any(isinstance(x, discord.ui.MediaGallery) for x in panel.children))
+        self.assertNotIn("Bragging rights only", json.dumps(panel.to_components()))
+        self.assertNotIn("Roll day:", json.dumps(panel.to_components()))
         self.assertIn("No gold coins awarded yet.", json.dumps(panel.to_components()))
         standings = [{"rank": i, "user_id": i, "coins": 7 - i} for i in range(1, 8)]
         ranked = DailyRollPanel(day="2026-10-26", winner_text="Winner",
-                                tagline="Are you lucky gamer today?", top_five=standings,
+                                tagline="Feeling lucky today?", top_five=standings,
+                                coin_emoji="<:ogrecoin:123456789>",
                                 on_roll=callbacks[0], on_leaderboard=callbacks[1],
                                 on_stats=callbacks[2])
         text = json.dumps(ranked.to_components())
@@ -45,7 +47,9 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         for i in range(1, 6):
             self.assertIn(f"<@{i}>", text)
         self.assertNotIn("<@6>", text)
-        self.assertIn("Are you lucky gamer today?", text)
+        self.assertIn("Feeling lucky today?", text)
+        self.assertIn("<:ogrecoin:123456789>", text)
+        self.assertNotIn("Yesterday\'s gold coin", text)
         buttons = [x for x in panel.walk_children() if isinstance(x, discord.ui.Button)]
         self.assertEqual(len({x.custom_id for x in buttons}), 3)
         for button, callback in zip(buttons, callbacks):
@@ -96,7 +100,8 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
                                            user=SimpleNamespace(id=999)),
                        db=lambda: self.con, settle_completed_days=settle_completed_days,
                        log_event=lambda _: None, log_error=lambda _: None,
-                       build_daily_roll_panel=lambda **kwargs: None)
+                       build_daily_roll_panel=lambda **kwargs: None,
+                       announce_coin_winner=AsyncMock())
         load_functions({'post_daily_reset_message'}, self.ns)
 
     async def asyncTearDown(self):
@@ -108,7 +113,8 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         await post()
         self.assertEqual(coin_total(self.con, 9, 1), 1)
         self.channel.send.assert_awaited_once()
-        self.assertEqual(self.message.edit.await_count, 2)
+        self.assertEqual(self.message.edit.await_count, 0)
+        self.ns["announce_coin_winner"].assert_awaited_once()
 
     async def test_send_failure_keeps_one_award_and_retry_can_post(self):
         self.channel.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason='Denied'), 'Denied')
@@ -124,13 +130,16 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         self.con.execute('INSERT INTO daily_reset_posts VALUES (?, 55, 100)', (day,))
         await self.ns['post_daily_reset_message']()
         self.channel.send.assert_not_awaited()
+        self.message.edit.assert_not_awaited()
+        await self.ns['post_daily_reset_message'](refresh_existing=True)
         self.assertEqual(self.message.edit.call_args.kwargs['embeds'], [])
         self.assertEqual(coin_total(self.con, 9, 1), 1)
 
     async def test_recover_sent_message_after_missing_database_write(self):
-        marker = f"Roll day: {datetime.now(UK).date().isoformat()} · Europe/London"
+        marker = "Hyped Rolls · Daily Reset"
         component = SimpleNamespace(to_dict=lambda: {'content': marker})
         self.message.components = [component]
+        self.message.created_at = datetime.now(UK)
         self.history_messages = [self.message]
         await self.ns['post_daily_reset_message']()
         self.channel.send.assert_not_awaited()
