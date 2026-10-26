@@ -892,7 +892,7 @@ class CountdownCog(
                     await channel.send(
                         f"<@{subscriber['user_id']}> ⏱️ **Ogre bonk clock! Five minutes!**\n"
                         f"**{discord.utils.escape_markdown(row['title'])}** "
-                        "almost here. Get ready, gamer. " + ogre_say("reset"),
+                        "almost here. Get ready, gamer. " + ogre_say("reminder"),
                         allowed_mentions=discord.AllowedMentions(
                             users=True, roles=False, everyone=False,
                         ),
