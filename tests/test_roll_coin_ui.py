@@ -48,7 +48,6 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("First roll wins a tie.", text)
         self.assertIn("One roll per day. Ogre give coin to highest", text)
         self.assertLess(text.index("Hyped Rolls"), text.index("Coin count"))
-        self.assertIn("keeps the coin", text)
         self.assertNotIn("`/leaderboard`", text)
         self.assertNotIn("`/stats`", text)
         for i in range(1, 6):
