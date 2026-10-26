@@ -99,6 +99,38 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('No gold coins', json.dumps(empty.to_components()))
 
 
+class HighTieReplyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_later_joint_high_gets_silent_reply(self):
+        con = sqlite3.connect(":memory:", isolation_level=None)
+        try:
+            con.execute("CREATE TABLE rolls (user_id INTEGER, value INTEGER, actor_type TEXT, rolled_at INTEGER)")
+            start = int(datetime(2026, 10, 26, tzinfo=UK).timestamp())
+            con.execute("INSERT INTO rolls VALUES (11, 92, 'user', ?)", (start + 60,))
+            con.execute("INSERT INTO rolls VALUES (22, 92, 'user', ?)", (start + 90,))
+            response = SimpleNamespace(reply=AsyncMock())
+            interaction = SimpleNamespace(user=SimpleNamespace(id=22),
+                                          original_response=AsyncMock(return_value=response))
+            ns = dict(db=lambda: con, today_range=lambda: (start, start+86400),
+                      bot=SimpleNamespace(user=SimpleNamespace(id=999)),
+                      ogre_say=ogre_say, discord=discord,
+                      log_error=lambda message: None)
+            load_functions({"reply_if_tied_for_highest"}, ns)
+            await ns["reply_if_tied_for_highest"](interaction, 92)
+            response.reply.assert_awaited_once()
+            args, kwargs = response.reply.call_args
+            self.assertIn("<@11>", args[0])
+            self.assertFalse(kwargs["mention_author"])
+            self.assertFalse(kwargs["allowed_mentions"].users)
+            response.reply.reset_mock()
+            await ns["reply_if_tied_for_highest"](interaction, 91, response)
+            response.reply.assert_not_awaited()
+            con.execute("INSERT INTO rolls VALUES (33, 99, 'user', ?)", (start + 95,))
+            await ns["reply_if_tied_for_highest"](interaction, 92, response)
+            response.reply.assert_not_awaited()
+        finally:
+            con.close()
+
+
 class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
     async def test_winner_text_uses_weekday_and_guild_coin_emoji(self):
         con = sqlite3.connect(":memory:", isolation_level=None)
