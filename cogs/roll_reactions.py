@@ -64,8 +64,15 @@ class RollReactions:
         low = min(scores, key=scores.get)
         guild = self.bot.get_guild(self.guild_id) if self.guild_id else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
-        high_emoji = coin or "👑"
+        high_emoji = coin or "<:ogrecoin:1564336079430099035>"
         for user_id, message in messages:
+            # Retire the old crown reaction without touching member reactions.
+            for reaction in message.reactions:
+                if str(reaction.emoji) == "👑" and reaction.me:
+                    try:
+                        await message.remove_reaction("👑", self.bot.user)
+                    except Exception as exc:
+                        self.log_error(f"ROLL REACTION CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
                 (high_emoji, user_id == high),
                 ("💩", user_id == low and scores[low] < scores[high]),
