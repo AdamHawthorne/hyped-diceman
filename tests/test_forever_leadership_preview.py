@@ -1,5 +1,6 @@
 """Forever role V2 leadership preview regression tests."""
 from pathlib import Path
+import ast
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,6 +9,41 @@ ROLLF = (ROOT / "rollf.py").read_text(encoding="utf-8")
 
 
 class ForeverLeadershipPreviewTests(unittest.TestCase):
+    def test_postroles_sends_v2_without_legacy_embed(self):
+        command = next(
+            node for node in ast.walk(ast.parse(ROLLF))
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "postroles_admin"
+        )
+        sends = [
+            node for node in ast.walk(command)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "send_message"
+            and any(kw.arg == "view" for kw in node.keywords)
+        ]
+        self.assertEqual(len(sends), 1)
+        keywords = {kw.arg: kw.value for kw in sends[0].keywords}
+        self.assertNotIn("embed", keywords)
+        self.assertNotIn("ephemeral", keywords)
+        self.assertEqual(keywords["view"].func.id, "ForeverRoleV2Panel")
+
+    def test_v2_handler_registered_on_startup(self):
+        startup = next(
+            node for node in ast.walk(ast.parse(ROLLF))
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "on_ready"
+        )
+        registrations = {
+            node.args[0].func.id
+            for node in ast.walk(startup)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_view"
+            and node.args and isinstance(node.args[0], ast.Call)
+            and isinstance(node.args[0].func, ast.Name)
+        }
+        self.assertIn("ForeverRoleV2Panel", registrations)
+        self.assertIn("ForeverRoleView", registrations)
+
     def test_existing_live_panel_remains_available(self):
         self.assertIn("class ForeverRoleView", SOURCE)
         self.assertIn("def build_forever_role_embed", SOURCE)
@@ -85,3 +121,4 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
