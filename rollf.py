@@ -1117,14 +1117,14 @@ def daily_ogre_tagline(day=None):
     """Date-stable variety, so restarts never change today's panel copy."""
     day = day or datetime.now(TZ).date()
     lines = (
-        "Feeling lucky today?",
-        "Give the dice a shake, gamer.",
+        "Feeling lucky today, gamer?",
+        "Give dice a shake. See what happens.",
         "One roll. One shot at glory.",
-        "Think you've got the high roll?",
-        "Ogre wants to see your best roll.",
-        "Fortune favours the bold rollers.",
-        "Today's crown is up for grabs.",
-        "Big rolls, bigger bragging rights.",
+        "Think you got high roll?",
+        "Ogre wants to see big number.",
+        "Big roll wins. Simple.",
+        "Coin waiting for lucky gamer.",
+        "Who rolls biggest today?",
     )
     return lines[day.toordinal() % len(lines)]
 
