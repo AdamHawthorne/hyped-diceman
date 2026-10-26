@@ -1,4 +1,4 @@
-"""Forever opt-in role panel and leadership application preview."""
+"""Forever opt-in role panel and leadership applications."""
 import discord
 
 ACCENT = 0x8C5A3C
@@ -84,7 +84,7 @@ async def toggle_forever_role(interaction, guild_id, role_id, log_event):
 
 
 class ForeverRoleView(discord.ui.View):
-    """Legacy production role panel; kept unchanged while V2 is tested."""
+    """Persistent handler for role panels posted before V2."""
 
     def __init__(self, guild_id, role_id, log_event):
         super().__init__(timeout=None)
@@ -263,10 +263,10 @@ class LeadershipInterestView(discord.ui.View):
 
 
 class ForeverRoleV2Panel(discord.ui.LayoutView):
-    """Proposed V2 Get Role panel used by the owner preview command."""
+    """Shared V2 panel for production posts and owner previews."""
 
-    def __init__(self, guild_id, role_id, log_event):
-        super().__init__(timeout=300)
+    def __init__(self, guild_id, role_id, log_event, *, preview=False):
+        super().__init__(timeout=300 if preview else None)
         self.guild_id = guild_id
         self.role_id = role_id
         self.log_event = log_event
@@ -296,10 +296,12 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
         role_button = discord.ui.Button(
             label="Forever Role",
             style=discord.ButtonStyle.secondary,
+            custom_id="hyped_ogre_forever_role_v2",
         )
         leadership_button = discord.ui.Button(
             label="Leadership Application",
             style=discord.ButtonStyle.secondary,
+            custom_id="hyped_ogre_forever_leadership_v2",
         )
 
         async def role_callback(interaction):
@@ -327,3 +329,4 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
         gallery = discord.ui.MediaGallery()
         gallery.add_item(media=FOREVER_IMAGE, description="Hyped")
         self.add_item(gallery)
+
