@@ -216,6 +216,24 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coin_total(self.con, 9, 1), 0)
         self.assertEqual(self.con.execute('SELECT COUNT(*) FROM daily_reset_posts').fetchone()[0], 0)
 
+    async def test_previewcoin_is_private_and_does_not_award_or_post(self):
+        self.ns.update(
+            ADMIN_GUILD_ID=9, OWNER_ID=7, app_commands=discord.app_commands,
+            coin_winner_message=lambda day: "**Coin winner!** <@42> had Monday's roll.",
+        )
+        load_functions({"previewcoin_admin"}, self.ns)
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=7), guild_id=9, response=AsyncMock()
+        )
+        await self.ns["previewcoin_admin"](interaction)
+        self.assertTrue(interaction.response.send_message.call_args.kwargs["ephemeral"])
+        self.assertIn(
+            "**Coin winner!**",
+            interaction.response.send_message.call_args.args[0],
+        )
+        self.channel.send.assert_not_awaited()
+        self.assertEqual(coin_total(self.con, 9, 1), 0)
+
     async def test_test_channel_roll_button_is_blocked(self):
         self.ns['perform_roll'] = AsyncMock()
         load_functions({'daily_roll_action'}, self.ns)
