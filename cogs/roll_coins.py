@@ -39,7 +39,7 @@ def settle_completed_days(con, guild_id, now=None):
     # rowid breaks ties between rolls recorded in the very same second.
     rows = con.execute("""
         SELECT user_id, username, value, rolled_at FROM rolls
-        WHERE actor_type='user' AND rolled_at < ? AND value BETWEEN 1 AND 100
+        WHERE actor_type IN ('user', 'bot') AND rolled_at < ? AND value BETWEEN 1 AND 100
         ORDER BY value DESC, rolled_at ASC, rowid ASC
     """, (cutoff,))
     winners = {}
