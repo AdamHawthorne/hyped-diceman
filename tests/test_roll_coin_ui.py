@@ -44,8 +44,10 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
                                 on_roll=callbacks[0], on_leaderboard=callbacks[1],
                                 on_stats=callbacks[2])
         text = json.dumps(ranked.to_components())
-        self.assertIn("Lucky gamers", text)
-        self.assertLess(text.index("Hyped Rolls"), text.index("Lucky gamers"))
+        self.assertIn("Coin count", text)
+        self.assertNotIn("First roll wins a tie.", text)
+        self.assertIn("keeps the coin", text)
+        self.assertLess(text.index("Hyped Rolls"), text.index("Coin count"))
         self.assertIn("keeps the coin", text)
         self.assertNotIn("`/leaderboard`", text)
         self.assertNotIn("`/stats`", text)
