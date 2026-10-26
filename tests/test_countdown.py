@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 """Countdown/reminder regression tests requiring neither Discord nor a bot token."""
 import ast
 from datetime import datetime, timezone
@@ -74,11 +75,12 @@ class CountdownSafetyTests(unittest.TestCase):
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name == "init_db"
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             filename = Path(directory) / "countdown.db"
 
             def connect():
                 db = sqlite3.connect(filename)
+                stack.callback(db.close)
                 db.row_factory = sqlite3.Row
                 return db
 
