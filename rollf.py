@@ -17,7 +17,7 @@ import csv
 import io
 import os
 import discord
-from cogs.forever_role import ForeverRoleView, ForeverRoleV2Panel, build_forever_role_embed
+from cogs.forever_role import ForeverRoleView, ForeverRoleV2Panel
 from cogs.flameboard import FlameboardEvents
 from cogs.roll_reactions import RollReactions
 import logging
@@ -1688,6 +1688,7 @@ async def on_ready():
 
     bot.add_view(DailyRollView())
     bot.add_view(ForeverRoleView(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event))
+    bot.add_view(ForeverRoleV2Panel(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event))
 
     # Start time-sensitive background tasks immediately. Global Discord command
     # syncing can occasionally take long enough to cross midnight.
@@ -2828,6 +2829,7 @@ if ADMIN_MODE:
                 HYPED_GUILD_ID,
                 FOREVER_ROLE_ID,
                 log_event,
+                preview=True,
             ),
             ephemeral=True,
         )
@@ -2856,8 +2858,7 @@ if ADMIN_MODE:
             return
 
         await interaction.response.send_message(
-            embed=build_forever_role_embed(),
-            view=ForeverRoleView(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event)
+            view=ForeverRoleV2Panel(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event)
         )
 
         log_event(f"FOREVER ROLE PANEL POSTED user={interaction.user.id} channel={interaction.channel_id}")
@@ -3309,4 +3310,5 @@ if missing_config:
     )
 
 bot.run(TOKEN)
+
 
