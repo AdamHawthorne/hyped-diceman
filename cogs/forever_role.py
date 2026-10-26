@@ -7,10 +7,15 @@ FOREVER_IMAGE = "https://i.vgy.me/WGNGdr.png"
 LEADERSHIP_APPLICATIONS_CHANNEL_ID = 1225020051418255370
 
 LEADERSHIP_INTERESTS = (
-    "Raid Leader",
-    "Role Leader / Class Leader",
+    "Leading",
+    "Prep",
+    "Logs",
     "Recruitment",
-    "Community",
+    "Loot",
+    "Boosting",
+    "Coding",
+    "Mentoring",
+    "Admin",
     "Anything",
     "Other",
 )
@@ -122,16 +127,18 @@ def build_forever_role_embed():
 
 
 class LeadershipApplicationPost(discord.ui.LayoutView):
-    def __init__(self, *, applicant_id, interest, experience):
+    def __init__(self, *, applicant_id, interest, experience, extra):
         super().__init__(timeout=None)
         interest = discord.utils.escape_markdown(interest)
         experience = discord.utils.escape_markdown(experience)
+        extra = discord.utils.escape_markdown(extra)
 
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 "## Leadership Application\n"
                 f"**Interested in:** {interest}\n\n"
                 f"**Experience**\n{experience}\n\n"
+                f"**Anything to add?**\n{extra or '—'}\n\n"
                 f"-# Sent by <@{int(applicant_id)}>"
             ),
             accent_color=ACCENT,
@@ -164,6 +171,15 @@ class LeadershipApplicationModal(discord.ui.Modal):
         )
         self.add_item(self.experience)
 
+        self.extra = discord.ui.TextInput(
+            label="Anything to add?",
+            placeholder="Strengths, useful skills, free time, or anything else",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=1000,
+        )
+        self.add_item(self.extra)
+
     async def on_submit(self, interaction):
         interest = (
             self.other_interest.value.strip()
@@ -195,6 +211,7 @@ class LeadershipApplicationModal(discord.ui.Modal):
                     applicant_id=interaction.user.id,
                     interest=interest,
                     experience=self.experience.value.strip(),
+                    extra=self.extra.value.strip(),
                 ),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -257,8 +274,15 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
         heading = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> for WoW: Forever.\n"
-                "**Click the button below** to get access to the Forever channels.\n\n"
+                "**Click the button below** to get access to the Forever channels.\n"
                 "Click it again at any time to remove the role.\n\n"
+                "**The plan so far:**\n"
+                "• **Horde PvP**\n"
+                "• **Main raid:** Sunday, 20:00–23:00 UK\n"
+                "• **New raid releases:** Wednesday added for the first 2 weeks\n"
+                "• **First Wednesday:** 21:00–00:00 UK\n"
+                "• **Second Wednesday:** 20:00–23:00 UK\n"
+                "• **Focus:** 10 & 20-player raids, with organised pugs for 40-player content\n\n"
                 "Interested in helping out with Hyped? "
                 "**Send us a short leadership application below.**"
             ),
