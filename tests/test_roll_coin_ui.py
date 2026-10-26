@@ -76,6 +76,67 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('No gold coins', json.dumps(empty.to_components()))
 
 
+class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_winner_text_uses_weekday_and_guild_coin_emoji(self):
+        con = sqlite3.connect(":memory:", isolation_level=None)
+        try:
+            ensure_coin_schema(con)
+            con.execute(
+                """INSERT INTO roll_coin_awards
+                (guild_id, roll_date, user_id, username, winning_roll, source, awarded_at)
+                VALUES (9, '2026-10-26', 42, 'roller', 97, 'rolls', 1)"""
+            )
+            ns = dict(
+                datetime=datetime, timedelta=timedelta, TZ=UK, HYPED_GUILD_ID=9,
+                db=lambda: con, day_award=day_award, coin_total=coin_total,
+                ogre_coin_emoji=lambda: "<:ogrecoin:12345>",
+            )
+            load_functions({"coin_winner_message", "daily_ogre_tagline"}, ns)
+            msg = ns["coin_winner_message"](datetime(2026, 10, 27, tzinfo=UK).date())
+            self.assertIn("**Coin winner!**", msg)
+            self.assertIn("**Monday's roll**", msg)
+            self.assertIn("<@42>", msg)
+            self.assertIn("**97**", msg)
+            self.assertIn("<:ogrecoin:12345>", msg)
+            self.assertNotIn("2026-10-26", msg)
+            day = datetime(2026, 10, 27, tzinfo=UK).date()
+            self.assertEqual(ns["daily_ogre_tagline"](day), ns["daily_ogre_tagline"](day))
+            self.assertNotEqual(ns["daily_ogre_tagline"](day), ns["daily_ogre_tagline"](day + timedelta(days=1)))
+        finally:
+            con.close()
+
+    async def test_midnight_announcement_is_once_only_and_daytime_is_silent(self):
+        con = sqlite3.connect(":memory:", isolation_level=None)
+        try:
+            channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=888)))
+            class Clock:
+                current = datetime(2026, 10, 27, 0, 2, tzinfo=UK)
+
+                @classmethod
+                def now(cls, timezone):
+                    return cls.current
+
+            ns = dict(
+                datetime=Clock, timedelta=timedelta, TZ=UK, HYPED_GUILD_ID=9,
+                db=lambda: con, discord=discord,
+                coin_winner_message=lambda day: "Coin winner!",
+                log_error=lambda message: None,
+            )
+            load_functions({"announce_coin_winner"}, ns)
+            day = Clock.current.date()
+            await ns["announce_coin_winner"](channel, day)
+            await ns["announce_coin_winner"](channel, day)
+            channel.send.assert_awaited_once()
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM roll_coin_announcements").fetchone()[0], 1
+            )
+            Clock.current = datetime(2026, 10, 28, 12, 0, tzinfo=UK)
+            await ns["announce_coin_winner"](channel, Clock.current.date())
+            channel.send.assert_awaited_once()
+        finally:
+            con.close()
+
+
 class ResetTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.con = sqlite3.connect(':memory:', isolation_level=None)
