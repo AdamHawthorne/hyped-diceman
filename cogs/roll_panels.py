@@ -9,10 +9,18 @@ PAGE_SIZE = 15
 
 class DailyRollPanel(discord.ui.LayoutView):
     def __init__(self, *, day, winner_text, tagline, on_roll, on_leaderboard,
-                 on_stats, preview=False):
+                 on_stats, top_five=(), preview=False):
         super().__init__(timeout=60 if preview else None)
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay("## Yesterday's gold coin\n" + winner_text),
+            discord.ui.TextDisplay(
+                "## Lifetime gold coin leaders\n"
+                + ("\n".join(
+                    f"**{row['rank']}.** <@{row['user_id']}> · **{row['coins']}** "
+                    + ("coin" if row["coins"] == 1 else "coins")
+                    for row in list(top_five)[:5]
+                ) or "No gold coins awarded yet.")
+            ),
             discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## Hyped Rolls · Daily Reset\n"
