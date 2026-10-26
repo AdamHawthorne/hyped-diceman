@@ -113,7 +113,7 @@ class SuggestionModal(discord.ui.Modal):
                 f"NAMED SUGGESTION SUBMITTED user={interaction.user.id}",
                 flush=True,
             )
-            confirmation = "✅ **Feedback sent to leadership.** " + ogre_say("success")
+            confirmation = "✅ **Feedback sent to leadership.** " + ogre_say("suggestion")
 
         await interaction.response.send_message(confirmation, ephemeral=True)
 
