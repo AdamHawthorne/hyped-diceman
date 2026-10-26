@@ -1,0 +1,68 @@
+name: Hyped Ogre safety checks
+on:
+  push:
+    branches: [refactor/hyped-cogs-foundation]
+  pull_request:
+    branches: [hyped-customisation]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Compile all Python modules
+        run: python -m compileall -q rollf.py cogs tests
+      - name: Install runtime dependencies for interaction tests
+        run: pip install -r requirements.txt
+      - name: Run migration regression guards
+        run: python -m unittest discover -s tests -v
+      - name: Verify Docker build includes modules
+        run: docker build -t hyped-ogre-test .
+      - name: Construct countdown V2 views in real runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs.countdown import CountdownLayout
+          sample = {"title": "Hyped Test", "target_ts": 1793833200,
+                    "image_url": "", "remind_minutes": 30,
+                    "repeat_seconds": 0, "active": 1}
+          for icon in ("", "https://i.vgy.me/example.png"):
+              sample["image_url"] = icon
+              view = CountdownLayout(sample, now=1793800000, preview=True)
+              assert 0 < view.total_children_count < 40
+          print("V2 countdown views built successfully")
+          '
+      - name: Construct suggestions V2 views in real runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs.suggestions import SuggestionsPanel, SuggestionPost
+          class DummyCog: pass
+          panel = SuggestionsPanel(DummyCog())
+          named = SuggestionPost("Test feedback", anonymous=False, user_id=123)
+          anon = SuggestionPost("Anonymous feedback", anonymous=True)
+          assert 0 < panel.total_children_count < 20
+          assert 0 < named.total_children_count < 20
+          assert 0 < anon.total_children_count < 20
+          print("V2 suggestions views built successfully")
+          '
+      - name: Verify persistent Forever V2 panel in real runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs.forever_role import ForeverRoleV2Panel, LeadershipApplicationPost
+          panel = ForeverRoleV2Panel(1, 2, lambda message: None)
+          preview = ForeverRoleV2Panel(1, 2, lambda message: None, preview=True)
+          assert panel.is_persistent()
+          assert not preview.is_persistent()
+          assert preview.timeout == 300
+          post = LeadershipApplicationPost(
+              applicant_id=123,
+              interest="Leading",
+              experience="Test experience",
+              extra="Test extra",
+          )
+          assert 0 < panel.total_children_count < 30
+          assert 0 < post.total_children_count < 20
+          print("V2 Forever production and preview panels built successfully")
+          '
+
