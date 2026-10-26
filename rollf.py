@@ -20,6 +20,11 @@ import discord
 from cogs.forever_role import ForeverRoleView, ForeverRoleV2Panel
 from cogs.flameboard import FlameboardEvents
 from cogs.roll_reactions import RollReactions
+from cogs.roll_coins import (
+    ensure_coin_schema, settle_completed_days, coin_total, day_award,
+    coin_standings, award_missing_day,
+)
+from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 import logging
 import json
 import hmac
@@ -31,7 +36,6 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from aiohttp import web
-from PIL import Image, ImageDraw, ImageFont
 
 
 # ---------------- CONFIG ----------------
@@ -53,7 +57,7 @@ FLAMEBOARD_MEDIA_IMAGE_URL = "https://i.vgy.me/Cm1ZTF.png"
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
-    {"command": "leaderboards", "description": "View rankings for different periods"},
+    {"command": "leaderboard", "description": "View the server gold coin leaderboard"},
     {"command": "stats", "description": "View detailed statistics"},
     {"command": "setchannel", "description": "Set the channel for daily bot rolls"},
     {"command": "help", "description": "Show setup instructions"}
@@ -67,6 +71,7 @@ LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
 CROWN_RESET_TASK = None
 DAILY_POST_TASK = None
+DAILY_POST_LOCK = asyncio.Lock()
 # Serialise reaction updates so the same source cannot be posted twice concurrently.
 FLAMEBOARD_SYNC_LOCK = asyncio.Lock()
 
@@ -94,7 +99,7 @@ TOPGG_WEBHOOK_SECRET = os.getenv("TOPGG_WEBHOOK_SECRET")
 
 ONBOARDING_TEXT = (
     "**Hyped Ogre is ready.**\n\n"
-    "Use `/roll` once per day, `/leaderboards` for rankings, "
+    "Use `/roll` once per day, `/leaderboard` for gold coins, "
     "and `/stats` for your roll history."
 )
 
@@ -536,7 +541,7 @@ def bot_rolled_today():
         cur = con.execute(
             """SELECT 1 FROM rolls
                WHERE actor_type='bot'
-               AND rolled_at BETWEEN ? AND ?
+               AND rolled_at >= ? AND rolled_at < ?
                LIMIT 1""",
             (start, end)
         )
@@ -793,7 +798,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
             FROM rolls
             WHERE user_id = ?
               AND actor_type = 'user'
-              AND rolled_at BETWEEN ? AND ?
+              AND rolled_at >= ? AND rolled_at < ?
         """, (user_id, start_ts, end_ts)).fetchone()
 
         rank = con.execute("""
@@ -802,7 +807,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
                 SELECT user_id, SUM(value) AS score
                 FROM rolls
                 WHERE actor_type = 'user'
-                  AND rolled_at BETWEEN ? AND ?
+                  AND rolled_at >= ? AND rolled_at < ?
                 GROUP BY user_id
             )
             WHERE score > (
@@ -810,7 +815,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
                 FROM rolls
                 WHERE user_id = ?
                   AND actor_type = 'user'
-                  AND rolled_at BETWEEN ? AND ?
+                  AND rolled_at >= ? AND rolled_at < ?
             )
         """, (start_ts, end_ts, user_id, start_ts, end_ts)).fetchone()[0]
 
@@ -820,187 +825,6 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
         "best": total[2] or 0,
         "rank": None if (total[0] or 0) == 0 else rank
     }
-
-def format_score(n: int) -> str:
-    return f"{n:,}"
-
-def render_leaderboard_png(
-    title,
-    rows,
-    users_count=0,
-    rolls_count=0,
-    reset_text=None,
-    score_label="SCORE"
-):
-
-    import io
-
-    width = 640
-
-    top_padding = 20
-    header_y = 120
-    row_height = 48
-
-    height = 820
-
-    img = Image.new(
-        "RGB",
-        (width, height),
-        (35, 39, 42)
-    )
-
-    draw = ImageDraw.Draw(img)
-
-    title_font = ImageFont.truetype(
-        "assets/fonts/JetBrainsMono-Regular.ttf",
-        38
-    )
-
-    body_font = ImageFont.truetype(
-        "assets/fonts/JetBrainsMono-Regular.ttf",
-        30
-    )
-
-    RANK_X = 20
-    USER_X = 95
-    SCORE_RIGHT = 620
-
-    draw.text(
-        (20, top_padding),
-        title,
-        fill=(255, 255, 255),
-        font=title_font
-    )
-
-    draw.text(
-        (RANK_X, header_y),
-        "#",
-        fill=(180, 180, 180),
-        font=body_font
-    )
-
-    draw.text(
-        (USER_X, header_y),
-        "USER",
-        fill=(180, 180, 180),
-        font=body_font
-    )
-
-    bbox = draw.textbbox(
-        (0, 0),
-        score_label,
-        font=body_font
-    )
-
-    label_width = bbox[2] - bbox[0]
-
-    draw.text(
-        (SCORE_RIGHT - label_width, header_y),
-        score_label,
-        fill=(180, 180, 180),
-        font=body_font
-    )
-
-    draw.line(
-        (20, header_y + 35, 620, header_y + 35),
-        fill=(90, 90, 90),
-        width=2
-    )
-
-    y = header_y + 50
-
-    for pos, (username, score, uid) in enumerate(rows, start=1):
-
-        username_color = get_vote_color(uid)
-
-        if username_color is None:
-            username_color = (255, 255, 255)
-
-        if pos % 2 == 0:
-            draw.rectangle(
-                (
-                    10,
-                    y + 1,
-                    630,
-                    y + 39
-                ),
-                fill=(42, 45, 50)
-            )
-
-        draw.text(
-            (RANK_X, y),
-            str(pos),
-            fill=(255, 255, 255),
-            font=body_font
-        )
-
-        draw.text(
-            (USER_X, y),
-            trim(username, 18),
-            fill=username_color,
-            font=body_font
-        )
-
-        if score == "—":
-            score_text = "—"
-        else:
-            score_text = format_score(score)
-
-        bbox = draw.textbbox(
-            (0, 0),
-            score_text,
-            font=body_font
-        )
-
-        score_width = bbox[2] - bbox[0]
-
-        draw.text(
-            (SCORE_RIGHT - score_width, y),
-            score_text,
-            fill=(255, 255, 255),
-            font=body_font
-        )
-
-        y += row_height
-
-    stats_font = ImageFont.truetype(
-        "assets/fonts/JetBrainsMono-Regular.ttf",
-        26
-    )
-
-    draw.text(
-        (20, 710),
-        f"Users: {users_count:,}",
-        fill=(180, 180, 180),
-        font=stats_font
-    )
-
-    if rolls_count is not None:
-        draw.text(
-            (20, 745),
-            f"Rolls: {rolls_count:,}",
-            fill=(180, 180, 180),
-            font=stats_font
-        )
-
-    if reset_text:
-        draw.text(
-            (20, 780),
-            reset_text,
-            fill=(180, 180, 180),
-            font=stats_font
-        )
-
-    buffer = io.BytesIO()
-
-    img.save(
-        buffer,
-        format="PNG"
-    )
-
-    buffer.seek(0)
-
-    return buffer
 
 def get_bot_stats():
 
@@ -1195,8 +1019,8 @@ async def sync_high_roller_role():
             SELECT user_id, value
             FROM rolls
             WHERE actor_type = 'user'
-              AND rolled_at BETWEEN ? AND ?
-            ORDER BY value DESC, rolled_at ASC
+              AND rolled_at >= ? AND rolled_at < ?
+            ORDER BY value DESC, rolled_at ASC, rowid ASC
             LIMIT 1
             """,
             (start, end)
@@ -1279,99 +1103,122 @@ class DailyRollView(discord.ui.View):
         button: discord.ui.Button
     ):
         log_command(interaction, "daily-roll-button")
-        await perform_roll(interaction)
+        await daily_roll_action(interaction)
 
-
-DAILY_OGRE_TAGLINES = (
-    "You lucky today? Ogre find out.",
-    "Me got dice. You got luck?",
-    "Big roll good. Small roll bad.",
-    "Me feel lucky. You look nervous.",
-    "One roll. Big glory. No crying.",
-    "You roll hundred? Ogre impressed.",
-    "Ogre believe in luck. Sometimes.",
-    "Today your day? Maybe. Roll.",
-)
 
 def daily_ogre_tagline():
-    # Stable for each UK calendar day, including after a bot restart.
-    today = datetime.now(TZ).date().isoformat()
-    digest = hashlib.sha256(today.encode("ascii")).digest()
-    return DAILY_OGRE_TAGLINES[int.from_bytes(digest[:8], "big") % len(DAILY_OGRE_TAGLINES)]
+    return "Are you lucky gamer today?"
 
 
-def build_daily_reset_embed():
-    embed = discord.Embed(
-        title="Hyped Rolls - Daily Reset",
-        description=(
-            "Competitive rolling for fun.\n\n"
-            "Use the **🎲 Roll** button below or `/roll` once per day.\n\n"
-            "`/leaderboards` - top rollers\n"
-            "`/stats` - your stats\n\n"
-            f"**{daily_ogre_tagline()}**"
-        ),
-        color=0xD19A3B
+def build_daily_roll_panel(*, preview=False, day=None):
+    day = day or datetime.now(TZ).date()
+    yesterday = (day - timedelta(days=1)).isoformat()
+    winner = day_award(db(), HYPED_GUILD_ID, yesterday)
+    if winner:
+        total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
+        winner_text = (
+            f"<@{winner['user_id']}> had the highest roll on **{yesterday}** "
+            f"with **{winner['winning_roll']}** and earned **1 gold coin**.\n"
+            f"**Total gold coins: {total}**"
+        )
+    else:
+        winner_text = f"No winning roll recorded for {yesterday}. No coin awarded."
+    return DailyRollPanel(
+        day=day.isoformat(), winner_text=winner_text, tagline=daily_ogre_tagline(),
+        on_roll=daily_roll_action, on_leaderboard=show_coin_leaderboard,
+        on_stats=show_my_stats, preview=preview,
     )
 
-    embed.set_thumbnail(url="https://i.vgy.me/zJXBXg.png")
 
-    return embed
+async def daily_roll_action(interaction):
+    if interaction.guild_id != HYPED_GUILD_ID or interaction.channel_id != ROLL_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"Use the Roll button in <#{ROLL_CHANNEL_ID}>.", ephemeral=True,
+        )
+        return
+    await perform_roll(interaction)
+
+
+async def show_coin_leaderboard(interaction):
+    if interaction.guild_id != HYPED_GUILD_ID:
+        await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
+        return
+    await interaction.response.send_message(
+        view=CoinLeaderboard(coin_standings(db(), HYPED_GUILD_ID),
+                             owner_id=interaction.user.id),
+        allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
+    )
+
+
+async def show_my_stats(interaction):
+    await stats.callback(interaction)
 
 
 async def post_daily_reset_message():
-    channel = bot.get_channel(ROLL_CHANNEL_ID)
+    # Both the scheduler and startup can arrive here at midnight.
+    async with DAILY_POST_LOCK:
+        now = datetime.now(TZ)
+        today = now.date().isoformat()
+        added = settle_completed_days(db(), HYPED_GUILD_ID, now)
+        if added:
+            log_event(f"GOLD COINS AWARDED count={added}")
 
-    if channel is None:
-        try:
-            channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-            log_error(f"DAILY RESET CHANNEL LOOKUP FAILED channel={ROLL_CHANNEL_ID} error={exc!r}")
-            return
-
-    today = datetime.now(TZ).date().isoformat()
-
-    with db() as con:
-        existing = con.execute(
-            "SELECT message_id FROM daily_reset_posts WHERE roll_date = ?",
-            (today,)
-        ).fetchone()
-
-    if existing:
-        try:
-            posted = await channel.fetch_message(existing[0])
-            if posted.author.id == bot.user.id:
-                log_event(f"DAILY RESET ALREADY POSTED date={today} message={existing[0]}")
+        channel = bot.get_channel(ROLL_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log_error(f"DAILY RESET CHANNEL LOOKUP FAILED: {exc!r}")
                 return
-            log_error(f"DAILY RESET STORED MESSAGE WRONG AUTHOR date={today} message={existing[0]}")
-        except discord.NotFound:
-            log_event(f"DAILY RESET STORED MESSAGE MISSING date={today} message={existing[0]}; reposting")
+
+        existing = db().execute(
+            "SELECT channel_id, message_id FROM daily_reset_posts WHERE roll_date=?",
+            (today,),
+        ).fetchone()
+        if existing and existing[0] == channel.id:
+            try:
+                posted = await channel.fetch_message(existing[1])
+                if posted.author.id != bot.user.id:
+                    log_error(f"DAILY RESET STORED MESSAGE WRONG AUTHOR date={today}")
+                    return
+                # Also upgrades an already-posted legacy embed on first deployment.
+                await posted.edit(content=None, embeds=[], attachments=[],
+                                  view=build_daily_roll_panel(day=now.date()),
+                                  allowed_mentions=discord.AllowedMentions.none())
+                return True
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                log_error(f"DAILY RESET MESSAGE REFRESH FAILED: {exc!r}")
+                return
+
+        try:
+            # Recover a message sent just before a crash, before its ID was saved.
+            # The date marker is unique to this daily V2 panel.
+            marker = f"Roll day: {today} · Europe/London"
+            async for recent in channel.history(limit=100):
+                if recent.author.id == bot.user.id and any(
+                    marker in json.dumps(component.to_dict(), ensure_ascii=False)
+                    for component in recent.components
+                ):
+                    message = recent
+                    break
+            else:
+                message = await channel.send(
+                    view=build_daily_roll_panel(day=now.date()),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
         except (discord.Forbidden, discord.HTTPException) as exc:
-            log_error(f"DAILY RESET MESSAGE VERIFY FAILED date={today} error={exc!r}")
+            log_error(f"DAILY RESET POST FAILED: {exc!r}")
             return
 
-    log_event(f"DAILY RESET POST ATTEMPT date={today} channel={ROLL_CHANNEL_ID}")
-    embed = build_daily_reset_embed()
-
-    try:
-        message = await channel.send(
-            embed=embed,
-            view=DailyRollView()
+        db().execute(
+            "INSERT OR REPLACE INTO daily_reset_posts "
+            "(roll_date, channel_id, message_id) VALUES (?, ?, ?)",
+            (today, channel.id, message.id),
         )
-    except (discord.Forbidden, discord.HTTPException) as exc:
-        log_error(f"DAILY RESET POST FAILED channel={ROLL_CHANNEL_ID} error={exc!r}")
-        return
-
-    with db() as con:
-        con.execute(
-            """
-            INSERT OR REPLACE INTO daily_reset_posts
-                (roll_date, channel_id, message_id)
-            VALUES (?, ?, ?)
-            """,
-            (today, channel.id, message.id)
-        )
-
-    log_event(f"DAILY RESET POST message={message.id}")
+        log_event(f"DAILY RESET POST message={message.id}")
+        return True
 
 
 async def daily_post_loop():
@@ -1380,16 +1227,16 @@ async def daily_post_loop():
     log_event(f"DAILY POST LOOP ACTIVE timezone={TZ} channel={ROLL_CHANNEL_ID}")
     while not bot.is_closed():
         try:
+            # Immediate startup catch-up; retry API failures without waiting a day.
+            if not await post_daily_reset_message():
+                await asyncio.sleep(60)
+                continue
             now = datetime.now(TZ)
-            next_post = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            if now >= next_post:
-                next_post = (now + timedelta(days=1)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-            log_event(f"DAILY POST NEXT RUN local={next_post.isoformat()} now={now.isoformat()}")
-            await asyncio.sleep(max(1, (next_post - now).total_seconds()))
-            log_event(f"DAILY POST SCHEDULE FIRED local={datetime.now(TZ).isoformat()}")
-            await post_daily_reset_message()
+            next_post = (now + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            log_event(f"DAILY POST NEXT RUN local={next_post.isoformat()}")
+            await asyncio.sleep(max(1, next_post.timestamp() - now.timestamp()))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1406,9 +1253,9 @@ async def crown_reset_loop():
             tomorrow = (now + timedelta(days=1)).replace(
                 hour=0, minute=0, second=2, microsecond=0
             )
-            await asyncio.sleep(max(1, (tomorrow - now).total_seconds()))
+            await asyncio.sleep(max(1, (tomorrow.timestamp() - now.timestamp())))
             try:
-                await clear_high_roller_role()
+                await sync_high_roller_role()
                 log_event("CROWN RESET")
             except Exception as exc:
                 log_error(f"CROWN RESET ERROR: {exc!r}")
@@ -1685,8 +1532,11 @@ async def on_ready():
 
     ensure_schema()
     ensure_indexes()
+    ensure_coin_schema(db())
+    settle_completed_days(db(), HYPED_GUILD_ID)
 
     bot.add_view(DailyRollView())
+    bot.add_view(build_daily_roll_panel())
     bot.add_view(ForeverRoleView(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event))
     bot.add_view(ForeverRoleV2Panel(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event))
 
@@ -1700,16 +1550,6 @@ async def on_ready():
 
     if DAILY_POST_TASK is None or DAILY_POST_TASK.done():
         DAILY_POST_TASK = asyncio.create_task(daily_post_loop())
-
-    # Catch up on startup if today's Daily Roll panel has not been posted.
-    # The database check prevents duplicate posts when the scheduler also fires.
-    now_uk = datetime.now(TZ)
-    log_event(f"DAILY POST STARTUP CHECK local={now_uk.isoformat()} channel={ROLL_CHANNEL_ID}")
-    if ROLL_CHANNEL_ID:
-        try:
-            await post_daily_reset_message()
-        except Exception as exc:
-            log_error(f"DAILY RESET CATCH-UP ERROR: {exc!r}")
 
     await post_botlist_commands()
     await post_bot_stats()
@@ -1802,12 +1642,12 @@ async def bot_daily_roll():
 
         if bot_rolled_today():
             tomorrow = (now + timedelta(days=1)).replace(hour=5, minute=55, second=0, microsecond=0)
-            await asyncio.sleep((tomorrow - now).total_seconds())
+            await asyncio.sleep((tomorrow.timestamp() - now.timestamp()))
             continue
 
         if now.hour >= 22:
             tomorrow = (now + timedelta(days=1)).replace(hour=5, minute=55, second=0, microsecond=0)
-            await asyncio.sleep((tomorrow - now).total_seconds())
+            await asyncio.sleep((tomorrow.timestamp() - now.timestamp()))
             continue
 
         if now.hour < 6:
@@ -1928,7 +1768,7 @@ async def stats(
             FROM rolls
             WHERE user_id = ?
               AND actor_type = 'user'
-              AND rolled_at BETWEEN ? AND ?
+              AND rolled_at >= ? AND rolled_at < ?
             LIMIT 1
             """,
             (target.id, start, end)
@@ -1942,7 +1782,7 @@ async def stats(
                 SELECT user_id, MAX(value) AS score
                 FROM rolls
                 WHERE actor_type = 'user'
-                  AND rolled_at BETWEEN ? AND ?
+                  AND rolled_at >= ? AND rolled_at < ?
                 GROUP BY user_id
                 ORDER BY score DESC
             """, (start, end)).fetchall()
@@ -1952,9 +1792,11 @@ async def stats(
                 today_rank = index
                 break
 
+    coins = 0 if is_bot_stats else coin_total(db(), HYPED_GUILD_ID, target.id)
+
     if stats["rolls"] == 0:
         await interaction.followup.send(
-            "No statistics exists for this user.",
+            f"No rolls recorded for this user. Gold coins: **{coins}**.",
             ephemeral=True
         )
         return
@@ -2042,6 +1884,7 @@ async def stats(
     )
 
     embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="Gold coins", value=str(coins), inline=True)
 
     if today_row:
         today_value = (
@@ -2170,10 +2013,10 @@ async def help_cmd(interaction: discord.Interaction):
         description=(
             "**Daily Roll**\n"
             "Use the daily **🎲 Roll** button or `/roll` once per day. "
-            "Rolls reset at midnight UK time.\n\n"
+            "Rolls reset at midnight UK time. The highest player roll earns one gold coin.\n\n"
             "**Commands**\n"
             "• `/roll` — Roll your daily number\n"
-            "• `/leaderboards` — View Hyped rankings\n"
+            "• `/leaderboard` — View gold coin totals\n"
             "• `/stats` — View detailed statistics\n\n"
             "The current daily leader automatically receives the "
             "**🎲 Highest Daily Roller** role. A tied roll does not take the crown."
@@ -2196,7 +2039,7 @@ async def perform_roll(interaction: discord.Interaction):
             FROM rolls
             WHERE user_id = ?
               AND actor_type = 'user'
-              AND rolled_at BETWEEN ? AND ?
+              AND rolled_at >= ? AND rolled_at < ?
             LIMIT 1
             """,
             (interaction.user.id, start, end)
@@ -2240,7 +2083,7 @@ async def perform_roll(interaction: discord.Interaction):
                     FROM rolls
                     WHERE user_id = ?
                       AND actor_type = 'user'
-                      AND rolled_at BETWEEN ? AND ?
+                      AND rolled_at >= ? AND rolled_at < ?
                     LIMIT 1
                     """,
                     (interaction.user.id, start, end)
@@ -2305,7 +2148,7 @@ async def perform_roll(interaction: discord.Interaction):
                 FROM rolls
                 WHERE user_id = ?
                   AND actor_type = 'user'
-                  AND rolled_at BETWEEN ? AND ?
+                  AND rolled_at >= ? AND rolled_at < ?
                 LIMIT 1
                 """,
                 (interaction.user.id, start, end)
@@ -2373,359 +2216,13 @@ async def roll(interaction: discord.Interaction):
     await perform_roll(interaction)
 
 @bot.tree.command(
-    name="leaderboards",
-    description="View leaderboards for different periods"
+    name="leaderboard",
+    description="View the Hyped all-time gold coin leaderboard"
 )
-@app_commands.describe(period="Select leaderboard period")
-@app_commands.choices(period=[
-    app_commands.Choice(name="Today", value="today"),
-    app_commands.Choice(name="Week", value="week"),
-    app_commands.Choice(name="Month", value="month"),
-    app_commands.Choice(name="Year", value="year"),
-    app_commands.Choice(name="All Time", value="alltime"),
-    app_commands.Choice(name="Streak", value="streak"),
-    app_commands.Choice(name="100 Rolls", value="100s"),
-])
-async def leaderboards(
-    interaction: discord.Interaction,
-    period: app_commands.Choice[str] = None
-):
-    log_command(interaction, "/leaderboards")
-
-    period_value = period.value if period else "today"
-
-    now = datetime.now(TZ)
-
-    rows = []
-    ranking = []
-    stats_row = (0, 0)
-
-    # =========================
-    # 100 ROLLS LEADERBOARD
-    # =========================
-    if period_value == "100s":
-
-        with db() as con:
-            rows = con.execute("""
-                SELECT
-                    COALESCE(u.username, 'Unknown'),
-                    COUNT(*) AS perfects,
-                    r.user_id
-                FROM rolls r
-                LEFT JOIN users u ON u.user_id = r.user_id
-                WHERE r.actor_type = 'user'
-                  AND r.value = 100
-                GROUP BY r.user_id
-                ORDER BY perfects DESC
-                LIMIT 10
-            """).fetchall()
-
-            ranking = con.execute("""
-                SELECT
-                    user_id,
-                    COUNT(*) AS perfects
-                FROM rolls
-                WHERE actor_type = 'user'
-                  AND value = 100
-                GROUP BY user_id
-                ORDER BY perfects DESC
-                LIMIT 100
-            """).fetchall()
-
-            stats_row = con.execute("""
-                SELECT
-                    COUNT(DISTINCT user_id),
-                    COUNT(*)
-                FROM rolls
-                WHERE actor_type = 'user'
-                  AND value = 100
-            """).fetchone()
-
-        title_suffix = "100 Rolls"
-
-    # =========================
-    # STREAK LEADERBOARD
-    # =========================
-    elif period_value == "streak":
-
-        with db() as con:
-            all_dates = con.execute("""
-                SELECT r.user_id, r.roll_date, COALESCE(u.username, r.username) as username
-                FROM rolls r
-                LEFT JOIN users u ON u.user_id = r.user_id
-                WHERE r.actor_type = 'user' AND r.roll_date IS NOT NULL
-                GROUP BY r.user_id, r.roll_date
-                ORDER BY r.user_id, r.roll_date
-            """).fetchall()
-
-        user_dates = {}
-        user_names = {}
-
-        for uid, roll_date, username in all_dates:
-            if uid not in user_dates:
-                user_dates[uid] = set()
-                user_names[uid] = username
-            user_dates[uid].add(roll_date)
-
-        # Beräkna best streak per användare
-        streak_data = []
-
-        for uid, date_set in user_dates.items():
-            dates = sorted(datetime.fromisoformat(d).date() for d in date_set)
-            best = 1
-            current_run = 1
-
-            for i in range(1, len(dates)):
-                if dates[i] == dates[i - 1] + timedelta(days=1):
-                    current_run += 1
-                    best = max(best, current_run)
-                else:
-                    current_run = 1
-
-            if best >= 2:
-                streak_data.append((uid, best, user_names[uid]))
-
-        streak_data.sort(key=lambda x: x[1], reverse=True)
-
-        for uid, best, username in streak_data:
-            rows.append((username, best, uid))
-            ranking.append((uid, best))
-
-        rows = rows[:10]
-
-        title_suffix = "Longest Streaks"
-        stats_row = (len(streak_data), None)
-
-    # =========================
-    # NORMAL PERIOD LEADERBOARDS
-    # =========================
-    else:
-
-        start_ts = None
-        end_ts = None
-
-        if period_value == "today":
-            start = datetime(now.year, now.month, now.day, tzinfo=TZ)
-            end = start + timedelta(days=1)
-
-            start_ts = int(start.timestamp())
-            end_ts = int(end.timestamp())
-
-            start_date = start.date().isoformat()
-            end_date = end.date().isoformat()
-
-            title_suffix = f"Today — {now.strftime('%B %d')}"
-
-        elif period_value == "week":
-            start = now - timedelta(days=now.weekday())
-            start = datetime(start.year, start.month, start.day, tzinfo=TZ)
-            end = start + timedelta(days=7)
-
-            start_ts = int(start.timestamp())
-            end_ts = int(end.timestamp())
-
-            start_date = start.date().isoformat()
-            end_date = end.date().isoformat()
-
-            title_suffix = f"Week {now.isocalendar().week}"
-
-        elif period_value == "month":
-            start = datetime(now.year, now.month, 1, tzinfo=TZ)
-
-            if now.month == 12:
-                end = datetime(now.year + 1, 1, 1, tzinfo=TZ)
-            else:
-                end = datetime(now.year, now.month + 1, 1, tzinfo=TZ)
-
-            start_ts = int(start.timestamp())
-            end_ts = int(end.timestamp())
-
-            start_date = start.date().isoformat()
-            end_date = end.date().isoformat()
-
-            title_suffix = now.strftime("%B")
-
-        elif period_value == "year":
-            start = datetime(now.year, 1, 1, tzinfo=TZ)
-            end = datetime(now.year + 1, 1, 1, tzinfo=TZ)
-
-            start_ts = int(start.timestamp())
-            end_ts = int(end.timestamp())
-
-            start_date = start.date().isoformat()
-            end_date = end.date().isoformat()
-
-            title_suffix = f"{now.year}"
-
-        elif period_value == "alltime":
-            title_suffix = "All Time"
-
-        with db() as con:
-
-            if period_value == "alltime":
-
-                rows = con.execute("""
-                    SELECT
-                        COALESCE(u.username, 'Unknown'),
-                        s.score,
-                        s.user_id
-                    FROM user_scores s
-                    LEFT JOIN users u ON u.user_id = s.user_id
-                    ORDER BY s.score DESC
-                    LIMIT 10
-                """).fetchall()
-
-                ranking = con.execute("""
-                    SELECT user_id, score
-                    FROM user_scores
-                    ORDER BY score DESC
-                    LIMIT 100
-                """).fetchall()
-
-                stats_row = con.execute("""
-                    SELECT COUNT(DISTINCT user_id), COUNT(*)
-                    FROM rolls
-                    WHERE actor_type = 'user'
-                """).fetchone()
-
-            else:
-
-                rows = con.execute("""
-                    SELECT COALESCE(u.username, 'Unknown'), SUM(d.score), d.user_id
-                    FROM daily_scores d
-                    LEFT JOIN users u ON u.user_id = d.user_id
-                    WHERE d.roll_date BETWEEN ? AND ?
-                    GROUP BY d.user_id
-                    ORDER BY SUM(d.score) DESC
-                    LIMIT 10
-                """, (start_date, end_date)).fetchall()
-
-                ranking = con.execute("""
-                    SELECT d.user_id,
-                           COALESCE(u.username, 'Unknown') AS username,
-                           SUM(d.score) AS score
-                    FROM daily_scores d
-                    LEFT JOIN users u ON u.user_id = d.user_id
-                    WHERE d.roll_date BETWEEN ? AND ?
-                    GROUP BY d.user_id
-                    ORDER BY score DESC
-                    LIMIT 100
-                """, (start_date, end_date)).fetchall()
-
-                stats_row = con.execute("""
-                    SELECT COUNT(DISTINCT user_id), COUNT(*)
-                    FROM rolls
-                    WHERE rolled_at BETWEEN ? AND ?
-                      AND actor_type = 'user'
-                """, (start_ts, end_ts)).fetchone()
-
-    # =========================
-    # RENDER (COMMON)
-    # =========================
-
-    while len(rows) < 10:
-        rows.append(("—", "—", 0))
-
-    players_count = stats_row[0] or 0
-    rolls_count = stats_row[1]
-
-    score_label = "SCORE"
-
-    if period_value == "streak":
-        score_label = "DAYS"
-    elif period_value == "100s":
-        score_label = "100s"
-
-    # =========================
-    # RESET TIMER
-    # =========================
-
-    reset_text = None
-
-    if period_value in ("today", "week", "month", "year"):
-        if period_value == "today":
-            reset_point = datetime(now.year, now.month, now.day, tzinfo=TZ) + timedelta(days=1)
-
-        elif period_value == "week":
-            start = now - timedelta(days=now.weekday())
-            start = datetime(start.year, start.month, start.day, tzinfo=TZ)
-            reset_point = start + timedelta(days=7)
-
-        elif period_value == "month":
-            if now.month == 12:
-                reset_point = datetime(now.year + 1, 1, 1, tzinfo=TZ)
-            else:
-                reset_point = datetime(now.year, now.month + 1, 1, tzinfo=TZ)
-
-        elif period_value == "year":
-            reset_point = datetime(
-                now.year + 1,
-                1,
-                1,
-                tzinfo=TZ
-            )
-
-        remaining = max(0, int((reset_point - now).total_seconds()))
-
-        if remaining < 3600:
-            minutes = -(-remaining // 60)
-            time_left = f"{minutes}m"
-
-        elif remaining < 86400:
-            hours = remaining // 3600
-            time_left = f"{hours}h"
-
-        else:
-
-            if period_value == "year":
-                weeks = remaining // (86400 * 7)
-                time_left = f"{weeks}w"
-
-            else:
-                days = remaining // 86400
-                time_left = f"{days}d"
-
-        reset_text = f"Next reset in {time_left} • UK time"
-
-    elif period_value == "alltime":
-
-        with db() as con:
-            first_roll = con.execute("""
-                SELECT MIN(rolled_at)
-                FROM rolls
-                WHERE actor_type = 'user'
-                """).fetchone()[0]
-
-        if first_roll:
-            started = datetime.fromtimestamp(first_roll, TZ)
-            reset_text = f"Since {started.strftime('%b %d, %Y')}"
-
-    png = render_leaderboard_png(
-        title_suffix,
-        rows,
-        players_count,
-        rolls_count,
-        reset_text=reset_text,
-        score_label=score_label
-    )
-
-    file = discord.File(
-        png,
-        filename="leaderboard.png"
-    )
-
-    embed = discord.Embed(
-       color=discord.Color.dark_grey()
-    )
-
-    embed.set_image(
-        url="attachment://leaderboard.png"
-    )
-
-    await interaction.response.send_message(
-        embed=embed,
-        file=file
-    )
+@app_commands.guild_only()
+async def leaderboard(interaction: discord.Interaction):
+    log_command(interaction, "/leaderboard")
+    await show_coin_leaderboard(interaction)
 
 @bot.tree.command(
     name="setchannel",
@@ -2764,20 +2261,9 @@ if ADMIN_MODE:
             await interaction.response.send_message("No.", ephemeral=True)
             return
 
-        # Use the production embed with an inactive button.
-        preview_view = discord.ui.View(timeout=60)
-        preview_view.add_item(discord.ui.Button(
-            label="Roll",
-            emoji="🎲",
-            style=discord.ButtonStyle.primary,
-            disabled=True
-        ))
-
         await interaction.response.send_message(
-            content="Preview only: no roll, reset or role changes.",
-            embed=build_daily_reset_embed(),
-            view=preview_view,
-            ephemeral=True
+            view=build_daily_roll_panel(preview=True),
+            allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
         )
 
         log_event(f"DAILY ROLL PREVIEW user={interaction.user.id}")
@@ -2793,18 +2279,56 @@ if ADMIN_MODE:
             await interaction.response.send_message("No.", ephemeral=True)
             return
 
-        await interaction.response.defer()
+        if interaction.guild_id != HYPED_GUILD_ID:
+            await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        if interaction.channel_id == ROLL_CHANNEL_ID:
+            posted = await post_daily_reset_message()
+            await interaction.followup.send(
+                "Daily roll panel refreshed." if posted else
+                "Coins are saved, but the panel could not be refreshed. Check bot permissions/logs.",
+                ephemeral=True,
+            )
+        else:
+            # Test posts never reset crowns, grant coins or consume a player's roll.
+            await interaction.channel.send(
+                view=build_daily_roll_panel(),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            await interaction.followup.send("Panel posted. Rolls remain in the daily-roll channel.",
+                                            ephemeral=True)
+        log_event(f"MANUAL DAILY PANEL user={interaction.user.id}")
 
-        # Treat a manual post as a manual daily reset. Passing the owner's ID
-        # also clears a stale role left over from the pre-Fly/local database.
-        await clear_high_roller_role(extra_user_id=interaction.user.id)
-
-        await interaction.followup.send(
-            embed=build_daily_reset_embed(),
-            view=DailyRollView()
+    @bot.tree.command(
+        name="awardcoin",
+        description="Owner-only recovery of one historical daily coin missing from saved rolls",
+        guild=discord.Object(id=ADMIN_GUILD_ID),
+    )
+    @app_commands.describe(day="Winning UK date, YYYY-MM-DD", user="The day's winner",
+                           winning_roll="The winning number (1–100)")
+    async def awardcoin_admin(interaction: discord.Interaction, day: str,
+                              user: discord.Member, winning_roll: app_commands.Range[int, 1, 100]):
+        if interaction.user.id != OWNER_ID or interaction.guild_id != HYPED_GUILD_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+        if user.bot:
+            await interaction.response.send_message("Gold coins are for players only.", ephemeral=True)
+            return
+        try:
+            added = award_missing_day(db(), HYPED_GUILD_ID, day, user.id,
+                                      user.name, winning_roll, interaction.user.id)
+        except ValueError as exc:
+            await interaction.response.send_message(f"Invalid date or roll: {exc}", ephemeral=True)
+            return
+        award = day_award(db(), HYPED_GUILD_ID, day)
+        action = "Awarded 1 gold coin" if added else "That day already has a coin"
+        await interaction.response.send_message(
+            f"{action}: <@{award['user_id']}> · {day} · roll {award['winning_roll']}. "
+            f"Total: {coin_total(db(), HYPED_GUILD_ID, award['user_id'])} gold coins.",
+            allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
         )
-
-        log_event(f"MANUAL DAILY RESET user={interaction.user.id}")
+        log_event(f"MANUAL COIN day={day} user={user.id} added={added} owner={interaction.user.id}")
 
     @bot.tree.command(
         name="previewroles",

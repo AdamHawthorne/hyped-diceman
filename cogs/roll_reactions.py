@@ -27,7 +27,7 @@ class RollReactions:
         with self.db() as con:
             rows = con.execute(
                 "SELECT user_id, value FROM rolls WHERE actor_type = 'user' "
-                "AND rolled_at BETWEEN ? AND ? ORDER BY rolled_at ASC, rowid ASC",
+                "AND rolled_at >= ? AND rolled_at < ? ORDER BY rolled_at ASC, rowid ASC",
                 (start, end),
             ).fetchall()
         scores = {row[0]: row[1] for row in rows}
