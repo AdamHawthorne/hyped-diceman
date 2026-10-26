@@ -48,7 +48,7 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
 
     def test_landing_plan_copy_is_present(self):
         for text in (
-            "**The plan so far:**",
+            "**The plan:**",
             "**Horde PvP**",
             "**Main raid:** Sunday, 8pm - 11pm UK, adding Wednesday for the first two weeks of new releases",
         ):
