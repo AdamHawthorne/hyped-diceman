@@ -140,6 +140,8 @@ class LeadershipInterestFlowTests(unittest.IsolatedAsyncioTestCase):
         await select.callback(interaction)
         self.assertEqual(view.interests, LEADERSHIP_INTERESTS)
         self.assertTrue(all(option.default for option in select.options))
+        interaction.response.defer.assert_awaited_once()
+        interaction.response.edit_message.assert_not_awaited()
         interaction.response.send_modal.assert_not_awaited()
         await view.next_button.callback(interaction)
         modal = interaction.response.send_modal.call_args.args[0]
