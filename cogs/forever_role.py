@@ -246,7 +246,9 @@ class LeadershipInterestSelect(discord.ui.Select):
         self.view.interests = tuple(self.values)
         for option in self.options:
             option.default = option.value in self.values
-        await interaction.response.edit_message(view=self.view)
+        # Keep the current dropdown message in place. Re-editing it on every
+        # selection can leave Discord's Next button needing another click.
+        await interaction.response.defer()
 
 
 class LeadershipInterestView(discord.ui.View):
