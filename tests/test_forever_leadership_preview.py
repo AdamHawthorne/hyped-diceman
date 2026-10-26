@@ -50,13 +50,17 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
         for text in (
             "**The plan so far:**",
             "**Horde PvP**",
-            "**Main raid:** Sunday, 20:00–23:00 UK",
-            "**New raid releases:** Wednesday added for the first 2 weeks",
-            "**First Wednesday:** 21:00–00:00 UK",
-            "**Second Wednesday:** 20:00–23:00 UK",
+            "**Main raid:** Sunday, 8pm - 11pm UK",
+            "**New content:** Wednesday added for the first 2 weeks, 8pm - 11pm UK",
             "**Focus:** 10 & 20-player raids, with organised pugs for 40-player content",
         ):
             self.assertIn(text, SOURCE)
+
+    def test_landing_info_uses_small_text_bullets(self):
+        self.assertIn('-# • **Click the button below** to get access to the Forever channels.', SOURCE)
+        self.assertIn('-# • Click it again at any time to remove the role.', SOURCE)
+        self.assertNotIn('**First Wednesday:**', SOURCE)
+        self.assertNotIn('**Second Wednesday:**', SOURCE)
 
     def test_interest_dropdown_has_no_duplicate_prompt_line(self):
         self.assertNotIn('"What are you interested in?",\n                view=LeadershipInterestView', SOURCE)
