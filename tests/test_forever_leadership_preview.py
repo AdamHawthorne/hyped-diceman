@@ -55,7 +55,8 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
             self.assertIn(text, SOURCE)
 
     def test_landing_info_uses_small_text_bullets(self):
-        self.assertIn('-# • **Click the button below** to get access to the Forever channels.', SOURCE)
+        self.assertIn('"**Click the button below** to get access to the Forever channels.\\n"', SOURCE)
+        self.assertNotIn('-# • **Click the button below** to get access to the Forever channels.', SOURCE)
         self.assertIn('-# • Click it again at any time to remove the role.', SOURCE)
         self.assertNotIn('**First Wednesday:**', SOURCE)
         self.assertNotIn('**Second Wednesday:**', SOURCE)
