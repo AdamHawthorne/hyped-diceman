@@ -8,7 +8,7 @@ SOURCE = (ROOT / "cogs" / "suggestions.py").read_text(encoding="utf-8")
 
 class SuggestionsSafetyTests(unittest.TestCase):
     def test_destination_channel_is_correct(self):
-        self.assertIn('"1554621739017707591"', SOURCE)
+        self.assertIn('"1564075966895231059"', SOURCE)
         self.assertIn("SUGGESTIONS_DEST_CHANNEL_ID", SOURCE)
 
     def test_v2_panel_uses_requested_title_copy_and_right_image(self):

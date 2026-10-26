@@ -9,7 +9,7 @@ from discord.ext import commands
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 DESTINATION_CHANNEL_ID = int(
-    os.getenv("SUGGESTIONS_DEST_CHANNEL_ID", "1554621739017707591")
+    os.getenv("SUGGESTIONS_DEST_CHANNEL_ID", "1564075966895231059")
 )
 ACCENT = 0x8C5A3C
 SUGGESTIONS_ICON_URL = "https://i.vgy.me/mN6c1j.png"
