@@ -276,7 +276,7 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
                 "## <Hyped> for WoW: Forever.\n"
                 "-# • **Click the button below** to get access to the Forever channels.\n"
                 "-# • Click it again at any time to remove the role.\n\n"
-                "**The plan so far:**\n"
+                "**The plan:**\n"
                 "-# • **Horde PvP**\n"
                 "-# • **Main raid:** Sunday, 8pm - 11pm UK, adding Wednesday for the first two weeks of new releases\n\n"
                 "Interested in helping out with Hyped? "
