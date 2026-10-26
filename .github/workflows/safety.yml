@@ -53,7 +53,6 @@ jobs:
               applicant_id=123,
               interest="Raid Leader",
               experience="Test experience",
-              skills="Test skills",
           )
           assert 0 < panel.total_children_count < 30
           assert 0 < post.total_children_count < 20
