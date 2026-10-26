@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 
 
 class RollReactions:
-    def __init__(self, bot, channel_id, db, today_range, log_error):
+    def __init__(self, bot, channel_id, db, today_range, log_error, guild_id=0):
         self.bot = bot
         self.channel_id = channel_id
+        self.guild_id = guild_id
         self.db = db
         self.today_range = today_range
         self.log_error = log_error
@@ -61,12 +62,15 @@ class RollReactions:
             return
         high = max(scores, key=scores.get)
         low = min(scores, key=scores.get)
+        guild = self.bot.get_guild(self.guild_id) if self.guild_id else None
+        coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
+        high_emoji = coin or "👑"
         for user_id, message in messages:
             for emoji, wanted in (
-                ("👑", user_id == high),
+                (high_emoji, user_id == high),
                 ("💩", user_id == low and scores[low] < scores[high]),
             ):
-                present = any(str(r.emoji) == emoji and r.me for r in message.reactions)
+                present = any(str(r.emoji) == str(emoji) and r.me for r in message.reactions)
                 try:
                     if wanted and not present:
                         await message.add_reaction(emoji)
