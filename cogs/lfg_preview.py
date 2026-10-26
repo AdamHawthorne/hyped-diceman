@@ -782,7 +782,7 @@ class ReviewView(discord.ui.View):
 
         try:
             await self.state.cog.refresh(self.state.channel_id)
-            message = "Saved. Ogre updated board. " + ogre_say("success")
+            message = "Saved. Ogre updated board. " + ogre_say("lfg")
         except Exception as exc:
             print(
                 f"LFG BOARD REFRESH FAILED channel={self.state.channel_id} "
@@ -942,7 +942,7 @@ class CharacterEditView(discord.ui.View):
         else:
             try:
                 await self.cog.refresh(self.channel_id)
-                text = "Saved. Ogre updated your character choices. " + ogre_say("success")
+                text = "Saved. Ogre updated your character choices. " + ogre_say("lfg")
             except Exception as exc:
                 print(f"LFG CHARACTER REFRESH FAILED channel={self.channel_id} error={exc!r}")
                 text = "Changes saved, but board refresh failed. Tell an officer."
@@ -1006,7 +1006,7 @@ class RemoveButton(discord.ui.Button):
             )
 
         if result.rowcount and refreshed:
-            text = "Ogre removed your plan. " + ogre_say("success")
+            text = "Ogre removed your plan. " + ogre_say("lfg")
         elif result.rowcount:
             text = "Plan removed, but Ogre could not refresh board."
         else:
