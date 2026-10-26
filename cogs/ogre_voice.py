@@ -18,7 +18,6 @@ PHRASES = {
         "Someone get coin. Could be you.",
         "Roll first, brag later.",
         "Ogre keeping eye on dice.",
-        "Lucky gamer, show yourself.",
         "Try luck. No promises.",
         "Good roll make Ogre smile.",
         "Coin shiny. Roll higher.",
@@ -68,6 +67,16 @@ PHRASES = {
         "Ogre top roll on **{day}**, **{roll}**. Coin stays home {coin}.",
         "Me count rolls. Me win **{day}** with **{roll}**. Fair is fair {coin}.",
         "Ogre rolled **{roll}** on **{day}**. Coin mine today {coin}."
+    ),
+    "roll_tie": (
+        "Nice roll, but {leader} already roll that.",
+        "Good number! {leader} got there first.",
+        "Ogre saw that roll. {leader} rolled same one earlier.",
+        "Big roll! But {leader} beat you to it.",
+        "So close. {leader} already got {roll}.",
+        "Ogre checked. {leader} rolled {roll} first.",
+        "You match top roll! But {leader} got there before you.",
+        "That a strong roll. {leader} had same number first.",
     ),
     "roll_high": (
         "Ooh. Big roll.",
