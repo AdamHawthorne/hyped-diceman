@@ -62,7 +62,7 @@ class RollReactions:
             return
         high = max(scores, key=scores.get)
         low = min(scores, key=scores.get)
-        guild = self.bot.get_guild(self.guild_id) if self.guild_id else None
+        guild = self.bot.get_guild(self.guild_id) if self.guild_id and hasattr(self.bot, 'get_guild') else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
         high_emoji = coin or "<:ogrecoin:1564336079430099035>"
         for user_id, message in messages:
