@@ -2097,6 +2097,35 @@ async def help_cmd(interaction: discord.Interaction):
         ephemeral=True
     )
 
+async def reply_if_tied_for_highest(interaction, value, roll_message=None):
+    """Only respond when this new roll matches a prior day's leader.
+
+    Read the saved UK-day rolls after insertion. Earliest roll wins ties,
+    including Ogre's daily bot roll. A reply never changes any roll scores.
+    """
+    start, end = today_range()
+    with db() as con:
+        top = con.execute(
+            """SELECT user_id, value FROM rolls
+               WHERE actor_type IN ('user', 'bot')
+                 AND rolled_at >= ? AND rolled_at < ?
+               ORDER BY value DESC, rolled_at ASC, rowid ASC LIMIT 1""",
+            (start, end),
+        ).fetchone()
+    if not top or top[1] != value or top[0] == interaction.user.id:
+        return
+    leader_id = bot.user.id if top[0] == 0 and bot.user else top[0]
+    comment = ogre_say("roll_tie", leader=f"<@{leader_id}>", roll=value)
+    try:
+        message = roll_message or await interaction.original_response()
+        await message.reply(
+            comment, mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log_error(f"ROLL TIE REPLY FAILED: {exc!r}")
+
+
 async def perform_roll(interaction: discord.Interaction):
     start, end = today_range()
 
@@ -2177,6 +2206,7 @@ async def perform_roll(interaction: discord.Interaction):
                 f"{interaction.user.mention} rolled **{value}** 🎲"
             )
 
+        await reply_if_tied_for_highest(interaction, value)
         await roll_reactions.sync()
         await sync_high_roller_role()
         return
@@ -2263,6 +2293,7 @@ async def perform_roll(interaction: discord.Interaction):
                 content=f"{interaction.user.mention} rolled **{display_value:,}** 🎲"
             )
 
+    await reply_if_tied_for_highest(interaction, value, msg)
     await roll_reactions.sync()
     await sync_high_roller_role()
 
