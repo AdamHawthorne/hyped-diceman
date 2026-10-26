@@ -278,9 +278,7 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
                 "-# • Click it again at any time to remove the role.\n\n"
                 "**The plan so far:**\n"
                 "-# • **Horde PvP**\n"
-                "-# • **Main raid:** Sunday, 8pm - 11pm UK\n"
-                "-# • **New content:** Wednesday added for the first 2 weeks, 8pm - 11pm UK\n"
-                "-# • **Focus:** 10 & 20-player raids, with organised pugs for 40-player content\n\n"
+                "-# • **Main raid:** Sunday, 8pm - 11pm UK, adding Wednesday for the first two weeks of new releases\n\n"
                 "Interested in helping out with Hyped? "
                 "**Send us a short leadership application below.**"
             ),
