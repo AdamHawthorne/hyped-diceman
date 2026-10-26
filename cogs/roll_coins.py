@@ -101,6 +101,8 @@ def award_missing_day(con, guild_id, day, user_id, username, value, owner_id, no
     """
     now = now or datetime.now(UK)
     parsed = date.fromisoformat(day)
+    if day != parsed.isoformat():
+        raise ValueError("Use YYYY-MM-DD for the winning date.")
     if parsed >= now.astimezone(UK).date():
         raise ValueError("Choose a completed day, before today (UK time).")
     if not 1 <= value <= 100:
