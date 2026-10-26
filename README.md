@@ -10,7 +10,7 @@ Each member gets one roll from **1–100 per UK calendar day**. The bot tracks s
 - UK reset at midnight using `Europe/London`
 - One all-time gold coin leaderboard via `/leaderboard`
 - One gold coin for each completed UK day’s highest human roll; earliest roll wins ties
-- Persistent V2 daily reset panel with yesterday’s winner, lifetime top five gold coin holders, and Roll, Leaderboard and My stats buttons
+- Persistent V2 daily reset panel with lifetime top five gold coin holders and Roll, Leaderboard and My Stats buttons, plus a separate conversational winner message at UK midnight
 - `/stats` retains roll history and adds lifetime gold coins
 - Roll statistics and streak tracking
 - Automatic **👑 High Roller** role transfer
@@ -82,8 +82,7 @@ Changes specific to Hyped are maintained separately from the upstream project.
 
 Gold coins are bragging rights only. At UK midnight, the highest human roll from
 that completed day receives one coin. Ogre's own roll does not compete. Ties go
-to the earliest highest roll, matching the High Roller crown. The V2 reset panel
-announces yesterday's winner and their total, followed by the lifetime top five gold coin holders (or an empty state), with the supplied coin image beneath it.
+to the earliest highest roll, matching the High Roller crown. At the natural UK-midnight reset, the bot posts the V2 panel with the lifetime top five coin holders and a separate normal Discord message naming the previous day's highest roller, the casual weekday, winning roll, one new coin and lifetime total. The winner message uses the guild's `:ogrecoin:` emoji (identified by Discord at runtime). Upload the attached coin artwork to the guild as a custom emoji named `ogrecoin` before deployment. Until it exists, the bot falls back to the words `gold coin`. The inline emoji replaces the gallery image. The panel rotates its daily headline, removes the bragging-rights footer, and hides the roll-date line. Today's existing panel is not edited on startup; tomorrow's new panel appears naturally at midnight.
 
 The additive `roll_coin_awards` table uses `(guild_id, roll_date)` as its primary
 key. On startup, all completed days in the existing Hyped roll database are
@@ -105,7 +104,7 @@ posting a backlog of announcements.
   existing award. Saved rolls take priority. Use one command per missing day.
 
 After merging the V2 feature branch into `hyped-customisation`, deploy that branch as usual. Startup creates the ledger,
-backfills saved history, upgrades today's existing reset panel to V2, and syncs
+backfills saved history, leaves today's panel untouched until the next normal reset, and syncs
 the singular `/leaderboard` command (the old period-based `/leaderboards` is removed).
 A tested backup should be retained when deploying database changes. No live
 Discord data is accessed by the automated test suite.
