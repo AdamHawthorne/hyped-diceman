@@ -2118,7 +2118,7 @@ async def perform_roll(interaction: discord.Interaction):
         await interaction.response.send_message(
             f"{interaction.user.mention}\n"
             f"You already rolled **{value}** today.\n"
-            f"Try again in {time_left}."
+            f"Try again in {time_left}. {ogre_say('roll_duplicate')}"
         )
         return
 
@@ -2162,7 +2162,7 @@ async def perform_roll(interaction: discord.Interaction):
                 await interaction.response.send_message(
                     f"{interaction.user.mention}\n"
                     f"You already rolled **{existing_value}** today.\n"
-                    f"Try again in {time_left}."
+                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}"
                 )
             return
 
@@ -2228,7 +2228,7 @@ async def perform_roll(interaction: discord.Interaction):
                 content=(
                     f"{interaction.user.mention}\n"
                     f"You already rolled **{existing_value}** today.\n"
-                    f"Try again in {time_left}."
+                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}"
                 )
             )
         return
