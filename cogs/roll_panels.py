@@ -18,12 +18,12 @@ class DailyRollPanel(discord.ui.LayoutView):
                     "## Hyped Rolls · Daily Reset\n"
                     f"**{tagline}**\n\n"
                     "Roll once per day. Highest roll at the end of the day "
-                    f"keeps the coin {coin_emoji}. First roll wins a tie."
+                    f"keeps the coin {coin_emoji}"
                 ),
                 accessory=discord.ui.Thumbnail(OGRE_IMAGE, description="Hyped Ogre"),
             ),
             discord.ui.TextDisplay(
-                "## Lucky gamers\n"
+                "\n\n\n## Coin count\n"
                 + ("\n".join(
                     f"**{row['rank']}.** <@{ogre_id if row['user_id'] == 0 and ogre_id else row['user_id']}> · **{row['coins']}** "
                     + coin_emoji
