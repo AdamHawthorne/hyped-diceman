@@ -1139,18 +1139,20 @@ def coin_winner_message(day):
     total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
     # Date-stable variation: retries/restarts keep same copy for a given day.
     lines = (
-        "{name} highest roll for **{day}** with **{roll}**. He keep today's coin {coin}. Total coins: **{total}**.",
-        "{name} rolled highest on **{day}**: **{roll}**. Coin goes to him {coin}. He got **{total}** now.",
-        "{name} wins **{day}** with **{roll}**. Another coin for him {coin}. Total: **{total}**.",
-        "{name} top roll on **{day}**, **{roll}**. He take coin {coin}. That make **{total}**.",
-        "{name} had best roll on **{day}**: **{roll}**. He keep coin {coin}. **{total}** coins now.",
+        "{name} highest roll for **{day}** with **{roll}**. He keep today's coin {coin}.",
+        "{name} rolled highest on **{day}**: **{roll}**. Coin goes to him {coin}.",
+        "{name} wins **{day}** with **{roll}**. Another coin for him {coin}.",
+        "{name} top roll on **{day}**, **{roll}**. He take coin {coin}.",
+        "{name} had best roll on **{day}**: **{roll}**. He keep coin {coin}.",
     )
+    coin_word = "coin" if total == 1 else "coins"
     return (
-        f"**Coin winner!** {ogre_coin_emoji()}\n"
+        f"**Coin winner!** {ogre_coin_emoji()}\\n"
         + lines[finished.toordinal() % len(lines)].format(
             name=f"<@{winner['user_id']}>", day=weekday,
-            roll=winner["winning_roll"], coin=ogre_coin_emoji(), total=total,
+            roll=winner["winning_roll"], coin=ogre_coin_emoji(),
         )
+        + f"\\n**{total} {coin_word}** now."
     )
 
 
