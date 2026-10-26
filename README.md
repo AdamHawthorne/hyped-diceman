@@ -10,7 +10,7 @@ Each member gets one roll from **1–100 per UK calendar day**. The bot tracks s
 - UK reset at midnight using `Europe/London`
 - One all-time gold coin leaderboard via `/leaderboard`
 - One gold coin for each completed UK day’s highest human roll; earliest roll wins ties
-- Persistent V2 daily reset panel with yesterday’s winner, Roll, Leaderboard and My stats buttons
+- Persistent V2 daily reset panel with yesterday’s winner, lifetime top five gold coin holders, and Roll, Leaderboard and My stats buttons
 - `/stats` retains roll history and adds lifetime gold coins
 - Roll statistics and streak tracking
 - Automatic **👑 High Roller** role transfer
@@ -83,7 +83,7 @@ Changes specific to Hyped are maintained separately from the upstream project.
 Gold coins are bragging rights only. At UK midnight, the highest human roll from
 that completed day receives one coin. Ogre's own roll does not compete. Ties go
 to the earliest highest roll, matching the High Roller crown. The V2 reset panel
-announces yesterday's winner and total, with the supplied coin image beneath it.
+announces yesterday's winner and their total, followed by the lifetime top five gold coin holders (or an empty state), with the supplied coin image beneath it.
 
 The additive `roll_coin_awards` table uses `(guild_id, roll_date)` as its primary
 key. On startup, all completed days in the existing Hyped roll database are
@@ -104,7 +104,7 @@ posting a backlog of announcements.
   the owner, rejects bots/future dates and refuses to duplicate or replace a day's
   existing award. Saved rolls take priority. Use one command per missing day.
 
-Deploy the `hyped-customisation` branch as usual. Startup creates the ledger,
+After merging the V2 feature branch into `hyped-customisation`, deploy that branch as usual. Startup creates the ledger,
 backfills saved history, upgrades today's existing reset panel to V2, and syncs
 the singular `/leaderboard` command (the old period-based `/leaderboards` is removed).
 A tested backup should be retained when deploying database changes. No live
