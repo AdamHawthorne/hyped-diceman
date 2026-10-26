@@ -71,7 +71,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.con.execute("INSERT INTO rolls VALUES (2, 100, 'user', 2)")
         self.add(3, 1, -1)
         await self.tracker.sync()
-        self.assertTrue(self.has(a, '👑'))
+        self.assertTrue(self.has(a, '<:ogrecoin:1564336079430099035>'))
         self.assertFalse(self.has(a, '💩'))
 
     async def test_permission_failure_is_contained(self):
