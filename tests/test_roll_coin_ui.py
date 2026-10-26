@@ -43,7 +43,11 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
                                 on_roll=callbacks[0], on_leaderboard=callbacks[1],
                                 on_stats=callbacks[2])
         text = json.dumps(ranked.to_components())
-        self.assertIn("Lifetime gold coin leaders", text)
+        self.assertIn("Coin winners", text)
+        self.assertLess(text.index("Hyped Rolls"), text.index("Coin winners"))
+        self.assertIn("keeps the coin", text)
+        self.assertNotIn("`/leaderboard`", text)
+        self.assertNotIn("`/stats`", text)
         for i in range(1, 6):
             self.assertIn(f"<@{i}>", text)
         self.assertNotIn("<@6>", text)
@@ -52,6 +56,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Yesterday\'s gold coin", text)
         buttons = [x for x in panel.walk_children() if isinstance(x, discord.ui.Button)]
         self.assertEqual(len({x.custom_id for x in buttons}), 3)
+        self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
         for button, callback in zip(buttons, callbacks):
             await button.callback(None)
             callback.assert_awaited_once()
