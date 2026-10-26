@@ -12,6 +12,7 @@ import discord
 
 from cogs.roll_coins import UK, ensure_coin_schema, settle_completed_days, coin_total, day_award
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard, COIN_IMAGE
+from cogs.ogre_voice import pick as ogre_say
 
 SOURCE = (Path(__file__).resolve().parents[1] / 'rollf.py').read_text()
 
@@ -110,6 +111,8 @@ class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
                 datetime=datetime, timedelta=timedelta, TZ=UK, HYPED_GUILD_ID=9,
                 db=lambda: con, day_award=day_award, coin_total=coin_total,
                 ogre_coin_emoji=lambda: "<:ogrecoin:12345>",
+                ogre_say=ogre_say,
+                bot=SimpleNamespace(user=SimpleNamespace(id=555)),
             )
             load_functions({"coin_winner_message", "daily_ogre_tagline"}, ns)
             msg = ns["coin_winner_message"](datetime(2026, 10, 27, tzinfo=UK).date())
