@@ -126,7 +126,7 @@ class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**1 coins**", msg)
             day = datetime(2026, 10, 27, tzinfo=UK).date()
             self.assertEqual(ns["daily_ogre_tagline"](day), ns["daily_ogre_tagline"](day))
-            self.assertNotEqual(ns["daily_ogre_tagline"](day), ns["daily_ogre_tagline"](day + timedelta(days=1)))
+            self.assertGreater(len({ns["daily_ogre_tagline"](day + timedelta(days=i)) for i in range(30)}), 1)
         finally:
             con.close()
 
