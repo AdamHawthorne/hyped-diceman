@@ -5,6 +5,7 @@ import time
 import discord
 from discord import app_commands
 from discord.ext import commands
+from cogs.ogre_voice import pick as ogre_say
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
@@ -112,7 +113,7 @@ class SuggestionModal(discord.ui.Modal):
                 f"NAMED SUGGESTION SUBMITTED user={interaction.user.id}",
                 flush=True,
             )
-            confirmation = "✅ **Feedback sent to leadership.** Thanks for taking the time."
+            confirmation = "✅ **Feedback sent to leadership.** " + ogre_say("success")
 
         await interaction.response.send_message(confirmation, ephemeral=True)
 
