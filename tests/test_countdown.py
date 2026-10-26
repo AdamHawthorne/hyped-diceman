@@ -177,8 +177,9 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("class SetupDateRangeSelect", SOURCE)
 
     def test_confirmation_routes_to_office_logs(self):
-        self.assertIn('OFFICE_LOG_CHANNEL_ID = int(os.getenv("OFFICE_LOG_CHANNEL_ID", "0"))', SOURCE)
-        self.assertIn('normalized == "office-logs"', SOURCE)
+        self.assertIn('OFFICE_LOG_CHANNEL_ID = int(os.getenv("OFFICE_LOG_CHANNEL_ID", "1554621739017707591"))', SOURCE)
+        self.assertNotIn('normalized == "office-logs"', SOURCE)
+        self.assertIn('await self.bot.fetch_channel(OFFICE_LOG_CHANNEL_ID)', SOURCE)
         self.assertIn("await self.state.cog.log_office(", SOURCE)
         self.assertIn("interaction.delete_original_response()", SOURCE)
 

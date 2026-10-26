@@ -25,7 +25,7 @@ DB_PATH = os.getenv(
 )
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
-OFFICE_LOG_CHANNEL_ID = int(os.getenv("OFFICE_LOG_CHANNEL_ID", "0"))
+OFFICE_LOG_CHANNEL_ID = int(os.getenv("OFFICE_LOG_CHANNEL_ID", "1554621739017707591"))
 ACCENT = 0x8C5A3C
 COUNTDOWN_ICON_URL = "https://i.vgy.me/MC2gD0.png"
 SUBSCRIBER_LEAD_SECONDS = 5 * 60
@@ -745,18 +745,14 @@ class CountdownCog(
         return True
 
     async def log_office(self, guild, text):
-        channel = None
-        if OFFICE_LOG_CHANNEL_ID:
-            maybe = self.bot.get_channel(OFFICE_LOG_CHANNEL_ID)
-            if isinstance(maybe, discord.TextChannel):
-                channel = maybe
-        if channel is None and guild is not None:
-            for candidate in guild.text_channels:
-                normalized = candidate.name.lower().replace("_", "-").replace(" ", "-")
-                if normalized == "office-logs":
-                    channel = candidate
-                    break
+        channel = self.bot.get_channel(OFFICE_LOG_CHANNEL_ID)
         if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(OFFICE_LOG_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                print(f"COUNTDOWN OFFICE LOG CHANNEL LOOKUP FAILED: {exc!r}")
+                return
+        if not isinstance(channel, discord.TextChannel):
             print(f"COUNTDOWN OFFICE LOG CHANNEL NOT FOUND: {text}")
             return
         try:
