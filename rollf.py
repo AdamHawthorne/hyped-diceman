@@ -1149,7 +1149,8 @@ def coin_winner_message(day):
     return (
         f"**Coin winner!** {ogre_coin_emoji()}\n"
         + lines[finished.toordinal() % len(lines)].format(
-            name=f"<@{winner['user_id']}>", day=weekday,
+            name=(f"<@{bot.user.id}>" if winner["user_id"] == 0 and bot.user else
+                  f"<@{winner['user_id']}>"), day=weekday,
             roll=winner["winning_roll"], coin=ogre_coin_emoji(),
         )
         + f"\n**{total} {coin_word}** now."
@@ -1161,7 +1162,7 @@ def build_daily_roll_panel(*, preview=False, day=None):
     return DailyRollPanel(
         day=day.isoformat(), winner_text="", tagline=daily_ogre_tagline(day),
         top_five=coin_standings(db(), HYPED_GUILD_ID)[:5],
-        coin_emoji=ogre_coin_emoji(),
+        coin_emoji=ogre_coin_emoji(), ogre_id=bot.user.id if bot.user else 0,
         on_roll=daily_roll_action, on_leaderboard=show_coin_leaderboard,
         on_stats=show_my_stats, preview=preview,
     )
@@ -1217,7 +1218,8 @@ async def show_coin_leaderboard(interaction):
         return
     await interaction.response.send_message(
         view=CoinLeaderboard(coin_standings(db(), HYPED_GUILD_ID),
-                             owner_id=interaction.user.id, coin_emoji=ogre_coin_emoji()),
+                             owner_id=interaction.user.id, coin_emoji=ogre_coin_emoji(),
+                             ogre_id=bot.user.id if bot.user else 0),
         allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
     )
 
@@ -1870,7 +1872,7 @@ async def stats(
                 today_rank = index
                 break
 
-    coins = 0 if is_bot_stats else coin_total(db(), HYPED_GUILD_ID, target.id)
+    coins = coin_total(db(), HYPED_GUILD_ID, 0 if is_bot_stats else target.id)
 
     if stats["rolls"] == 0:
         await interaction.followup.send(
@@ -2091,7 +2093,7 @@ async def help_cmd(interaction: discord.Interaction):
         description=(
             "**Daily Roll**\n"
             "Use the daily **🎲 Roll** button or `/roll` once per day. "
-            "Rolls reset at midnight UK time. The highest player roll earns one gold coin.\n\n"
+            "Rolls reset at midnight UK time. The highest roll earns one gold coin.\n\n"
             "**Commands**\n"
             "• `/roll` — Roll your daily number\n"
             "• `/leaderboard` — View gold coin totals\n"
