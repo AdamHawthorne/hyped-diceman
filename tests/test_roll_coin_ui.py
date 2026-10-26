@@ -99,7 +99,7 @@ class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
             load_functions({"coin_winner_message", "daily_ogre_tagline"}, ns)
             msg = ns["coin_winner_message"](datetime(2026, 10, 27, tzinfo=UK).date())
             self.assertIn("**Coin winner!**", msg)
-            self.assertIn("**Monday's roll**", msg)
+            self.assertIn("**Monday**", msg)
             self.assertIn("<@42>", msg)
             self.assertIn("**97**", msg)
             self.assertIn("<:ogrecoin:12345>", msg)
