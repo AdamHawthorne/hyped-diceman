@@ -1,5 +1,6 @@
 """Components V2 daily roll and all-time coin leaderboard."""
 import discord
+from cogs.ogre_voice import pick as ogre_say
 
 COIN_IMAGE = "https://i.vgy.me/agW53e.png"
 OGRE_IMAGE = "https://i.vgy.me/zJXBXg.png"
@@ -64,7 +65,7 @@ class CoinLeaderboard(discord.ui.LayoutView):
                 "## Hyped Gold Coins\n"
                 + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
                 + f"\n\n-# {sum(r['coins'] for r in rows)} coins across the server · "
-                  f"Page {self.page + 1} of {pages}\n-# Ogre keep score."
+                  f"Page {self.page + 1} of {pages}\n-# {ogre_say('leaderboard')}"
             ), accent_color=GOLD,
         ))
         if pages > 1:
