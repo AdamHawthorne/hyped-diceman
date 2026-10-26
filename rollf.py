@@ -1137,11 +1137,20 @@ def coin_winner_message(day):
         return None
     weekday = finished.strftime("%A")
     total = coin_total(db(), HYPED_GUILD_ID, winner["user_id"])
+    # Date-stable variation: retries/restarts keep same copy for a given day.
+    lines = (
+        "{name} highest roll for **{day}** with **{roll}**. He keep today's coin {coin}. Total coins: **{total}**.",
+        "{name} rolled highest on **{day}**: **{roll}**. Coin goes to him {coin}. He got **{total}** now.",
+        "{name} wins **{day}** with **{roll}**. Another coin for him {coin}. Total: **{total}**.",
+        "{name} top roll on **{day}**, **{roll}**. He take coin {coin}. That make **{total}**.",
+        "{name} had best roll on **{day}**: **{roll}**. He keep coin {coin}. **{total}** coins now.",
+    )
     return (
         f"**Coin winner!** {ogre_coin_emoji()}\n"
-        f"<@{winner['user_id']}> had the highest roll for **{weekday}'s roll** "
-        f"with **{winner['winning_roll']}**, earning **1 gold coin** {ogre_coin_emoji()} "
-        f"and bringing their lifetime total to **{total}**."
+        + lines[finished.toordinal() % len(lines)].format(
+            name=f"<@{winner['user_id']}>", day=weekday,
+            roll=winner["winning_roll"], coin=ogre_coin_emoji(), total=total,
+        )
     )
 
 
