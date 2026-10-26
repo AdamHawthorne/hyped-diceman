@@ -114,7 +114,7 @@ class CoinAccountingTests(unittest.TestCase):
                             (int(clock('2026-10-25T05:00:00').timestamp()),))
                 ensure_coin_schema(con)
                 settle_completed_days(con, 9, self.now)
-            with sqlite3.connect(path, isolation_level=None) as con:
+            with closing(sqlite3.connect(path, isolation_level=None)) as con:
                 ensure_coin_schema(con)
                 self.assertEqual(settle_completed_days(con, 9, self.now), 0)
                 self.assertEqual(coin_total(con, 9, 1), 1)
