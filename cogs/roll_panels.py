@@ -9,7 +9,7 @@ PAGE_SIZE = 15
 
 class DailyRollPanel(discord.ui.LayoutView):
     def __init__(self, *, day, winner_text, tagline, on_roll, on_leaderboard,
-                 on_stats, top_five=(), coin_emoji="gold coin", preview=False):
+                 on_stats, top_five=(), coin_emoji="gold coin", ogre_id=0, preview=False):
         super().__init__(timeout=60 if preview else None)
         self.add_item(discord.ui.Container(
             discord.ui.Section(
@@ -24,7 +24,7 @@ class DailyRollPanel(discord.ui.LayoutView):
             discord.ui.TextDisplay(
                 "## Lucky gamers\n"
                 + ("\n".join(
-                    f"**{row['rank']}.** <@{row['user_id']}> · **{row['coins']}** "
+                    f"**{row['rank']}.** <@{ogre_id if row['user_id'] == 0 and ogre_id else row['user_id']}> · **{row['coins']}** "
                     + coin_emoji
                     for row in list(top_five)[:5]
                 ) or "No gold coins awarded yet.")
@@ -49,15 +49,16 @@ class DailyRollPanel(discord.ui.LayoutView):
 
 
 class CoinLeaderboard(discord.ui.LayoutView):
-    def __init__(self, rows, *, owner_id, coin_emoji="gold coin", page=0):
+    def __init__(self, rows, *, owner_id, coin_emoji="gold coin", ogre_id=0, page=0):
         super().__init__(timeout=300)
         self.rows = rows
         self.owner_id = owner_id
         self.coin_emoji = coin_emoji
+        self.ogre_id = ogre_id
         pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
         self.page = max(0, min(page, pages - 1))
         visible = rows[self.page * PAGE_SIZE:(self.page + 1) * PAGE_SIZE]
-        lines = [f"**{r['rank']}.** <@{r['user_id']}> · **{r['coins']}** {coin_emoji}" for r in visible]
+        lines = [f"**{r['rank']}.** <@{ogre_id if r['user_id'] == 0 and ogre_id else r['user_id']}> · **{r['coins']}** {coin_emoji}" for r in visible]
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 "## Hyped Gold Coins\n"
@@ -78,7 +79,8 @@ class CoinLeaderboard(discord.ui.LayoutView):
                 async def turn(interaction, delta=delta):
                     await interaction.response.edit_message(view=CoinLeaderboard(
                         self.rows, owner_id=self.owner_id,
-                        coin_emoji=self.coin_emoji, page=self.page + delta,
+                        coin_emoji=self.coin_emoji, ogre_id=self.ogre_id,
+                        page=self.page + delta,
                     ))
 
                 button.callback = turn
