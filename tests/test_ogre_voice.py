@@ -26,6 +26,23 @@ class OgreVoiceTests(unittest.TestCase):
         self.assertIn("Monday", line)
         self.assertIn("100", line)
 
+    def test_each_feature_has_safe_voice(self):
+        categories = (
+            "daily_prompt", "coin_winner", "coin_winner_ogre",
+            "roll_duplicate", "leaderboard", "stats",
+            "reminder", "lfg", "suggestion", "success",
+        )
+        for category in categories:
+            with self.subTest(category=category):
+                self.assertTrue(PHRASES[category])
+                if category.startswith("coin_winner"):
+                    phrase = pick(category, seed="2026-10-26",
+                                  name="@gamer", day="Monday", roll=90, coin="coin")
+                else:
+                    phrase = pick(category, seed="2026-10-26")
+                self.assertTrue(phrase)
+                self.assertNotIn("other head", phrase.lower())
+
     def test_count_singular_plural(self):
         self.assertEqual(count_label(1), "1 coin")
         self.assertEqual(count_label(2), "2 coins")
