@@ -1,6 +1,6 @@
 """Original, Warcraft-inspired Ogre voice library for Hyped Ogre.
 
-Style inspiration: Warcraft II ogre/ogre-mage and Warcraft III neutral ogre.
+Style inspiration: blunt Warcraft-style ogre speech, with one voice.
 These are new lines, not copies of in-game dialogue. Category-specific keys
 allow safe expansion without rewriting command logic.
 """
@@ -112,7 +112,7 @@ PHRASES = {
         "That roll made noise.",
         "One hundred. Nice and shiny.",
         "Me cannot count higher than that.",
-        "Hundred! Even other head agrees.",
+        "Hundred! Ogre count twice.",
         "Me put this on big-roll shelf."
     ),
     "roll_duplicate": (
@@ -198,18 +198,6 @@ PHRASES = {
         "All good, gamer.",
         "Ogre nods.",
         "That taken care of."
-    ),
-    "two_heads": (
-        "One head says roll. Other says roll bigger.",
-        "Me count. Other head checks.",
-        "Left head likes coin. Right head also.",
-        "Two heads. One leaderboard.",
-        "Me say lucky. Other says maybe.",
-        "One head watches dice. Other watches snacks.",
-        "Me think big number. Other head doubts.",
-        "Both heads agree. That rare.",
-        "Other head says keep counting.",
-        "One head remembers. Other head forgot."
     )
 }
 def pick(category, *, seed=None, **values):
