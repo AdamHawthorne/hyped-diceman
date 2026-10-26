@@ -274,7 +274,7 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
         heading = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> for WoW: Forever.\n"
-                "-# • **Click the button below** to get access to the Forever channels.\n"
+                "**Click the button below** to get access to the Forever channels.\n"
                 "-# • Click it again at any time to remove the role.\n\n"
                 "**The plan:**\n"
                 "-# • **Horde PvP**\n"
