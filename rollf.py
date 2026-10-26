@@ -1147,12 +1147,12 @@ def coin_winner_message(day):
     )
     coin_word = "coin" if total == 1 else "coins"
     return (
-        f"**Coin winner!** {ogre_coin_emoji()}\\n"
+        f"**Coin winner!** {ogre_coin_emoji()}\n"
         + lines[finished.toordinal() % len(lines)].format(
             name=f"<@{winner['user_id']}>", day=weekday,
             roll=winner["winning_roll"], coin=ogre_coin_emoji(),
         )
-        + f"\\n**{total} {coin_word}** now."
+        + f"\n**{total} {coin_word}** now."
     )
 
 
