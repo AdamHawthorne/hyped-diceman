@@ -274,15 +274,13 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
         heading = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> for WoW: Forever.\n"
-                "**Click the button below** to get access to the Forever channels.\n"
-                "Click it again at any time to remove the role.\n\n"
+                "-# • **Click the button below** to get access to the Forever channels.\n"
+                "-# • Click it again at any time to remove the role.\n\n"
                 "**The plan so far:**\n"
-                "• **Horde PvP**\n"
-                "• **Main raid:** Sunday, 20:00–23:00 UK\n"
-                "• **New raid releases:** Wednesday added for the first 2 weeks\n"
-                "• **First Wednesday:** 21:00–00:00 UK\n"
-                "• **Second Wednesday:** 20:00–23:00 UK\n"
-                "• **Focus:** 10 & 20-player raids, with organised pugs for 40-player content\n\n"
+                "-# • **Horde PvP**\n"
+                "-# • **Main raid:** Sunday, 8pm - 11pm UK\n"
+                "-# • **New content:** Wednesday added for the first 2 weeks, 8pm - 11pm UK\n"
+                "-# • **Focus:** 10 & 20-player raids, with organised pugs for 40-player content\n\n"
                 "Interested in helping out with Hyped? "
                 "**Send us a short leadership application below.**"
             ),
