@@ -3,6 +3,7 @@
 The board is live in the chosen test channel and stored in its own SQLite file.
 Existing dice, Flameboard and Forever-role systems are untouched.
 """
+from cogs.ogre_voice import pick as ogre_say
 import asyncio
 import os
 from pathlib import Path
@@ -781,7 +782,7 @@ class ReviewView(discord.ui.View):
 
         try:
             await self.state.cog.refresh(self.state.channel_id)
-            message = "Saved. Ogre updated board."
+            message = "Saved. Ogre updated board. " + ogre_say("success")
         except Exception as exc:
             print(
                 f"LFG BOARD REFRESH FAILED channel={self.state.channel_id} "
@@ -941,7 +942,7 @@ class CharacterEditView(discord.ui.View):
         else:
             try:
                 await self.cog.refresh(self.channel_id)
-                text = "Saved. Ogre updated your character choices."
+                text = "Saved. Ogre updated your character choices. " + ogre_say("success")
             except Exception as exc:
                 print(f"LFG CHARACTER REFRESH FAILED channel={self.channel_id} error={exc!r}")
                 text = "Changes saved, but board refresh failed. Tell an officer."
@@ -1005,7 +1006,7 @@ class RemoveButton(discord.ui.Button):
             )
 
         if result.rowcount and refreshed:
-            text = "Ogre removed your plan."
+            text = "Ogre removed your plan. " + ogre_say("success")
         elif result.rowcount:
             text = "Plan removed, but Ogre could not refresh board."
         else:
