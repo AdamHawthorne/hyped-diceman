@@ -24,10 +24,15 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
         self.assertIn('label="Forever Role"', SOURCE)
         self.assertIn('label="Leadership Application"', SOURCE)
         for option in (
-            "Raid Leader",
-            "Role Leader / Class Leader",
+            "Leading",
+            "Prep",
+            "Logs",
             "Recruitment",
-            "Community",
+            "Loot",
+            "Boosting",
+            "Coding",
+            "Mentoring",
+            "Admin",
             "Anything",
             "Other",
         ):
@@ -37,9 +42,21 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
     def test_application_has_no_name_field(self):
         self.assertNotIn('label="Name"', SOURCE)
         self.assertIn('label="Experience"', SOURCE)
-        self.assertNotIn('label="How could you help Hyped?"', SOURCE)
+        self.assertIn('label="Anything to add?"', SOURCE)
         self.assertIn('label="What are you interested in?"', SOURCE)
-        self.assertNotIn("skills=self.skills.value.strip()", SOURCE)
+        self.assertIn("required=False", SOURCE)
+
+    def test_landing_plan_copy_is_present(self):
+        for text in (
+            "**The plan so far:**",
+            "**Horde PvP**",
+            "**Main raid:** Sunday, 20:00–23:00 UK",
+            "**New raid releases:** Wednesday added for the first 2 weeks",
+            "**First Wednesday:** 21:00–00:00 UK",
+            "**Second Wednesday:** 20:00–23:00 UK",
+            "**Focus:** 10 & 20-player raids, with organised pugs for 40-player content",
+        ):
+            self.assertIn(text, SOURCE)
 
     def test_interest_dropdown_has_no_duplicate_prompt_line(self):
         self.assertNotIn('"What are you interested in?",\n                view=LeadershipInterestView', SOURCE)
