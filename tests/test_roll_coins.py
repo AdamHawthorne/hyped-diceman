@@ -1,3 +1,4 @@
+from contextlib import closing
 """Coin accounting uses temporary SQLite only; never the live bot database."""
 import sqlite3
 import tempfile
@@ -107,7 +108,7 @@ class CoinAccountingTests(unittest.TestCase):
     def test_restart_with_separate_connection_preserves_totals(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'coins.db'
-            with sqlite3.connect(path, isolation_level=None) as con:
+            with closing(sqlite3.connect(path, isolation_level=None)) as con:
                 con.execute('CREATE TABLE rolls (user_id, username, value, rolled_at, actor_type)')
                 con.execute("INSERT INTO rolls VALUES (1, 'one', 100, ?, 'user')",
                             (int(clock('2026-10-25T05:00:00').timestamp()),))
