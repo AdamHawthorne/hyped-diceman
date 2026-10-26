@@ -12,23 +12,22 @@ class DailyRollPanel(discord.ui.LayoutView):
                  on_stats, top_five=(), coin_emoji="gold coin", preview=False):
         super().__init__(timeout=60 if preview else None)
         self.add_item(discord.ui.Container(
+            discord.ui.Section(
+                discord.ui.TextDisplay(
+                    "## Hyped Rolls · Daily Reset\n"
+                    f"**{tagline}**\n\n"
+                    "Roll once per day. Highest roll at the end of the day "
+                    f"keeps the coin {coin_emoji}. First roll wins a tie."
+                ),
+                accessory=discord.ui.Thumbnail(OGRE_IMAGE, description="Hyped Ogre"),
+            ),
             discord.ui.TextDisplay(
-                "## Lifetime gold coin leaders\n"
+                "## Coin winners\n"
                 + ("\n".join(
                     f"**{row['rank']}.** <@{row['user_id']}> · **{row['coins']}** "
                     + coin_emoji
                     for row in list(top_five)[:5]
                 ) or "No gold coins awarded yet.")
-            ),
-            discord.ui.Section(
-                discord.ui.TextDisplay(
-                    "## Hyped Rolls · Daily Reset\n"
-                    f"**{tagline}**\n\n"
-                    "Roll once per day. Highest player roll earns one gold coin "
-                    "at midnight UK time. First roll wins a tie.\n"
-                    "`/leaderboard` · Gold coins\n`/stats` · Your stats"
-                ),
-                accessory=discord.ui.Thumbnail(OGRE_IMAGE, description="Hyped Ogre"),
             ),
             accent_color=GOLD,
         ))
@@ -40,7 +39,8 @@ class DailyRollPanel(discord.ui.LayoutView):
         ):
             button = discord.ui.Button(
                 label=label, custom_id=custom_id,
-                style=discord.ButtonStyle.secondary, disabled=preview,
+                style=(discord.ButtonStyle.success if label == "Roll" else discord.ButtonStyle.secondary),
+                disabled=preview,
             )
             button.callback = callback
             controls.add_item(button)
