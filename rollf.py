@@ -1938,6 +1938,7 @@ async def stats(
             inline=True
         )
 
+        embed.set_footer(text=ogre_say("stats"))
         await interaction.followup.send(
             embed=embed
         )
@@ -2064,6 +2065,7 @@ async def stats(
         inline=True
     )
 
+    embed.set_footer(text=ogre_say("stats"))
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(
