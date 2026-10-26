@@ -3,7 +3,7 @@ import discord
 
 ACCENT = 0x8C5A3C
 FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"
-FOREVER_IMAGE = "https://i.vgy.me/pJaxaB.png"
+FOREVER_IMAGE = "https://i.vgy.me/WGNGdr.png"
 LEADERSHIP_APPLICATIONS_CHANNEL_ID = 1225020051418255370
 
 LEADERSHIP_INTERESTS = (
@@ -122,18 +122,16 @@ def build_forever_role_embed():
 
 
 class LeadershipApplicationPost(discord.ui.LayoutView):
-    def __init__(self, *, applicant_id, interest, experience, skills):
+    def __init__(self, *, applicant_id, interest, experience):
         super().__init__(timeout=None)
         interest = discord.utils.escape_markdown(interest)
         experience = discord.utils.escape_markdown(experience)
-        skills = discord.utils.escape_markdown(skills)
 
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 "## Leadership Application\n"
                 f"**Interested in:** {interest}\n\n"
                 f"**Experience**\n{experience}\n\n"
-                f"**How could you help Hyped?**\n{skills}\n\n"
                 f"-# Sent by <@{int(applicant_id)}>"
             ),
             accent_color=ACCENT,
@@ -164,16 +162,7 @@ class LeadershipApplicationModal(discord.ui.Modal):
             min_length=3,
             max_length=1000,
         )
-        self.skills = discord.ui.TextInput(
-            label="How could you help Hyped?",
-            placeholder="What could you bring to the guild?",
-            style=discord.TextStyle.paragraph,
-            required=True,
-            min_length=3,
-            max_length=1000,
-        )
         self.add_item(self.experience)
-        self.add_item(self.skills)
 
     async def on_submit(self, interaction):
         interest = (
@@ -206,7 +195,6 @@ class LeadershipApplicationModal(discord.ui.Modal):
                     applicant_id=interaction.user.id,
                     interest=interest,
                     experience=self.experience.value.strip(),
-                    skills=self.skills.value.strip(),
                 ),
                 allowed_mentions=discord.AllowedMentions.none(),
             )

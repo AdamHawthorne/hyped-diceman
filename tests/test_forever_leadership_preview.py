@@ -15,7 +15,7 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
 
     def test_v2_preview_uses_same_images_and_copy(self):
         self.assertIn('FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"', SOURCE)
-        self.assertIn('FOREVER_IMAGE = "https://i.vgy.me/pJaxaB.png"', SOURCE)
+        self.assertIn('FOREVER_IMAGE = "https://i.vgy.me/WGNGdr.png"', SOURCE)
         self.assertIn("## <Hyped> for WoW: Forever.", SOURCE)
         self.assertIn("Interested in helping out with Hyped?", SOURCE)
         self.assertIn("Send us a short leadership application below.", SOURCE)
@@ -37,8 +37,9 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
     def test_application_has_no_name_field(self):
         self.assertNotIn('label="Name"', SOURCE)
         self.assertIn('label="Experience"', SOURCE)
-        self.assertIn('label="How could you help Hyped?"', SOURCE)
+        self.assertNotIn('label="How could you help Hyped?"', SOURCE)
         self.assertIn('label="What are you interested in?"', SOURCE)
+        self.assertNotIn("skills=self.skills.value.strip()", SOURCE)
 
     def test_interest_dropdown_has_no_duplicate_prompt_line(self):
         self.assertNotIn('"What are you interested in?",\n                view=LeadershipInterestView', SOURCE)

@@ -61,9 +61,9 @@ class LFGVisualTests(unittest.TestCase):
         self.assertNotIn("guild_lfg_emoji", source)
         self.assertNotIn("LFG_EMOJI_NAME", source)
 
-    def test_smaller_bottom_divider_asset(self):
+    def test_original_bottom_divider_asset(self):
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn('BOTTOM_IMAGE = "https://i.vgy.me/pJaxaB.png"', source)
+        self.assertIn('BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"', source)
 
     def test_open_marker_is_inside_same_v2_member_container(self):
         source = SOURCE.read_text(encoding="utf-8")
