@@ -1783,6 +1783,9 @@ async def bot_daily_roll():
                 except Exception:
                     pass
 
+        # Ogre's roll can change the lowest-ranked player.
+        await roll_reactions.sync()
+
 # ---------------- COMMANDS ----------------
 
 @bot.tree.command(
