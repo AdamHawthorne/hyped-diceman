@@ -60,8 +60,6 @@ class StreamsCog(commands.GroupCog, group_name="streams",
         try:
             panel = TwitchPanel(preview=True)
             await interaction.followup.send(
-                "Preview only — Twitch registration isn't enabled yet. "
-                "Nothing is posted in the public channel.",
                 view=panel,
                 ephemeral=True,
             )
