@@ -1370,7 +1370,7 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
         content = content[:3297] + "..."
 
     channel_name = getattr(message.channel, "name", "channel")
-    source_line = f"#{channel_name} • [Jump to message]({message.jump_url})"
+    source_line = f"#{channel_name}"
 
     description_parts = []
     if content:
