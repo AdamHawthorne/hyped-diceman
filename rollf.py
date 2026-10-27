@@ -1756,9 +1756,12 @@ async def bot_daily_roll():
                 f"BOT ROLL value={value}"
             )
         else:
-            log_error(
-                f"BOT ROLL FAILED value={value}"
-            )
+            # Never announce a second roll if one is already in the database.
+            if bot_rolled_today():
+                continue
+            log_error(f"BOT ROLL FAILED value={value}")
+            await asyncio.sleep(60)
+            continue
 
         with db() as con:
             rows = con.execute(
