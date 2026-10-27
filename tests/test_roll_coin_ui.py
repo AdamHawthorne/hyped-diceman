@@ -337,3 +337,12 @@ class PrivateReplySafetyTests(unittest.TestCase):
         self.assertIn("ephemeral=True", roll_source)
         self.assertIn("await msg.delete()", roll_source)
         self.assertIn("interaction.followup.send(", roll_source)
+
+    def test_leaderboard_is_public_only_in_roll_channel(self):
+        tree = ast.parse(SOURCE)
+        funcs = {node.name: node for node in tree.body if isinstance(node, ast.AsyncFunctionDef)}
+        source = ast.get_source_segment(SOURCE, funcs['show_coin_leaderboard'])
+        self.assertIn('interaction.channel_id != ROLL_CHANNEL_ID', source)
+        self.assertIn('view=CoinLeaderboard(', source)
+        self.assertIn('allowed_mentions=discord.AllowedMentions.none(),', source)
+        self.assertNotIn('allowed_mentions=discord.AllowedMentions.none(), ephemeral=True', source)
