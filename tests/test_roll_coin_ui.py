@@ -324,3 +324,16 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         interaction = SimpleNamespace(guild_id=9, channel_id=88, response=AsyncMock())
         await self.ns['daily_roll_action'](interaction)
         self.ns['perform_roll'].assert_not_awaited()
+
+
+class PrivateReplySafetyTests(unittest.TestCase):
+    def test_stats_and_repeat_roll_replies_are_private(self):
+        tree = ast.parse(SOURCE)
+        funcs = {node.name: node for node in tree.body if isinstance(node, ast.AsyncFunctionDef)}
+        stats_source = ast.get_source_segment(SOURCE, funcs["stats"])
+        roll_source = ast.get_source_segment(SOURCE, funcs["perform_roll"])
+        self.assertIn("interaction.response.defer(ephemeral=True)", stats_source)
+        self.assertIn("interaction.followup.send(embed=embed, ephemeral=True)", stats_source)
+        self.assertIn("ephemeral=True", roll_source)
+        self.assertIn("await msg.delete()", roll_source)
+        self.assertIn("interaction.followup.send(", roll_source)
