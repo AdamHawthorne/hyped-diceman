@@ -27,11 +27,12 @@ class RollReactions:
         start, end = self.today_range()
         with self.db() as con:
             rows = con.execute(
-                "SELECT user_id, value FROM rolls WHERE actor_type = 'user' "
+                "SELECT user_id, value FROM rolls WHERE actor_type IN ('user', 'bot') "
                 "AND rolled_at >= ? AND rolled_at < ? ORDER BY rolled_at ASC, rowid ASC",
                 (start, end),
             ).fetchall()
-        scores = {row[0]: row[1] for row in rows}
+        all_scores = {row[0]: row[1] for row in rows}
+        scores = {uid: value for uid, value in all_scores.items() if uid != 0}
         if not scores:
             return
         channel = self.bot.get_channel(self.channel_id)
@@ -61,7 +62,13 @@ class RollReactions:
         if not scores:
             return
         high = max(scores, key=scores.get)
-        low = min(scores, key=scores.get)
+        # Ogre participates in the low-roll comparison, but never gets poop.
+        # If Ogre is lowest (including a tie), remove poop from all humans.
+        lowest_value = min(all_scores.values())
+        human_low = min(scores, key=scores.get)
+        low = human_low if scores[human_low] == lowest_value and (
+            0 not in all_scores or all_scores[0] > lowest_value
+        ) else None
         guild = self.bot.get_guild(self.guild_id) if self.guild_id and hasattr(self.bot, 'get_guild') else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
         high_emoji = coin or "<:ogrecoin:1564336079430099035>"
@@ -75,7 +82,7 @@ class RollReactions:
                         self.log_error(f"ROLL REACTION CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
                 (high_emoji, user_id == high),
-                ("💩", user_id == low and scores[low] < scores[high]),
+                ("💩", low is not None and user_id == low and scores[low] < max(all_scores.values())),
             ):
                 present = any(str(r.emoji) == str(emoji) and r.me for r in message.reactions)
                 try:
