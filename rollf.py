@@ -1219,11 +1219,14 @@ async def show_coin_leaderboard(interaction):
     if interaction.guild_id != HYPED_GUILD_ID:
         await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
         return
+    if interaction.channel_id != ROLL_CHANNEL_ID:
+        await interaction.response.send_message("Use /leaderboard in the roll channel.", ephemeral=True)
+        return
     await interaction.response.send_message(
         view=CoinLeaderboard(coin_standings(db(), HYPED_GUILD_ID),
                              owner_id=interaction.user.id, coin_emoji=ogre_coin_emoji(),
                              ogre_id=bot.user.id if bot.user else 0),
-        allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
+        allowed_mentions=discord.AllowedMentions.none(),
     )
 
 
