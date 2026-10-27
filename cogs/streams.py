@@ -74,7 +74,10 @@ class TwitchLivePreview(discord.ui.LayoutView):
                 accent_color=0x9146FF,
             ))
         else:
-            self.add_item(discord.ui.Container(content, accent_color=0x9146FF))
+            self.add_item(discord.ui.Container(
+                discord.ui.Section(content, accessory=discord.ui.Thumbnail(OGRE_STREAM_ICON)),
+                accent_color=0x9146FF,
+            ))
         self.add_item(discord.ui.ActionRow(discord.ui.Button(
             label="Watch stream", style=discord.ButtonStyle.link,
             url=f"https://www.twitch.tv/{name}",
