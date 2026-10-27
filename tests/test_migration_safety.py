@@ -44,13 +44,13 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn("async def on_raw_reaction_add", self.source)
         self.assertNotIn("async def on_raw_reaction_remove", self.source)
 
-    def test_flameboard_media_has_no_placeholder_and_all_posts_have_jump_button(self):
-        self.assertNotIn("Cm1ZTF.png", self.source)
-        self.assertIn('label="Jump to message"', self.source)
-        self.assertIn("style=discord.ButtonStyle.link", self.source)
-        self.assertIn("view=flameboard_jump_view(message.jump_url)", self.source)
-        self.assertIn("await board_message.edit(embed=embed, view=flameboard_jump_view(message.jump_url))", self.source)
-        self.assertIn("file=media_file,", self.source)
+    def test_flameboard_has_inline_jump_link_and_live_reaction_count(self):
+        self.assertNotIn('Cm1ZTF.png', self.source)
+        self.assertIn('f"[Jump to message]({message.jump_url})"', self.source)
+        self.assertIn('reaction_counts.get(emoji, 0)', self.source)
+        self.assertIn('await board_message.edit(embed=embed, view=None)', self.source)
+        self.assertNotIn('flameboard_jump_view(message.jump_url)', self.source)
+        self.assertIn('file=media_file,', self.source)
 
     def test_cogs_loaded_on_start(self):
         self.assertIn('bot.load_extension("cogs.lfg_preview")', self.source)
