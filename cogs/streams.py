@@ -23,7 +23,7 @@ MAX_PER_MEMBER = 3
 
 def twitch_name(value):
     value = value.strip().lower().rstrip("/")
-    match = re.fullmatch(r"(?:https?://)?(?:www\\.)?twitch\\.tv/([a-z0-9_]{4,25})", value)
+    match = re.fullmatch(r"(?:https?://)?(?:www\.)?twitch\.tv/([a-z0-9_]{4,25})", value)
     if match:
         return match.group(1)
     return value if re.fullmatch(r"[a-z0-9_]{4,25}", value) else None
