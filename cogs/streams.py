@@ -206,6 +206,9 @@ class StreamsCog(commands.GroupCog, group_name="streams",
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             logging.exception('TWITCH PANEL REFRESH FAILED')
     async def register(self, interaction, text):
+        if interaction.guild_id != GUILD_ID or interaction.channel_id != PUBLIC_CHANNEL_ID:
+            await interaction.response.send_message('Use the public Streams channel to register.', ephemeral=True)
+            return
         name = twitch_name(text)
         if not name:
             await interaction.response.send_message("Use a Twitch channel name or twitch.tv link.", ephemeral=True)
