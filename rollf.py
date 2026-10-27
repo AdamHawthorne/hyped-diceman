@@ -54,7 +54,6 @@ FOREVER_ROLE_ID = int(os.getenv("FOREVER_ROLE_ID", "0"))
 FLAMEBOARD_CHANNEL_ID = int(os.getenv("FLAMEBOARD_CHANNEL_ID", "0"))
 FLAMEBOARD_THRESHOLD = int(os.getenv("FLAMEBOARD_THRESHOLD", "3"))
 FLAMEBOARD_CAST_URL = "https://i.vgy.me/nS4L0z.png"
-FLAMEBOARD_MEDIA_IMAGE_URL = "https://i.vgy.me/Cm1ZTF.png"
 
 BOTLIST_COMMANDS = [
     {"command": "roll", "description": "Roll your daily number (1–100)"},
@@ -1387,15 +1386,17 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     embed.set_author(name=message.author.display_name)
     embed.set_thumbnail(url=message.author.display_avatar.url)
 
-    has_media = any(
-        (attachment.content_type or "").startswith(("image/", "video/"))
-        for attachment in message.attachments
-    )
-
-    if has_media:
-        embed.set_image(url=FLAMEBOARD_MEDIA_IMAGE_URL)
-
     return embed
+
+
+def flameboard_jump_view(jump_url: str):
+    view = discord.ui.View(timeout=None)
+    view.add_item(discord.ui.Button(
+        label="Jump to message",
+        style=discord.ButtonStyle.link,
+        url=jump_url,
+    ))
+    return view
 
 
 def get_flameboard_video_url(message: discord.Message):
@@ -1467,7 +1468,7 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(embed=embed)
+                await board_message.edit(embed=embed, view=flameboard_jump_view(message.jump_url))
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1494,22 +1495,24 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                     media_file = await media_attachment.to_file()
                     board_message = await flameboard_channel.send(
                         embed=embed,
-                        file=media_file
+                        file=media_file,
+                        view=flameboard_jump_view(message.jump_url)
                     )
                 except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
                         content=media_attachment.url,
-                        embed=embed
+                        embed=embed,
+                        view=flameboard_jump_view(message.jump_url)
                     )
             else:
                 try:
                     cast_file = await get_flameboard_cast_file()
                 except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                     log_error(f"FLAMEBOARD CAST IMAGE UNAVAILABLE; posting embed without cast: {exc!r}")
-                    board_message = await flameboard_channel.send(embed=embed)
+                    board_message = await flameboard_channel.send(embed=embed, view=flameboard_jump_view(message.jump_url))
                 else:
                     try:
-                        board_message = await flameboard_channel.send(embed=embed, file=cast_file)
+                        board_message = await flameboard_channel.send(embed=embed, file=cast_file, view=flameboard_jump_view(message.jump_url))
                     except discord.HTTPException as exc:
                         log_error(f"FLAMEBOARD CAST UPLOAD FAILED; retrying embed only: {exc!r}")
                         board_message = await flameboard_channel.send(embed=embed)
