@@ -63,7 +63,7 @@ class TwitchLiveNotice(discord.ui.LayoutView):
         content = discord.ui.TextDisplay(
             "## Ogre spot stream!\n"
             f"**{discord.utils.escape_markdown(name)}** streaming on Twitch!\n\n"
-            f"**Playing:** {discord.utils.escape_markdown(game or 'Unknown')}\n"
+            f"**Playing:** {discord.utils.escape_mentions(discord.utils.escape_markdown(game or 'Unknown'))}\n"
             f"**Stream:** {discord.utils.escape_markdown(title or 'Live on Twitch')}\n\n"
             f"[twitch.tv/{name}](https://www.twitch.tv/{name})\n"
             "Me shout! Go have look!"
@@ -285,6 +285,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                                                game=info.get("game_name") or "",
                                                avatar_url=info.get("profile_image_url"),
                                                stream_thumbnail=(info.get("thumbnail_url") or "").replace("{width}", "640").replace("{height}", "360")),
+                        allowed_mentions=discord.AllowedMentions.none(),
                     )
                     message_id = message.id
                 with self.database() as con:
