@@ -48,19 +48,30 @@ class StreamsCog(commands.GroupCog, group_name="streams",
 
     @app_commands.command(name="preview", description="Preview the Twitch panel in private #ogre")
     async def preview(self, interaction: discord.Interaction):
+        # Acknowledge immediately so Discord never times out during rendering.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         if (interaction.user.id != OWNER_ID or interaction.guild_id != GUILD_ID
                 or interaction.channel_id != PREVIEW_CHANNEL_ID):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Ogre only show this preview to owner in private #ogre.",
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(
-            "Preview only — Twitch registration isn't enabled yet. "
-            "Nothing is posted in the public channel.",
-            view=TwitchPanel(preview=True),
-            ephemeral=True,
-        )
+        try:
+            panel = TwitchPanel(preview=True)
+            await interaction.followup.send(
+                "Preview only — Twitch registration isn't enabled yet. "
+                "Nothing is posted in the public channel.",
+                view=panel,
+                ephemeral=True,
+            )
+        except Exception:
+            import logging
+            logging.exception("STREAMS PREVIEW FAILED")
+            await interaction.followup.send(
+                "Ogre couldn't draw stream panel. Check bot logs.",
+                ephemeral=True,
+            )
 
 
 async def setup(bot):
