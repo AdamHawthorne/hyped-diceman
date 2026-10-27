@@ -251,6 +251,18 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                     data = await response.json()
                 for stream in data.get("data", []):
                     result[stream["user_login"].lower()] = stream
+            # Twitch stream payloads do not contain profile images.
+            # Fetch avatars separately, using the same app token.
+            for i in range(0, len(names), 100):
+                params = [("login", name) for name in names[i:i+100]]
+                async with session.get("https://api.twitch.tv/helix/users",
+                                       params=params, headers=headers) as response:
+                    response.raise_for_status()
+                    profiles = await response.json()
+                for user in profiles.get("data", []):
+                    key = user["login"].lower()
+                    if key in result:
+                        result[key]["profile_image_url"] = user.get("profile_image_url")
             return result
 
     async def reconcile(self):
@@ -264,7 +276,8 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                 if not message_id:
                     message = await channel.send(
                         view=TwitchLivePreview(name=name, title=info.get("title") or "",
-                                               game=info.get("game_name") or ""),
+                                               game=info.get("game_name") or "",
+                                               avatar_url=info.get("profile_image_url")),
                     )
                     message_id = message.id
                 with self.database() as con:
