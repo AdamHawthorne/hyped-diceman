@@ -98,6 +98,19 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('No gold coins', json.dumps(empty.to_components()))
 
 
+class OgreRollSchedulerTests(unittest.TestCase):
+    def test_ogre_roll_schedule_survives_restart_and_evening(self):
+        tree = ast.parse(SOURCE)
+        fn = next(node for node in ast.walk(tree)
+                  if isinstance(node, ast.AsyncFunctionDef)
+                  and node.name == "bot_daily_roll")
+        source = ast.get_source_segment(SOURCE, fn)
+        self.assertIn('daily-ogre-roll:', source)
+        self.assertIn('hashlib.sha256', source)
+        self.assertIn('if now < scheduled:', source)
+        self.assertNotIn('if now.hour >= 22:', source)
+
+
 class HighTieReplyTests(unittest.IsolatedAsyncioTestCase):
     async def test_only_later_joint_high_gets_silent_reply(self):
         con = sqlite3.connect(":memory:", isolation_level=None)
