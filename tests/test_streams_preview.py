@@ -81,6 +81,25 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                     con.execute("SELECT 1")
                 (Path(tmp) / "closed.db").unlink()
 
+    async def test_offline_cleanup_removes_only_live_notice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(streams, "STREAM_DB", str(Path(tmp) / "offline.db")):
+                delete = AsyncMock()
+                channel = SimpleNamespace(get_partial_message=lambda _: SimpleNamespace(delete=delete))
+                cog = StreamsCog(SimpleNamespace())
+                with cog.database() as con:
+                    con.execute(
+                        "INSERT INTO subscriptions(name, submitter, message_id, was_live) VALUES(?,?,?,?)",
+                        ("horriblesnore", 5, 123, 1),
+                    )
+                cog.twitch_data = AsyncMock(return_value={})
+                cog.channel = AsyncMock(return_value=channel)
+                await cog.reconcile()
+                delete.assert_awaited_once()
+                self.assertEqual(cog.rows()[0][3:], (None, 0))
+                await cog.reconcile()
+                delete.assert_awaited_once()
+
     async def test_extension_registered(self):
         source = (ROOT / "rollf.py").read_text()
         self.assertIn('await bot.load_extension("cogs.streams")', source)
