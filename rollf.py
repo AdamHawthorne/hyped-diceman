@@ -1379,6 +1379,11 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     if content:
         description_parts.append(content)
     description_parts.append(source_line)
+    description_parts.append(f"[Jump to message]({message.jump_url})")
+    description_parts.append(
+        " · ".join(f"{emoji} **{reaction_counts.get(emoji, 0)}**" for emoji in ("🔥", "😂", "⭐"))
+        + f"  ·  **{sum(reaction_counts.get(emoji, 0) for emoji in ('🔥', '😂', '⭐'))} total**"
+    )
 
     embed = discord.Embed(
         description="\n\n".join(description_parts),
@@ -1471,7 +1476,7 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(embed=embed, view=flameboard_jump_view(message.jump_url))
+                await board_message.edit(embed=embed, view=None)
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1499,7 +1504,6 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                     board_message = await flameboard_channel.send(
                         embed=embed,
                         file=media_file,
-                        view=flameboard_jump_view(message.jump_url)
                     )
                 except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
@@ -1512,7 +1516,7 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                     cast_file = await get_flameboard_cast_file()
                 except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                     log_error(f"FLAMEBOARD CAST IMAGE UNAVAILABLE; posting embed without cast: {exc!r}")
-                    board_message = await flameboard_channel.send(embed=embed, view=flameboard_jump_view(message.jump_url))
+                    board_message = await flameboard_channel.send(embed=embed)
                 else:
                     try:
                         board_message = await flameboard_channel.send(embed=embed, file=cast_file, view=flameboard_jump_view(message.jump_url))
