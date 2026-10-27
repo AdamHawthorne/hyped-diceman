@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import discord
-from cogs.streams import TwitchPanel, StreamsCog, PREVIEW_CHANNEL_ID, PUBLIC_CHANNEL_ID, OGRE_STREAM_ICON
+from cogs.streams import TwitchPanel, TwitchLivePreview, StreamsCog, PREVIEW_CHANNEL_ID, PUBLIC_CHANNEL_ID, OGRE_STREAM_ICON
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,7 +16,7 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
         panel = TwitchPanel()
         data = json.dumps(panel.to_components())
         self.assertIn("## Live streams:", data)
-        self.assertIn("Give Ogre stream name.", data)
+        self.assertIn("Give Ogre stream name. Me shout when live.", data)
         self.assertIn("List of streams:", data)
         self.assertIn("No Twitch streams registered yet.", data)
         self.assertNotIn("Up to 3 streamers per member.", data)
@@ -51,6 +51,36 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
             kwargs = interaction.followup.send.await_args.kwargs
             self.assertTrue(kwargs["ephemeral"])
             self.assertNotIn("view", kwargs)
+        finally:
+            streams.OWNER_ID, streams.GUILD_ID = old_owner, old_guild
+
+    async def test_live_announcement_preview_is_private_and_has_watch_link(self):
+        import cogs.streams as streams
+        preview = TwitchLivePreview()
+        data = json.dumps(preview.to_components())
+        self.assertIn("ExampleStreamer", data)
+        self.assertIn("World of Warcraft", data)
+        self.assertIn("Watch stream", data)
+        self.assertIn("https://www.twitch.tv/example", data)
+        old_owner, old_guild = streams.OWNER_ID, streams.GUILD_ID
+        streams.OWNER_ID, streams.GUILD_ID = 5, 6
+        try:
+            cog = StreamsCog(SimpleNamespace())
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=5), guild_id=6,
+                channel_id=PREVIEW_CHANNEL_ID,
+                response=SimpleNamespace(defer=AsyncMock()),
+                followup=SimpleNamespace(send=AsyncMock()),
+            )
+            await cog.preview_live.callback(cog, interaction)
+            interaction.response.defer.assert_awaited_once()
+            kwargs = interaction.followup.send.await_args.kwargs
+            self.assertTrue(kwargs["ephemeral"])
+            self.assertIsInstance(kwargs["view"], TwitchLivePreview)
+            interaction.followup.send.reset_mock()
+            interaction.channel_id = PUBLIC_CHANNEL_ID
+            await cog.preview_live.callback(cog, interaction)
+            self.assertNotIn("view", interaction.followup.send.await_args.kwargs)
         finally:
             streams.OWNER_ID, streams.GUILD_ID = old_owner, old_guild
 
