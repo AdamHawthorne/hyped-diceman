@@ -34,7 +34,7 @@ class TwitchPanel(discord.ui.LayoutView):
     def __init__(self, cog=None, *, preview=True, streams=()):
         super().__init__(timeout=300 if preview else None)
         entries = [
-            f"**[{name}](https://www.twitch.tv/{name})** · {status}"
+            f"• **[{name}](https://www.twitch.tv/{name})** · {status}"
             for name, status in streams
         ]
         self.add_item(discord.ui.Container(
