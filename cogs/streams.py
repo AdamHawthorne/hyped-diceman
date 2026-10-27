@@ -297,7 +297,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                 if thumbnail:
                     from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
                     parts = urlsplit(thumbnail)
-                    if parts.scheme == 'https' and parts.hostname and (parts.hostname == 'ttvnw.net' or parts.hostname.endswith('.ttvnw.net')):
+                    if parts.scheme == 'https' and parts.hostname and (parts.hostname == 'jtvnw.net' or parts.hostname.endswith('.jtvnw.net') or parts.hostname == 'ttvnw.net' or parts.hostname.endswith('.ttvnw.net')):
                         params = [(k, v) for k, v in parse_qsl(parts.query) if k != 'ogre_refresh']
                         params.append(('ogre_refresh', str(int(time.time() // 120))))
                         thumbnail = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), ''))
