@@ -40,7 +40,7 @@ class TwitchPanel(discord.ui.LayoutView):
         self.add_item(discord.ui.Container(
             discord.ui.Section(
                 discord.ui.TextDisplay(
-                    "## Live streams:\n"
+                    "## Streams:\n"
                     "Give Ogre stream name. Me shout when live."
                 ),
                 accessory=discord.ui.Thumbnail(
@@ -48,7 +48,7 @@ class TwitchPanel(discord.ui.LayoutView):
                 ),
             ),
             discord.ui.TextDisplay(
-                "### List of streams:\n"
+                "### Watching:\n"
                 + ("\n".join(entries) if entries else "-# No Twitch streams registered yet.")
             ),
             accent_color=ACCENT,
@@ -62,11 +62,11 @@ class TwitchLivePreview(discord.ui.LayoutView):
                  game="World of Warcraft", avatar_url=None):
         super().__init__(timeout=300)
         content = discord.ui.TextDisplay(
-            "## 🔴 Ogre spot live stream!\n"
-            f"**{discord.utils.escape_markdown(name)}** is live on Twitch!\n\n"
+            "## Ogre spot stream!\n"
+            f"**{discord.utils.escape_markdown(name)}** streaming on Twitch!\n\n"
             f"**Playing:** {discord.utils.escape_markdown(game or 'Unknown')}\n"
             f"**Stream:** {discord.utils.escape_markdown(title or 'Live on Twitch')}\n\n"
-            "Me smell adventure. Go watch!"
+            "Me shout! Go have look!"
         )
         if avatar_url and avatar_url.startswith("https://"):
             self.add_item(discord.ui.Container(
