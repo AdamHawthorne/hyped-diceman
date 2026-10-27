@@ -52,7 +52,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(streams, "STREAM_DB", str(Path(tmp) / "test.db")):
                 with patch.object(streams, "OWNER_ID", 5), patch.object(streams, "GUILD_ID", 6):
                     channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(
-                        jump_url="https://discord.com/channels/6/7/8",
+                        jump_url="https://discord.com/channels/6/7/8", id=8,
                     )))
                     cog = StreamsCog(SimpleNamespace(get_channel=lambda _: channel))
                     interaction = SimpleNamespace(
