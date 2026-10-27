@@ -2288,12 +2288,12 @@ async def perform_roll(interaction: discord.Interaction):
             existing_value = row[0]
             time_left = get_time_left()
 
-            await msg.edit(
-                content=(
-                    f"{interaction.user.mention}\n"
-                    f"You already rolled **{existing_value}** today.\n"
-                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}", ephemeral=True
-                )
+            # The animation already posted publicly; remove it and reply privately.
+            await msg.delete()
+            await interaction.followup.send(
+                f"You already rolled **{existing_value}** today.\n"
+                f"Try again in {time_left}. {ogre_say('roll_duplicate')}",
+                ephemeral=True,
             )
         return
 
