@@ -1828,7 +1828,7 @@ async def stats(
 
     # Discord interactions must be acknowledged within a few seconds.
     # Defer immediately, then send the completed statistics as a follow-up.
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
 
     target = user or interaction.user
 
@@ -1972,7 +1972,7 @@ async def stats(
 
         embed.set_footer(text=ogre_say("stats"))
         await interaction.followup.send(
-            embed=embed
+            embed=embed, ephemeral=True
         )
 
         return
@@ -2098,7 +2098,7 @@ async def stats(
     )
 
     embed.set_footer(text=ogre_say("stats"))
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 @bot.tree.command(
     name="help",
@@ -2181,7 +2181,7 @@ async def perform_roll(interaction: discord.Interaction):
         await interaction.response.send_message(
             f"{interaction.user.mention}\n"
             f"You already rolled **{value}** today.\n"
-            f"Try again in {time_left}. {ogre_say('roll_duplicate')}"
+            f"Try again in {time_left}. {ogre_say('roll_duplicate')}", ephemeral=True
         )
         return
 
@@ -2225,7 +2225,7 @@ async def perform_roll(interaction: discord.Interaction):
                 await interaction.response.send_message(
                     f"{interaction.user.mention}\n"
                     f"You already rolled **{existing_value}** today.\n"
-                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}"
+                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}", ephemeral=True
                 )
             return
 
@@ -2292,7 +2292,7 @@ async def perform_roll(interaction: discord.Interaction):
                 content=(
                     f"{interaction.user.mention}\n"
                     f"You already rolled **{existing_value}** today.\n"
-                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}"
+                    f"Try again in {time_left}. {ogre_say('roll_duplicate')}", ephemeral=True
                 )
             )
         return
