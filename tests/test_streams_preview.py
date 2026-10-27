@@ -129,6 +129,26 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 await cog.reconcile()
                 delete.assert_awaited_once()
 
+    async def test_manual_live_preview_is_ephemeral_and_does_not_post(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(streams, 'STREAM_DB', str(Path(tmp) / 'preview.db')):
+                with patch.object(streams, 'OWNER_ID', 5), patch.object(streams, 'GUILD_ID', 6):
+                    channel = SimpleNamespace(send=AsyncMock())
+                    cog = StreamsCog(SimpleNamespace(get_channel=lambda _: channel))
+                    cog.twitch_data = AsyncMock(return_value={})
+                    interaction = SimpleNamespace(
+                        user=SimpleNamespace(id=5), guild_id=6, channel_id=PREVIEW_CHANNEL_ID,
+                        response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+                        followup=SimpleNamespace(send=AsyncMock()),
+                    )
+                    await cog.preview_live.callback(cog, interaction)
+                    result = interaction.followup.send.await_args.kwargs
+                    self.assertTrue(result['ephemeral'])
+                    self.assertIsInstance(result['view'], TwitchLiveNotice)
+                    channel.send.assert_not_awaited()
+                    interaction.channel_id = PUBLIC_CHANNEL_ID
+                    await cog.preview_live.callback(cog, interaction)
+                    interaction.response.send_message.assert_awaited_once()
     async def test_extension_registered(self):
         source = (ROOT / "rollf.py").read_text()
         self.assertIn('await bot.load_extension("cogs.streams")', source)
