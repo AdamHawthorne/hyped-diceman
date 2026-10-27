@@ -74,6 +74,31 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.has(a, '<:ogrecoin:1564336079430099035>'))
         self.assertFalse(self.has(a, '💩'))
 
+    async def test_ogre_lowest_removes_player_poop(self):
+        low = self.add(1, 20)
+        high = self.add(2, 80, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(low, '💩'))
+        self.con.execute("INSERT INTO rolls VALUES (0, 14, 'bot', 3)")
+        await self.tracker.sync()
+        self.assertFalse(self.has(low, '💩'))
+        self.assertFalse(self.has(high, '💩'))
+
+    async def test_ogre_high_roll_moves_poop_to_lowest_player(self):
+        sole = self.add(1, 50)
+        await self.tracker.sync()
+        self.assertFalse(self.has(sole, '💩'))
+        self.con.execute("INSERT INTO rolls VALUES (0, 90, 'bot', 2)")
+        await self.tracker.sync()
+        self.assertTrue(self.has(sole, '💩'))
+
+    async def test_ogre_ties_lowest_no_poop(self):
+        low = self.add(1, 14)
+        self.add(2, 80, 2)
+        self.con.execute("INSERT INTO rolls VALUES (0, 14, 'bot', 3)")
+        await self.tracker.sync()
+        self.assertFalse(self.has(low, '💩'))
+
     async def test_permission_failure_is_contained(self):
         self.add(1, 50)
         async def fail(**kwargs):
