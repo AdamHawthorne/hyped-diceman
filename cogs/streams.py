@@ -232,6 +232,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             view=RemoveTwitchView(self, name),
             allowed_mentions=discord.AllowedMentions.none(),
         )
+        await self.refresh_panel()
 
     async def remove_streamer(self, name):
         with self.database() as con:
@@ -242,6 +243,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                 await (await self.channel()).get_partial_message(row[0]).delete()
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass
+        await self.refresh_panel()
 
     async def twitch_data(self):
         if not self.client_id or not self.client_secret:
@@ -355,6 +357,9 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                 view=TwitchPanel(self, preview=False, streams=streams),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
+            with self.database() as con:
+                con.execute("CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)")
+                con.execute("INSERT OR REPLACE INTO stream_settings(key,value) VALUES('panel_id',?)", (str(message.id),))
             await interaction.followup.send(
                 f"Ogre posted the Twitch sign-up panel: {message.jump_url}",
                 ephemeral=True,
