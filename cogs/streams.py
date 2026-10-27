@@ -191,6 +191,19 @@ class StreamsCog(commands.GroupCog, group_name="streams",
     async def channel(self):
         return self.bot.get_channel(PREVIEW_CHANNEL_ID) or await self.bot.fetch_channel(PREVIEW_CHANNEL_ID)
 
+    async def refresh_panel(self):
+        with self.database() as con:
+            con.execute("CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)")
+            setting = con.execute("SELECT value FROM stream_settings WHERE key='panel_id'").fetchone()
+        if not setting:
+            return
+        streams = [(name, 'Live' if live else (f'Last live: <t:{last}:R>' if last else 'Offline'))
+                   for name, _, last, _, live in self.rows()]
+        try:
+            await (await self.channel()).get_partial_message(int(setting[0])).edit(
+                view=TwitchPanel(self, preview=False, streams=streams))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            logging.exception('TWITCH PANEL REFRESH FAILED')
     async def register(self, interaction, text):
         name = twitch_name(text)
         if not name:
