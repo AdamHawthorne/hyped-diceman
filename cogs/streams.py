@@ -19,12 +19,15 @@ class TwitchPanel(discord.ui.LayoutView):
             discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## Live streams:\n"
-                    "Give Ogre stream name. Me tell guild when live.\n\n"
-                    "-# Up to 3 streamers per member."
+                    "Give Ogre stream name. Me tell guild when live."
                 ),
                 accessory=discord.ui.Thumbnail(
                     OGRE_STREAM_ICON, description="Hyped Ogre livestream icon",
                 ),
+            ),
+            discord.ui.TextDisplay(
+                "### List of streams:\n"
+                "-# No Twitch streams registered yet."
             ),
             accent_color=ACCENT,
         ))
@@ -32,7 +35,6 @@ class TwitchPanel(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(discord.ui.Button(
             label="Twitch",
             style=discord.ButtonStyle.secondary,
-            emoji="🟣",
             custom_id="hyped_streams_twitch_v1",
             disabled=True,  # Preview only: no silent/nonfunctional registrations.
         )))
