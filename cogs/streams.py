@@ -192,7 +192,10 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             await interaction.response.send_message(outcome, ephemeral=True)
             return
         self.bot.add_view(RemoveTwitchView(self, name))
-        await interaction.response.send_message(f"Ogre watching **{name}** now. ✅", ephemeral=True)
+        ready = bool(self.client_id and self.client_secret)
+        acknowledgement = (f"Ogre watching **{name}** now. ✅" if ready else
+                           f"Registered **{name}**. Twitch API keys needed before live alerts work.")
+        await interaction.response.send_message(acknowledgement, ephemeral=True)
         await (await self.channel()).send(
             f"**Twitch added** · [{name}](https://twitch.tv/{name}) · submitted by <@{interaction.user.id}>",
             view=RemoveTwitchView(self, name),
