@@ -293,19 +293,35 @@ class StreamsCog(commands.GroupCog, group_name="streams",
         for name, submitter, last_live, message_id, was_live in self.rows():
             info = live.get(name)
             if info:
+                thumbnail = (info.get('thumbnail_url') or '').replace('{width}', '640').replace('{height}', '360')
+                if thumbnail:
+                    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+                    parts = urlsplit(thumbnail)
+                    if parts.scheme == 'https' and parts.hostname and (parts.hostname == 'ttvnw.net' or parts.hostname.endswith('.ttvnw.net')):
+                        params = [(k, v) for k, v in parse_qsl(parts.query) if k != 'ogre_refresh']
+                        params.append(('ogre_refresh', str(int(time.time() // 120))))
+                        thumbnail = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), ''))
+                notice = TwitchLiveNotice(
+                    name=name, title=info.get('title') or '', game=info.get('game_name') or '',
+                    avatar_url=info.get('profile_image_url'), stream_thumbnail=thumbnail,
+                )
+                if message_id:
+                    try:
+                        await channel.get_partial_message(message_id).edit(view=notice)
+                    except discord.NotFound:
+                        message_id = None
+                    except (discord.Forbidden, discord.HTTPException):
+                        logging.exception('TWITCH LIVE NOTICE EDIT FAILED streamer=%s', name)
+                        continue
                 if not message_id:
                     message = await channel.send(
-                        view=TwitchLiveNotice(name=name, title=info.get("title") or "",
-                                               game=info.get("game_name") or "",
-                                               avatar_url=info.get("profile_image_url"),
-                                               stream_thumbnail=(info.get("thumbnail_url") or "").replace("{width}", "640").replace("{height}", "360")),
-                        allowed_mentions=discord.AllowedMentions.none(),
+                        view=notice, allowed_mentions=discord.AllowedMentions.none(),
                     )
                     message_id = message.id
                     changed = True
                 with self.database() as con:
                     con.execute(
-                        "UPDATE subscriptions SET was_live=1, message_id=?, last_live=? WHERE name=?",
+                        'UPDATE subscriptions SET was_live=1, message_id=?, last_live=? WHERE name=?',
                         (message_id, int(time.time()), name),
                     )
             else:
