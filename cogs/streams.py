@@ -92,7 +92,7 @@ class TwitchLiveNotice(discord.ui.LayoutView):
 
 class TwitchRegistration(discord.ui.Modal, title="Register Twitch streamer"):
     streamer = discord.ui.TextInput(
-        label="Twitch name or URL", placeholder="twitch.tv/horriblesnore",
+        label="Twitch name or URL", placeholder="Twitch username or channel URL",
         max_length=100, min_length=4,
     )
 
