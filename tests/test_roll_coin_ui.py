@@ -109,6 +109,19 @@ class OgreRollSchedulerTests(unittest.TestCase):
         self.assertIn('hashlib.sha256', source)
         self.assertIn('if now < scheduled:', source)
         self.assertNotIn('if now.hour >= 22:', source)
+        self.assertIn("if datetime.now(TZ).date() != now.date():", source)
+        self.assertIn("if bot_rolled_today():", source)
+        self.assertIn("if insert_roll(0, BOT_NAME, value, \"bot\"):", source)
+
+    def test_bot_insert_is_atomic_per_uk_day(self):
+        tree = ast.parse(SOURCE)
+        fn = next(node for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and node.name == "insert_roll")
+        source = ast.get_source_segment(SOURCE, fn)
+        self.assertIn("WHERE NOT EXISTS", source)
+        self.assertIn("actor_type='bot'", source)
+        self.assertIn("if inserted.rowcount != 1:", source)
+
 
 
 class HighTieReplyTests(unittest.IsolatedAsyncioTestCase):
