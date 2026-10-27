@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import time
+from contextlib import contextmanager
 
 import aiohttp
 import discord
@@ -151,8 +152,16 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                 last_live INTEGER, message_id INTEGER, was_live INTEGER NOT NULL DEFAULT 0
             )""")
 
+    @contextmanager
     def database(self):
-        return sqlite3.connect(STREAM_DB, timeout=20)
+        # sqlite3's built-in context manager commits but does not close.
+        # Explicit closure avoids locked Twitch DB files on Windows and restarts.
+        con = sqlite3.connect(STREAM_DB, timeout=20)
+        try:
+            with con:
+                yield con
+        finally:
+            con.close()
 
     def rows(self):
         with self.database() as con:
