@@ -1397,16 +1397,6 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     return embed
 
 
-def flameboard_jump_view(jump_url: str):
-    view = discord.ui.View(timeout=None)
-    view.add_item(discord.ui.Button(
-        label="Jump to message",
-        style=discord.ButtonStyle.link,
-        url=jump_url,
-    ))
-    return view
-
-
 def get_flameboard_video_url(message: discord.Message):
     for attachment in message.attachments:
         content_type = attachment.content_type or ""
