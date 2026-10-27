@@ -47,7 +47,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(twitch_name("https://evil.example/horriblesnore"))
         self.assertIsNone(twitch_name("twitch.tv/test/another"))
 
-    async def test_setup_only_in_private_channel(self):
+    async def test_setup_only_in_public_channel(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(streams, "STREAM_DB", str(Path(tmp) / "test.db")):
                 with patch.object(streams, "OWNER_ID", 5), patch.object(streams, "GUILD_ID", 6):
@@ -56,7 +56,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                     )))
                     cog = StreamsCog(SimpleNamespace(get_channel=lambda _: channel))
                     interaction = SimpleNamespace(
-                        user=SimpleNamespace(id=5), guild_id=6, channel_id=PREVIEW_CHANNEL_ID,
+                        user=SimpleNamespace(id=5), guild_id=6, channel_id=PUBLIC_CHANNEL_ID,
                         response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
                         followup=SimpleNamespace(send=AsyncMock()),
                     )
@@ -65,7 +65,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                     panel = channel.send.await_args.kwargs["view"]
                     self.assertIsInstance(panel, TwitchPanel)
                     self.assertTrue(panel.is_persistent())
-                    interaction.channel_id = PUBLIC_CHANNEL_ID
+                    interaction.channel_id = PREVIEW_CHANNEL_ID
                     await cog.setup_panel.callback(cog, interaction)
                     channel.send.assert_awaited_once()
                     interaction.response.send_message.assert_awaited_once()
