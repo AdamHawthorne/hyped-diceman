@@ -57,6 +57,10 @@ class RollReactions:
                 messages.append((user_id, message))
                 seen.add(user_id)
 
+        # Only visible human roll messages count for reaction ranking.
+        # Keep Ogre's saved roll even though his message has no user mention.
+        all_scores = {user_id: value for user_id, value in all_scores.items()
+                      if user_id == 0 or user_id in seen}
         # Rank by stored values, never by April Fools' display values.
         scores = {user_id: value for user_id, value in scores.items() if user_id in seen}
         if not scores:
