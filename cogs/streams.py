@@ -66,7 +66,7 @@ class TwitchLiveNotice(discord.ui.LayoutView):
             f"**Playing:** {discord.utils.escape_mentions(discord.utils.escape_markdown(game or 'Unknown'))}\n"
             f"**Stream:** {discord.utils.escape_markdown(title or 'Live on Twitch')}\n\n"
             f"[twitch.tv/{name}](https://www.twitch.tv/{name})\n"
-            "Me shout! Go have look!"
+            ""
         )
         if avatar_url and avatar_url.startswith("https://"):
             self.add_item(discord.ui.Container(
@@ -78,17 +78,15 @@ class TwitchLiveNotice(discord.ui.LayoutView):
                 discord.ui.Section(content, accessory=discord.ui.Thumbnail(OGRE_STREAM_ICON)),
                 accent_color=0x9146FF,
             ))
-        # Put the link button within the V2 notification container.
-        self.children[0].add_item(discord.ui.ActionRow(discord.ui.Button(
-            label="Watch stream", style=discord.ButtonStyle.link,
-            url=f"https://www.twitch.tv/{name}",
-        )))
-        # Stream preview is the last item in the card, under the button.
+        # Show the stream picture above the Watch button.
         if stream_thumbnail and stream_thumbnail.startswith("https://"):
             self.children[0].add_item(discord.ui.MediaGallery(
                 discord.MediaGalleryItem(media=stream_thumbnail, description="Live Twitch stream thumbnail"),
             ))
-
+        self.children[0].add_item(discord.ui.ActionRow(discord.ui.Button(
+            label="Watch stream", style=discord.ButtonStyle.link,
+            url=f"https://www.twitch.tv/{name}",
+        )))
 
 class TwitchRegistration(discord.ui.Modal, title="Register Twitch streamer"):
     streamer = discord.ui.TextInput(
