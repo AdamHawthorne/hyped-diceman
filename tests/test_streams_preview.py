@@ -44,7 +44,8 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
             interaction.followup.send.reset_mock()
             interaction.channel_id = PUBLIC_CHANNEL_ID
             await cog.preview.callback(cog, interaction)
-            kwargs = interaction.response.send_message.await_args.kwargs
+            kwargs = interaction.followup.send.await_args.kwargs
+            self.assertTrue(kwargs["ephemeral"])
             self.assertNotIn("view", kwargs)
         finally:
             streams.OWNER_ID, streams.GUILD_ID = old_owner, old_guild
