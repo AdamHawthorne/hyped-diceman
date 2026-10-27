@@ -571,11 +571,29 @@ def insert_roll(user_id, username, value, actor_type):
     with db() as con:
 
         try:
-            con.execute(
-                """INSERT INTO rolls (user_id, username, value, rolled_at, actor_type, roll_date)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (user_id, username, value, ts, actor_type, roll_date)
-            )
+            if actor_type == "bot":
+                # One atomic write per UK day, even across task restarts.
+                day_start = int(datetime.combine(datetime.fromtimestamp(ts, TZ).date(),
+                                                 datetime.min.time(), TZ).timestamp())
+                next_day = datetime.fromtimestamp(ts, TZ).date() + timedelta(days=1)
+                day_end = int(datetime.combine(next_day, datetime.min.time(), TZ).timestamp())
+                inserted = con.execute(
+                    """INSERT INTO rolls (user_id, username, value, rolled_at, actor_type, roll_date)
+                       SELECT ?, ?, ?, ?, ?, ?
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM rolls WHERE actor_type='bot'
+                           AND rolled_at >= ? AND rolled_at < ?
+                       )""",
+                    (user_id, username, value, ts, actor_type, roll_date, day_start, day_end),
+                )
+                if inserted.rowcount != 1:
+                    return False
+            else:
+                con.execute(
+                    """INSERT INTO rolls (user_id, username, value, rolled_at, actor_type, roll_date)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (user_id, username, value, ts, actor_type, roll_date),
+                )
         except sqlite3.IntegrityError:
             return False
 
@@ -1721,6 +1739,10 @@ async def bot_daily_roll():
         )
         if now < scheduled:
             await asyncio.sleep(max(0, scheduled.timestamp() - now.timestamp()))
+
+        # A long wait must never carry yesterday's roll into today.
+        if datetime.now(TZ).date() != now.date():
+            continue
 
         # If Fly came online after the scheduled time, roll immediately,
         # including late evening, rather than silently missing this day.
