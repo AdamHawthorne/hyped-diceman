@@ -32,14 +32,16 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=5), guild_id=6,
                 channel_id=PREVIEW_CHANNEL_ID,
-                response=SimpleNamespace(send_message=AsyncMock()),
+                response=SimpleNamespace(defer=AsyncMock()),
+                followup=SimpleNamespace(send=AsyncMock()),
             )
             await cog.preview.callback(cog, interaction)
-            interaction.response.send_message.assert_awaited_once()
-            kwargs = interaction.response.send_message.await_args.kwargs
+            interaction.response.defer.assert_awaited_once()
+            kwargs = interaction.followup.send.await_args.kwargs
             self.assertTrue(kwargs["ephemeral"])
             self.assertIsInstance(kwargs["view"], TwitchPanel)
-            interaction.response.send_message.reset_mock()
+            self.assertNotIn("content", kwargs)
+            interaction.followup.send.reset_mock()
             interaction.channel_id = PUBLIC_CHANNEL_ID
             await cog.preview.callback(cog, interaction)
             kwargs = interaction.response.send_message.await_args.kwargs
