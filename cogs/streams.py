@@ -287,6 +287,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             return result
 
     async def reconcile(self):
+        changed = False
         live = await self.twitch_data()
         if live is None:
             return
@@ -303,6 +304,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
                     message_id = message.id
+                    changed = True
                 with self.database() as con:
                     con.execute(
                         "UPDATE subscriptions SET was_live=1, message_id=?, last_live=? WHERE name=?",
@@ -320,6 +322,10 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                     con.execute(
                         "UPDATE subscriptions SET was_live=0, message_id=NULL WHERE name=?", (name,)
                     )
+                if was_live or message_id:
+                    changed = True
+        if changed:
+            await self.refresh_panel()
 
     async def watch_loop(self):
         await self.bot.wait_until_ready()
