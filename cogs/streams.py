@@ -388,6 +388,29 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             logging.exception("STREAMS SETUP FAILED")
             await interaction.followup.send("Ogre cannot post in private #ogre.", ephemeral=True)
 
+    @app_commands.command(name="previewlive", description="Privately preview the actual Twitch live announcement")
+    async def preview_live(self, interaction: discord.Interaction):
+        if not await self._permission(interaction):
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        name = "horriblesnore"
+        title, game, avatar, thumbnail = "Sample Twitch stream title", "World of Warcraft", None, None
+        try:
+            data = await self.twitch_data()
+            if data and name in data:
+                info = data[name]
+                title = info.get("title") or title
+                game = info.get("game_name") or game
+                avatar = info.get("profile_image_url")
+                thumbnail = (info.get("thumbnail_url") or "").replace("{width}", "640").replace("{height}", "360")
+        except Exception:
+            logging.exception("TWITCH PRIVATE LIVE PREVIEW LOOKUP FAILED")
+        await interaction.followup.send(
+            view=TwitchLiveNotice(name=name, title=title, game=game, avatar_url=avatar, stream_thumbnail=thumbnail),
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
 
 async def setup(bot):
     await bot.add_cog(StreamsCog(bot))
