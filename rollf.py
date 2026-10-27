@@ -1508,8 +1508,7 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                 except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
                         content=media_attachment.url,
-                        embed=embed,
-                        view=flameboard_jump_view(message.jump_url)
+                        embed=embed
                     )
             else:
                 try:
@@ -1519,7 +1518,7 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                     board_message = await flameboard_channel.send(embed=embed)
                 else:
                     try:
-                        board_message = await flameboard_channel.send(embed=embed, file=cast_file, view=flameboard_jump_view(message.jump_url))
+                        board_message = await flameboard_channel.send(embed=embed, file=cast_file)
                     except discord.HTTPException as exc:
                         log_error(f"FLAMEBOARD CAST UPLOAD FAILED; retrying embed only: {exc!r}")
                         board_message = await flameboard_channel.send(embed=embed)
