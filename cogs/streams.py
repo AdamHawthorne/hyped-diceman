@@ -325,29 +325,29 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             return False
         return True
 
-    @app_commands.command(name="preview", description="Privately preview the Twitch panel")
-    async def preview(self, interaction: discord.Interaction):
+    @app_commands.command(name="setup", description="Post Twitch registration in private #ogre")
+    async def setup_panel(self, interaction: discord.Interaction):
         if not await self._permission(interaction):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         streams = []
         for name, _, last_live, _, was_live in self.rows():
-            status = "🔴 Live" if was_live else (
-                f"Last live: <t:{last_live}:R>" if last_live else "Offline · never seen live"
+            status = "Live" if was_live else (
+                f"Last live: <t:{last_live}:R>" if last_live else "Offline"
             )
             streams.append((name, status))
-        await interaction.followup.send(
-            view=TwitchPanel(self, streams=streams), ephemeral=True,
-        )
-
-    @app_commands.command(name="previewlive", description="Privately preview a Twitch go-live announcement")
-    async def preview_live(self, interaction: discord.Interaction):
-        if not await self._permission(interaction):
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        await interaction.followup.send(
-            view=TwitchLivePreview(name="horriblesnore"), ephemeral=True,
-        )
+        try:
+            message = await (await self.channel()).send(
+                view=TwitchPanel(self, preview=False, streams=streams),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            await interaction.followup.send(
+                f"Ogre posted the Twitch sign-up panel: {message.jump_url}",
+                ephemeral=True,
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            logging.exception("STREAMS SETUP FAILED")
+            await interaction.followup.send("Ogre cannot post in private #ogre.", ephemeral=True)
 
 
 async def setup(bot):
