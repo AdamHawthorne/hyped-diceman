@@ -57,6 +57,17 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
                     interaction.response.send_message.assert_awaited_once()
                     interaction.followup.send.assert_not_awaited()
 
+    async def test_twitch_database_connections_are_closed(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(streams, "STREAM_DB", str(Path(tmp) / "closed.db")):
+                cog = StreamsCog(SimpleNamespace())
+                with cog.database() as con:
+                    con.execute("SELECT 1").fetchone()
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    con.execute("SELECT 1")
+                (Path(tmp) / "closed.db").unlink()
+
     async def test_extension_is_registered(self):
         source = (ROOT / "rollf.py").read_text()
         self.assertIn('await bot.load_extension("cogs.streams")', source)
