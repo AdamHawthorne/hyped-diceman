@@ -1711,18 +1711,19 @@ async def bot_daily_roll():
             await asyncio.sleep((tomorrow.timestamp() - now.timestamp()))
             continue
 
-        if now.hour >= 22:
-            tomorrow = (now + timedelta(days=1)).replace(hour=5, minute=55, second=0, microsecond=0)
-            await asyncio.sleep((tomorrow.timestamp() - now.timestamp()))
-            continue
+        # A stable, unpredictable-looking time between 06:00 and 22:00 UK.
+        # Restarting Fly must NOT restart a fresh 0–16-hour countdown.
+        day_key = now.date().isoformat()
+        day_hash = hashlib.sha256(f"daily-ogre-roll:{day_key}".encode()).digest()
+        seconds_after_six = int.from_bytes(day_hash[:8], "big") % (16 * 60 * 60)
+        scheduled = now.replace(hour=6, minute=0, second=0, microsecond=0) + timedelta(
+            seconds=seconds_after_six
+        )
+        if now < scheduled:
+            await asyncio.sleep(max(0, scheduled.timestamp() - now.timestamp()))
 
-        if now.hour < 6:
-            target = now.replace(hour=6, minute=0, second=0, microsecond=0)
-            await asyncio.sleep((target - now).total_seconds())
-
-        delay = secrets.randbelow(16 * 60 * 60)
-        await asyncio.sleep(delay)
-
+        # If Fly came online after the scheduled time, roll immediately,
+        # including late evening, rather than silently missing this day.
         if bot_rolled_today():
             continue
 
