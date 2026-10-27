@@ -19,7 +19,8 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
         panel = TwitchPanel(cog)
         data = json.dumps(panel.to_components())
         self.assertIn("Give Ogre stream name. Me shout when live.", data)
-        self.assertIn("List of streams:", data)
+        self.assertIn("## Streams:", data)
+        self.assertIn("Watching:", data)
         self.assertIn("No Twitch streams registered yet.", data)
         self.assertNotIn("Up to 3 streamers per member.", data)
         self.assertIn(OGRE_STREAM_ICON, data)
@@ -30,6 +31,8 @@ class StreamPreviewTests(unittest.IsolatedAsyncioTestCase):
         live = json.dumps(TwitchLivePreview().to_components())
         self.assertIn("horriblesnore", live)
         self.assertIn("https://www.twitch.tv/horriblesnore", live)
+        self.assertIn(OGRE_STREAM_ICON, live)
+        self.assertNotIn("🔴", live)
         self.assertNotIn(r"\\n", live)
 
     async def test_twitch_url_validation(self):
