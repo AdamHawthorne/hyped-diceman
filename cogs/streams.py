@@ -56,16 +56,16 @@ class TwitchPanel(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(TwitchRegisterButton(cog)))
 
 
-class TwitchLivePreview(discord.ui.LayoutView):
-    """The same card format used for real live notifications."""
-    def __init__(self, *, name="horriblesnore", title="Hyped guild adventures",
-                 game="World of Warcraft", avatar_url=None):
-        super().__init__(timeout=300)
+class TwitchLiveNotice(discord.ui.LayoutView):
+    """Live Twitch notice using real metadata when available."""
+    def __init__(self, *, name, title, game, avatar_url=None, stream_thumbnail=None):
+        super().__init__(timeout=None)
         content = discord.ui.TextDisplay(
             "## Ogre spot stream!\n"
             f"**{discord.utils.escape_markdown(name)}** streaming on Twitch!\n\n"
             f"**Playing:** {discord.utils.escape_markdown(game or 'Unknown')}\n"
             f"**Stream:** {discord.utils.escape_markdown(title or 'Live on Twitch')}\n\n"
+            f"[twitch.tv/{name}](https://www.twitch.tv/{name})\n"
             "Me shout! Go have look!"
         )
         if avatar_url and avatar_url.startswith("https://"):
@@ -78,10 +78,16 @@ class TwitchLivePreview(discord.ui.LayoutView):
                 discord.ui.Section(content, accessory=discord.ui.Thumbnail(OGRE_STREAM_ICON)),
                 accent_color=0x9146FF,
             ))
-        self.add_item(discord.ui.ActionRow(discord.ui.Button(
+        # Put the link button within the V2 notification container.
+        self.children[0].add_item(discord.ui.ActionRow(discord.ui.Button(
             label="Watch stream", style=discord.ButtonStyle.link,
             url=f"https://www.twitch.tv/{name}",
         )))
+        # Stream preview is the last item in the card, under the button.
+        if stream_thumbnail and stream_thumbnail.startswith("https://"):
+            self.children[0].add_item(discord.ui.MediaGallery(
+                discord.MediaGalleryItem(media=stream_thumbnail, description="Live Twitch stream thumbnail"),
+            ))
 
 
 class TwitchRegistration(discord.ui.Modal, title="Register Twitch streamer"):
@@ -275,9 +281,10 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             if info:
                 if not message_id:
                     message = await channel.send(
-                        view=TwitchLivePreview(name=name, title=info.get("title") or "",
+                        view=TwitchLiveNotice(name=name, title=info.get("title") or "",
                                                game=info.get("game_name") or "",
-                                               avatar_url=info.get("profile_image_url")),
+                                               avatar_url=info.get("profile_image_url"),
+                                               stream_thumbnail=(info.get("thumbnail_url") or "").replace("{width}", "640").replace("{height}", "360")),
                     )
                     message_id = message.id
                 with self.database() as con:
