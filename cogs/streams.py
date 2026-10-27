@@ -19,7 +19,7 @@ class TwitchPanel(discord.ui.LayoutView):
             discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## Live streams:\n"
-                    "Give Ogre stream name. Me tell guild when live."
+                    "Give Ogre stream name. Me shout when live."
                 ),
                 accessory=discord.ui.Thumbnail(
                     OGRE_STREAM_ICON, description="Hyped Ogre livestream icon",
@@ -37,6 +37,27 @@ class TwitchPanel(discord.ui.LayoutView):
             style=discord.ButtonStyle.secondary,
             custom_id="hyped_streams_twitch_v1",
             disabled=True,  # Preview only: no silent/nonfunctional registrations.
+        )))
+
+
+class TwitchLivePreview(discord.ui.LayoutView):
+    """Sample live notification; no Twitch calls or public posting."""
+    def __init__(self):
+        super().__init__(timeout=300)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                "## 🔴 Ogre spot live stream!\\n"
+                "**ExampleStreamer** is live on Twitch!\\n\\n"
+                "**Playing:** World of Warcraft\\n"
+                "**Stream:** Hyped guild adventures\\n\\n"
+                "Me smell adventure. Go watch!"
+            ),
+            accent_color=0x9146FF,
+        ))
+        self.add_item(discord.ui.ActionRow(discord.ui.Button(
+            label="Watch stream",
+            style=discord.ButtonStyle.link,
+            url="https://www.twitch.tv/example",
         )))
 
 
@@ -70,6 +91,30 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             logging.exception("STREAMS PREVIEW FAILED")
             await interaction.followup.send(
                 "Ogre couldn't draw stream panel. Check bot logs.",
+                ephemeral=True,
+            )
+
+
+    @app_commands.command(name="previewlive", description="Privately preview a Twitch go-live announcement")
+    async def preview_live(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if (interaction.user.id != OWNER_ID or interaction.guild_id != GUILD_ID
+                or interaction.channel_id != PREVIEW_CHANNEL_ID):
+            await interaction.followup.send(
+                "Ogre only show this preview to owner in private #ogre.",
+                ephemeral=True,
+            )
+            return
+        try:
+            await interaction.followup.send(
+                view=TwitchLivePreview(),
+                ephemeral=True,
+            )
+        except Exception:
+            import logging
+            logging.exception("STREAMS LIVE PREVIEW FAILED")
+            await interaction.followup.send(
+                "Ogre couldn't draw live alert. Check bot logs.",
                 ephemeral=True,
             )
 
