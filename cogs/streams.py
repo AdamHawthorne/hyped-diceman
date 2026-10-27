@@ -15,7 +15,7 @@ from discord.ext import commands
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 PREVIEW_CHANNEL_ID = 1564594901746716713
-PUBLIC_CHANNEL_ID = 1562121249176424619  # Reserved; never posted to during pilot
+PUBLIC_CHANNEL_ID = 1562121249176424619  # Streams panel and live announcements
 OGRE_STREAM_ICON = "https://i.vgy.me/DSSi6n.png"
 ACCENT = 0x8C5A3C
 STREAM_DB = os.getenv("STREAM_DB_PATH", "/data/streams.db" if os.path.isdir("/data") else "streams.db")
@@ -109,8 +109,8 @@ class TwitchRegisterButton(discord.ui.Button):
         self.cog = cog
 
     async def callback(self, interaction):
-        if interaction.guild_id != GUILD_ID or interaction.channel_id != PREVIEW_CHANNEL_ID:
-            await interaction.response.send_message("Private #ogre testing only.", ephemeral=True)
+        if interaction.guild_id != GUILD_ID or interaction.channel_id != PUBLIC_CHANNEL_ID:
+            await interaction.response.send_message("Use the Streams panel in the public streams channel.", ephemeral=True)
             return
         await interaction.response.send_modal(TwitchRegistration(self.cog))
 
@@ -187,6 +187,9 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             self.task.cancel()
 
     async def channel(self):
+        return self.bot.get_channel(PUBLIC_CHANNEL_ID) or await self.bot.fetch_channel(PUBLIC_CHANNEL_ID)
+
+    async def log_channel(self):
         return self.bot.get_channel(PREVIEW_CHANNEL_ID) or await self.bot.fetch_channel(PREVIEW_CHANNEL_ID)
 
     async def refresh_panel(self):
@@ -225,7 +228,7 @@ class StreamsCog(commands.GroupCog, group_name="streams",
         acknowledgement = (f"Ogre watching **{name}** now. ✅" if ready else
                            f"Registered **{name}**. Twitch API keys needed before live alerts work.")
         await interaction.response.send_message(acknowledgement, ephemeral=True)
-        await (await self.channel()).send(
+        await (await self.log_channel()).send(
             f"**Twitch added** · [{name}](https://twitch.tv/{name}) · submitted by <@{interaction.user.id}>",
             view=RemoveTwitchView(self, name),
             allowed_mentions=discord.AllowedMentions.none(),
@@ -352,16 +355,17 @@ class StreamsCog(commands.GroupCog, group_name="streams",
                 logging.exception("TWITCH PRIVATE PILOT SYNC FAILED")
             await asyncio.sleep(120)
 
-    async def _permission(self, interaction):
-        if (interaction.user.id != OWNER_ID or interaction.guild_id != GUILD_ID
-                or interaction.channel_id != PREVIEW_CHANNEL_ID):
-            await interaction.response.send_message(
-                "Ogre only show this in private #ogre to owner.", ephemeral=True
-            )
+    async def _permission(self, interaction, *, private=False):
+        expected_channel = PREVIEW_CHANNEL_ID if private else PUBLIC_CHANNEL_ID
+        if interaction.user.id != OWNER_ID or interaction.guild_id != GUILD_ID:
+            await interaction.response.send_message("Only Ogre owner can run this command.", ephemeral=True)
+            return False
+        if interaction.channel_id != expected_channel:
+            destination = "private #ogre" if private else "public Streams channel"
+            await interaction.response.send_message(f"Run this command in {destination}.", ephemeral=True)
             return False
         return True
-
-    @app_commands.command(name="setup", description="Post Twitch registration in private #ogre")
+    @app_commands.command(name="setup", description="Post Twitch registration in public Streams")
     async def setup_panel(self, interaction: discord.Interaction):
         if not await self._permission(interaction):
             return
@@ -386,11 +390,11 @@ class StreamsCog(commands.GroupCog, group_name="streams",
             )
         except (discord.Forbidden, discord.HTTPException):
             logging.exception("STREAMS SETUP FAILED")
-            await interaction.followup.send("Ogre cannot post in private #ogre.", ephemeral=True)
+            await interaction.followup.send("Ogre cannot post in public Streams.", ephemeral=True)
 
     @app_commands.command(name="previewlive", description="Privately preview the actual Twitch live announcement")
     async def preview_live(self, interaction: discord.Interaction):
-        if not await self._permission(interaction):
+        if not await self._permission(interaction, private=True):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         name = "horriblesnore"
