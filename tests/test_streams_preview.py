@@ -39,7 +39,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("🔴", data)
         self.assertEqual(len(card.children), 1)
         components = card.children[0].children
-        self.assertEqual([c.type.value for c in components], [9, 1, 12])
+        self.assertEqual([c.type.value for c in components], [9, 12, 1])
 
     async def test_twitch_url_validation(self):
         self.assertEqual(twitch_name("http://twitch.tv/horriblesnore/"), "horriblesnore")
@@ -81,6 +81,35 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                     con.execute("SELECT 1")
                 (Path(tmp) / "closed.db").unlink()
 
+    async def test_live_poll_edits_existing_notice_without_reposting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(streams, 'STREAM_DB', str(Path(tmp) / 'live.db')):
+                edit = AsyncMock()
+                channel = SimpleNamespace(
+                    get_partial_message=lambda _: SimpleNamespace(edit=edit),
+                    send=AsyncMock(),
+                )
+                cog = StreamsCog(SimpleNamespace())
+                with cog.database() as con:
+                    con.execute(
+                        'INSERT INTO subscriptions(name, submitter, message_id, was_live) VALUES(?,?,?,?)',
+                        ('horriblesnore', 5, 123, 1),
+                    )
+                cog.twitch_data = AsyncMock(return_value={
+                    'horriblesnore': {
+                        'title': 'Latest title', 'game_name': 'World of Warcraft',
+                        'thumbnail_url': 'https://static-cdn.jtvnw.net/previews-ttv/live_user_horriblesnore-{width}x{height}.jpg',
+                        'profile_image_url': 'https://example.com/avatar.png',
+                    },
+                })
+                cog.channel = AsyncMock(return_value=channel)
+                await cog.reconcile()
+                channel.send.assert_not_awaited()
+                edit.assert_awaited_once()
+                result = json.dumps(edit.await_args.kwargs['view'].to_components())
+                self.assertIn('Latest title', result)
+                self.assertIn('ogre_refresh', result)
+                self.assertEqual(cog.rows()[0][3], 123)
     async def test_offline_cleanup_removes_only_live_notice(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(streams, "STREAM_DB", str(Path(tmp) / "offline.db")):
