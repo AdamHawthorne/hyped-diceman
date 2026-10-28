@@ -70,7 +70,7 @@ def validate_softres_url(value):
     except ValueError as exc:
         raise ValueError("Enter a valid SoftRes HTTPS link.") from exc
     if (len(url) > 1500 or parts.scheme != "https"
-            or host not in ("softres.it", "www.softres.it")
+            or not (host == "softres.it" or host.endswith(".softres.it"))
             or parts.username is not None or parts.password is not None
             or not parts.path.startswith("/raid/")):
         raise ValueError("Paste a https://softres.it/raid/... link.")
