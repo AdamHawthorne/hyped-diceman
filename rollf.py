@@ -1516,7 +1516,7 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                         board_message = await flameboard_channel.send(content=header, embed=embed, file=cast_file)
                     except discord.HTTPException as exc:
                         log_error(f"FLAMEBOARD CAST UPLOAD FAILED; retrying embed only: {exc!r}")
-                        board_message = await flameboard_channel.send(embed=embed)
+                        board_message = await flameboard_channel.send(content=header, embed=embed)
 
         except (discord.Forbidden, discord.HTTPException) as exc:
             log_error(f"FLAMEBOARD POST FAILED source={message_id}: {exc!r}")
