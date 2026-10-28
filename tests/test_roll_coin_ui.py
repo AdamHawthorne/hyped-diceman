@@ -326,6 +326,15 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         self.ns['perform_roll'].assert_not_awaited()
 
 
+class LeaderboardRequesterTests(unittest.TestCase):
+    def test_requester_mention_stays_in_public_card_and_next_page(self):
+        rows = [{"rank": i, "user_id": i, "coins": 1} for i in range(1, 18)]
+        first = CoinLeaderboard(rows, owner_id=42)
+        second = CoinLeaderboard(rows, owner_id=42, page=1)
+        for panel in (first, second):
+            contents = json.dumps(panel.to_components())
+            self.assertIn("Requested by <@42>", contents)
+
 class PrivateReplySafetyTests(unittest.TestCase):
     def test_stats_and_repeat_roll_replies_are_private(self):
         tree = ast.parse(SOURCE)
