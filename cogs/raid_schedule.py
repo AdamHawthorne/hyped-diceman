@@ -199,7 +199,7 @@ def raid_panel_text(event):
 
 class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
-    def __init__(self, event, *, on_register, on_characters, on_signup=None):
+    def __init__(self, event, *, on_register, on_characters, on_signup=None, on_gear=None):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -232,8 +232,10 @@ class RaidEventPanel(discord.ui.LayoutView):
         )
         gear = discord.ui.Button(
             label="Update gear", custom_id=f"hyped_raid_{event_id}_gear",
-            style=discord.ButtonStyle.secondary, disabled=True,
+            style=discord.ButtonStyle.secondary, disabled=on_gear is None,
         )
+        if on_gear is not None:
+            gear.callback = on_gear
         if on_signup is not None:
             sign_up.callback = on_signup
         else:
