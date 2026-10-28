@@ -360,13 +360,23 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 )
                 return
 
-        # This is an ordinary visible channel message, not an ephemeral preview.
-        await interaction.response.send_message(
-            view=self.make_panel(event),
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        message = await interaction.original_response()
+        # Post as a normal bot message. Avoid an interaction-response header
+        # attached to the public-facing panel; only the setup ACK is private.
+        await interaction.response.defer(ephemeral=True)
+        try:
+            message = await interaction.channel.send(
+                view=self.make_panel(event),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            await interaction.followup.send(
+                "Ogre couldn't post the raid panel in this channel.", ephemeral=True
+            )
+            return
         record_panel(RAID_DB, event["raid_id"], interaction.channel_id, message.id)
+        await interaction.followup.send(
+            f"Ogre posted raid panel: {message.jump_url}", ephemeral=True
+        )
 
     @app_commands.command(name="setup", description="Post or update a real raid panel in private #ogre")
     @app_commands.describe(
