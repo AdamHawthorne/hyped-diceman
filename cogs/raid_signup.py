@@ -8,6 +8,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from cogs.raid_schedule import (
+    RaidEventPanel, active_panels, ensure_raid_fields, latest_raid,
+    read_raid, record_panel, save_raid,
+)
+
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 TEST_CHANNEL_ID = 1564594901746716713
@@ -298,79 +303,24 @@ class RolePickerView(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(select))
 
 
-class RaidSignupPreview(discord.ui.LayoutView):
-    """Private owner-only test. Raid sign-ups and gear submission stay disabled."""
-    def __init__(self):
-        super().__init__(timeout=300)
-        self.add_item(discord.ui.Container(
-            discord.ui.TextDisplay(
-                "## Raid sign-up:\n"
-                "Ogre building raid. You coming?\n\n"
-                "**Sign-ups not open yet**\n"
-                "-# Ogre collecting names. Roster stays hidden until leadership picks."
-            ), accent_color=ACCENT,
-        ))
-        row = discord.ui.ActionRow()
-        signup = discord.ui.Button(
-            label="Sign up", style=discord.ButtonStyle.primary, disabled=True
-        )
-        register = discord.ui.Button(
-            label="Register character", style=discord.ButtonStyle.secondary
-        )
-        chars = discord.ui.Button(
-            label="My characters", style=discord.ButtonStyle.secondary
-        )
-        gear = discord.ui.Button(
-            label="Update gear", style=discord.ButtonStyle.secondary, disabled=True
-        )
-
-        async def start_register(interaction):
-            if not is_test_owner(interaction):
-                await interaction.response.send_message("Private owner test only.", ephemeral=True)
-                return
-            await interaction.response.send_message(
-                view=ClassPickerView(interaction.user.id), ephemeral=True
-            )
-
-        async def show_characters(interaction):
-            if not is_test_owner(interaction):
-                await interaction.response.send_message("Private owner test only.", ephemeral=True)
-                return
-            await interaction.response.send_message(
-                character_list_text(interaction.user.id), ephemeral=True
-            )
-
-        register.callback = start_register
-        chars.callback = show_characters
-        for control in (signup, register, chars, gear):
-            row.add_item(control)
-        self.add_item(row)
-
-
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @app_commands.guild_only()
 @app_commands.default_permissions(manage_guild=True)
-class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Raid management prototype"):
+class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyped raid sign-up management"):
     def __init__(self, bot):
         self.bot = bot
 
     def allowed(self, interaction):
+        # During testing, live raid panels are ONLY permitted in private #ogre.
         return is_test_owner(interaction)
 
-    @app_commands.command(name="preview", description="Private raid sign-up panel preview")
-    async def preview(self, interaction: discord.Interaction):
-        if not self.allowed(interaction):
-            await interaction.response.send_message(
-                "Ogre only show raid prototype to owner in private #ogre.",
-                ephemeral=True,
-            )
-            return
-        await interaction.response.send_message(
-            view=RaidSignupPreview(), ephemeral=True
-        )
+    async def cog_load(self):
+        # Reattach real panel buttons after restarts so posted panels keep working.
+        for event in active_panels(RAID_DB):
+            if event.get("panel_channel_id") == TEST_CHANNEL_ID:
+                self.bot.add_view(self.make_panel(event), message_id=event["panel_message_id"])
 
-    @app_commands.command(name="register", description="Register or update a character (private prototype)")
-    async def register(self, interaction: discord.Interaction):
+    async def on_register(self, interaction):
         if not self.allowed(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
@@ -378,8 +328,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Rai
             view=ClassPickerView(interaction.user.id), ephemeral=True
         )
 
-    @app_commands.command(name="characters", description="Show your saved characters (private)")
-    async def characters(self, interaction: discord.Interaction):
+    async def on_characters(self, interaction):
         if not self.allowed(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
@@ -387,7 +336,94 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Rai
             character_list_text(interaction.user.id), ephemeral=True
         )
 
+    def make_panel(self, event):
+        return RaidEventPanel(
+            event, on_register=self.on_register, on_characters=self.on_characters
+        )
+
+    async def post_panel(self, interaction, event):
+        # Update an existing message rather than creating duplicate live panels.
+        if (event.get("panel_message_id")
+                and event.get("panel_channel_id") == interaction.channel_id):
+            try:
+                message = await interaction.channel.fetch_message(event["panel_message_id"])
+                await message.edit(view=self.make_panel(event))
+                await interaction.response.send_message(
+                    f"Ogre updated raid panel: {message.jump_url}", ephemeral=True
+                )
+                return
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException):
+                await interaction.response.send_message(
+                    "Ogre couldn't update the existing raid panel.", ephemeral=True
+                )
+                return
+
+        # This is an ordinary visible channel message, not an ephemeral preview.
+        await interaction.response.send_message(
+            view=self.make_panel(event),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        message = await interaction.original_response()
+        record_panel(RAID_DB, event["raid_id"], interaction.channel_id, message.id)
+
+    @app_commands.command(name="setup", description="Post or update a real raid panel in private #ogre")
+    @app_commands.describe(
+        number="Raid number, e.g. 1",
+        date_time="Raid start in UK local time: YYYY-MM-DD HH:MM",
+        instance_1="First raid instance",
+        instance_2="Optional second instance",
+        instance_3="Optional third instance",
+        roster_announce="Roster announcement in UK time: YYYY-MM-DD HH:MM",
+    )
+    async def raid_setup(self, interaction: discord.Interaction,
+                         number: int, date_time: str, instance_1: str,
+                         instance_2: str | None = None,
+                         instance_3: str | None = None,
+                         roster_announce: str | None = None):
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Raid panels can only be set up by Ogre's owner in private #ogre.",
+                ephemeral=True,
+            )
+            return
+        try:
+            event = save_raid(
+                RAID_DB, number, date_time, instance_1, instance_2,
+                instance_3, roster_announce
+            )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't set up raid: {exc}", ephemeral=True
+            )
+            return
+        await self.post_panel(interaction, event)
+
+    @app_commands.command(name="panel", description="Refresh the existing real raid panel")
+    @app_commands.describe(number="Raid number (leave blank for latest)")
+    async def panel(self, interaction: discord.Interaction, number: int | None = None):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            return
+        event = read_raid(RAID_DB, number) if number is not None else latest_raid(RAID_DB)
+        if not event:
+            await interaction.response.send_message(
+                "No raid configured yet. Use /raid setup first.", ephemeral=True
+            )
+            return
+        await self.post_panel(interaction, event)
+
+    @app_commands.command(name="register", description="Register or update a character")
+    async def register(self, interaction: discord.Interaction):
+        await self.on_register(interaction)
+
+    @app_commands.command(name="characters", description="Show your saved characters (private)")
+    async def characters(self, interaction: discord.Interaction):
+        await self.on_characters(interaction)
+
 
 async def setup(bot):
     create_schema()
+    ensure_raid_fields(RAID_DB)
     await bot.add_cog(RaidPrototype(bot))
