@@ -6,11 +6,13 @@ synchronisation is separate: the Google Sheet does not authorise a Fly bot.
 import sqlite3
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from urllib.parse import urlsplit
 
 import discord
 
 UK = ZoneInfo("Europe/London")
 RAID_IMAGE = "https://i.vgy.me/XIszIH.png"
+RAID_DIVIDER_IMAGE = "https://i.vgy.me/WGNGdr.png"
 ACCENT = 0xA87535
 RAID_COLUMNS = {
     "instance_1": "TEXT",
@@ -19,6 +21,7 @@ RAID_COLUMNS = {
     "roster_announce_at": "TEXT",
     "panel_message_id": "INTEGER",
     "panel_channel_id": "INTEGER",
+    "softres_url": "TEXT",
 }
 
 
@@ -55,8 +58,40 @@ def ensure_raid_fields(path):
                 con.execute(f"ALTER TABLE raids ADD COLUMN {field} {sql_type}")
 
 
+def validate_softres_url(value):
+    """Only display a public HTTPS SoftRes raid URL when one is provided."""
+    if not value or not value.strip():
+        return None
+    url = value.strip()
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        _ = parts.port
+    except ValueError as exc:
+        raise ValueError("Enter a valid SoftRes HTTPS link.") from exc
+    if (len(url) > 1500 or parts.scheme != "https"
+            or host not in ("softres.it", "www.softres.it")
+            or parts.username is not None or parts.password is not None
+            or not parts.path.startswith("/raid/")):
+        raise ValueError("Paste a https://softres.it/raid/... link.")
+    return url
+
+
+def set_softres_url(path, number, url):
+    """Change just the SoftRes link; leave the raid event/roster untouched."""
+    value = validate_softres_url(url)
+    with sqlite3.connect(path, timeout=20) as con:
+        cursor = con.execute(
+            "UPDATE raids SET softres_url=? WHERE raid_id=?", (value, number)
+        )
+        if cursor.rowcount != 1:
+            raise ValueError(f"Raid #{number} not found. Use /raid setup first.")
+    return read_raid(path, number)
+
+
 def save_raid(path, number, raid_date, instance_1, instance_2=None,
-              instance_3=None, roster_announce=None):
+              instance_3=None, roster_announce=None, softres_url=None):
+    softres = validate_softres_url(softres_url)
     if not 1 <= number <= 100000:
         raise ValueError("Raid number must be between 1 and 100000.")
     start = parse_uk_datetime(raid_date)
@@ -71,16 +106,17 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
     with sqlite3.connect(path, timeout=20) as con:
         con.execute("""
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
-                              instance_3, roster_announce_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                              instance_3, roster_announce_at, softres_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(raid_id) DO UPDATE SET
                 title=excluded.title, raid_at=excluded.raid_at,
                 instance_1=excluded.instance_1, instance_2=excluded.instance_2,
                 instance_3=excluded.instance_3,
-                roster_announce_at=excluded.roster_announce_at
+                roster_announce_at=excluded.roster_announce_at,
+                softres_url=COALESCE(excluded.softres_url, raids.softres_url)
         """, (number, f"<Hyped> Raid #{number}", start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
-              announce.isoformat() if announce else None))
+              announce.isoformat() if announce else None, softres))
     return read_raid(path, number)
 
 
@@ -126,14 +162,17 @@ def raid_panel_text(event):
     roster_date = format_discord_date(event.get("roster_announce_at"))
     roster_text = (
         "Roster published — check the official raid announcement."
-        if event.get("roster_published") else "~~Sign-ups hidden~~"
+        if event.get("roster_published") else "Sign-ups hidden"
     )
+    softres = event.get("softres_url")
+    softres_line = f"\n\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
         f"**Date:** {format_discord_date(event['raid_at'])}\n\n"
         + "\n".join(instances)
         + f"\n\n### Roster\n**Roster announce date:** {roster_date}\n"
         + roster_text
+        + softres_line
     )
 
 
@@ -150,6 +189,11 @@ class RaidEventPanel(discord.ui.LayoutView):
                 ),
             ),
             accent_color=ACCENT,
+        ))
+        # Decorative page-break image lives outside the bordered V2 container.
+        self.add_item(discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=RAID_DIVIDER_IMAGE,
+                                     description="Hyped raid divider"),
         ))
         controls = discord.ui.ActionRow()
         sign_up = discord.ui.Button(
