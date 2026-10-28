@@ -84,24 +84,32 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 raid_schedule.save_raid(path, 1, "2026-11-05 20:00", "MC", roster_announce="2026-11-06 20:00")
 
-    async def test_live_panel_in_private_channel_and_never_in_public_channel(self):
+    async def test_live_panel_posts_normal_message_then_edits_same_message(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
              patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
             raid.create_schema(raid.RAID_DB)
             raid_schedule.ensure_raid_fields(raid.RAID_DB)
             cog = raid.RaidPrototype(SimpleNamespace())
-            response = SimpleNamespace(send_message=AsyncMock())
+            response = SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock())
+            message = SimpleNamespace(id=7654, jump_url="https://discord.com/channels/77/55/7654", edit=AsyncMock())
+            channel = SimpleNamespace(send=AsyncMock(return_value=message),
+                                      fetch_message=AsyncMock(return_value=message))
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=42), guild_id=77,
                 channel_id=raid.TEST_CHANNEL_ID, response=response,
-                channel=SimpleNamespace(fetch_message=AsyncMock()),
-                original_response=AsyncMock(return_value=SimpleNamespace(id=7654))
+                channel=channel, followup=SimpleNamespace(send=AsyncMock()),
             )
             await cog.raid_setup.callback(cog, interaction, 2, "2026-11-05 20:00", "Molten Core")
-            kwargs = response.send_message.await_args.kwargs
-            self.assertNotIn("ephemeral", kwargs)
+            response.defer.assert_awaited_once_with(ephemeral=True)
+            kwargs = channel.send.await_args.kwargs
             self.assertIsInstance(kwargs["view"], raid_schedule.RaidEventPanel)
+            self.assertTrue(kwargs["view"].is_persistent())
             self.assertEqual(raid_schedule.read_raid(raid.RAID_DB, 2)["panel_message_id"], 7654)
+            self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
+            await cog.raid_setup.callback(cog, interaction, 2, "2026-11-05 20:00", "Onyxia")
+            channel.send.assert_awaited_once()
+            message.edit.assert_awaited_once()
+            self.assertIn("Onyxia", json.dumps(message.edit.await_args.kwargs["view"].to_components()))
             response.send_message.reset_mock()
             interaction.channel_id = raid.RAID_CHANNEL_ID
             await cog.raid_setup.callback(cog, interaction, 3, "2026-11-06 20:00", "Onyxia")
