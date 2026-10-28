@@ -542,9 +542,43 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             character_list_text(interaction.user.id), ephemeral=True
         )
 
+    async def on_signup(self, interaction, raid_id):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            return
+        if not member_characters(interaction.user.id):
+            await interaction.response.send_message(
+                "Register your character first with /raid register.", ephemeral=True
+            )
+            return
+        existing = my_signup(raid_id, interaction.user.id)
+        await interaction.response.send_message(
+            (f"Current sign-up: **{discord.utils.escape_markdown(existing[0])}**.\n"
+             if existing else "")
+            + "Choose a character below to sign up or change your character.",
+            view=CharacterActionView(interaction.user.id, raid_id=raid_id),
+            ephemeral=True,
+        )
+
+    async def on_gear(self, interaction):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            return
+        if not member_characters(interaction.user.id):
+            await interaction.response.send_message(
+                "Register your character first with /raid register.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            view=CharacterActionView(interaction.user.id, purpose="gear"), ephemeral=True
+        )
+
     def make_panel(self, event):
+        async def signup(interaction):
+            await self.on_signup(interaction, event["raid_id"])
         return RaidEventPanel(
-            event, on_register=self.on_register, on_characters=self.on_characters
+            event, on_register=self.on_register, on_characters=self.on_characters,
+            on_signup=signup, on_gear=self.on_gear,
         )
 
     async def post_panel(self, interaction, event):
@@ -650,6 +684,62 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             )
             return
         await self.post_panel(interaction, event)
+
+    @app_commands.command(
+        name="gear", description="Upload a long .txt/.simc character gear export"
+    )
+    @app_commands.describe(
+        character="Your saved character name",
+        file="SimulationCraft text export file (.txt or .simc)",
+    )
+    async def gear_file(self, interaction: discord.Interaction,
+                        character: str, file: discord.Attachment):
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Private owner test only.", ephemeral=True
+            )
+            return
+        matches = [r for r in member_characters(interaction.user.id)
+                   if r[1].casefold() == character.strip().casefold()]
+        if not matches:
+            await interaction.response.send_message(
+                "Ogre not know that character. Use /raid characters first.",
+                ephemeral=True,
+            )
+            return
+        if not file.filename.lower().endswith((".txt", ".simc")) or file.size > 200000:
+            await interaction.response.send_message(
+                "Upload a .txt or .simc file, 200 KB maximum.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            data = await file.read()
+            if len(data) > 200000:
+                raise ValueError("SimC upload exceeds 200 KB.")
+            content = data.decode("utf-8-sig")
+            save_gear(interaction.user.id, matches[0][0], content)
+        except (ValueError, UnicodeDecodeError, sqlite3.Error, discord.HTTPException) as exc:
+            await interaction.followup.send(
+                f"Ogre couldn't update gear: {exc}", ephemeral=True
+            )
+            return
+        await interaction.followup.send(
+            f"Ogre saved new SimC snapshot for "
+            f"**{discord.utils.escape_markdown(matches[0][1])}**. "
+            "Raid sign-up stays unchanged.",
+            ephemeral=True,
+        )
+
+    @gear_file.autocomplete("character")
+    async def autocomplete_character(self, interaction: discord.Interaction, current: str):
+        if not is_test_owner(interaction):
+            return []
+        return [
+            app_commands.Choice(name=row[1], value=row[1])
+            for row in member_characters(interaction.user.id)
+            if current.casefold() in row[1].casefold()
+        ][:25]
 
     @app_commands.command(name="register", description="Register or update a character")
     async def register(self, interaction: discord.Interaction):
