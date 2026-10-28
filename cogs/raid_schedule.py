@@ -118,14 +118,15 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
     with database(path) as con:
         con.execute("""
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
-                              instance_3, roster_announce_at, softres_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                              instance_3, roster_announce_at, softres_url, signup_open)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(raid_id) DO UPDATE SET
                 title=excluded.title, raid_at=excluded.raid_at,
                 instance_1=excluded.instance_1, instance_2=excluded.instance_2,
                 instance_3=excluded.instance_3,
                 roster_announce_at=excluded.roster_announce_at,
-                softres_url=COALESCE(excluded.softres_url, raids.softres_url)
+                softres_url=COALESCE(excluded.softres_url, raids.softres_url),
+                signup_open=1
         """, (number, f"<Hyped> Raid #{number}", start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
               announce.isoformat() if announce else None, softres))
@@ -144,6 +145,14 @@ def latest_raid(path):
         con.row_factory = sqlite3.Row
         row = con.execute("SELECT * FROM raids ORDER BY raid_id DESC LIMIT 1").fetchone()
         return dict(row) if row else None
+
+
+def list_raids(path):
+    with database(path) as con:
+        con.row_factory = sqlite3.Row
+        return [dict(row) for row in con.execute(
+            "SELECT * FROM raids ORDER BY raid_id DESC LIMIT 24"
+        )]
 
 
 def active_panels(path):
@@ -190,7 +199,7 @@ def raid_panel_text(event):
 
 class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
-    def __init__(self, event, *, on_register, on_characters):
+    def __init__(self, event, *, on_register, on_characters, on_signup=None):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -210,7 +219,8 @@ class RaidEventPanel(discord.ui.LayoutView):
         controls = discord.ui.ActionRow()
         sign_up = discord.ui.Button(
             label="Sign up", custom_id=f"hyped_raid_{event_id}_signup",
-            style=discord.ButtonStyle.primary, disabled=True,
+            style=discord.ButtonStyle.primary,
+            disabled=not bool(event.get("signup_open")) or bool(event.get("roster_published")),
         )
         register = discord.ui.Button(
             label="Register character", custom_id=f"hyped_raid_{event_id}_register",
@@ -224,6 +234,10 @@ class RaidEventPanel(discord.ui.LayoutView):
             label="Update gear", custom_id=f"hyped_raid_{event_id}_gear",
             style=discord.ButtonStyle.secondary, disabled=True,
         )
+        if on_signup is not None:
+            sign_up.callback = on_signup
+        else:
+            sign_up.disabled = True
         register.callback = on_register
         characters.callback = on_characters
         for control in (sign_up, register, characters, gear):
