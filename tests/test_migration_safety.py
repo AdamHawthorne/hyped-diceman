@@ -48,7 +48,9 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn('Cm1ZTF.png', self.source)
         self.assertIn('f"[Jump to message]({message.jump_url})"', self.source)
         self.assertIn('reaction_counts.get(emoji, 0)', self.source)
-        self.assertIn('await board_message.edit(embed=embed, view=None)', self.source)
+        self.assertIn('await board_message.edit(content=header, embed=embed, view=None)', self.source)
+        self.assertIn('for emoji in ("🔥", "😂", "⭐") if reaction_counts.get(emoji, 0) > 0', self.source)
+        self.assertIn('return f"{reactions}  <#{message.channel.id}>"', self.source)
         self.assertNotIn('flameboard_jump_view(message.jump_url)', self.source)
         self.assertIn('file=media_file,', self.source)
 
