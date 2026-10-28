@@ -4,6 +4,7 @@ An event is configured in the private testing channel for now. Sheets-to-bot
 synchronisation is separate: the Google Sheet does not authorise a Fly bot.
 """
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit
@@ -23,6 +24,17 @@ RAID_COLUMNS = {
     "panel_channel_id": "INTEGER",
     "softres_url": "TEXT",
 }
+
+
+@contextmanager
+def database(path):
+    """Commit or roll back SQL and always close the connection (Windows-safe)."""
+    con = sqlite3.connect(path, timeout=20)
+    try:
+        with con:
+            yield con
+    finally:
+        con.close()
 
 
 def parse_uk_datetime(value):
@@ -49,7 +61,7 @@ def format_discord_date(value):
 
 def ensure_raid_fields(path):
     """Add new columns without clearing any existing sign-ups or characters."""
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         names = {row[1] for row in con.execute("PRAGMA table_info(raids)")}
         if not names:
             raise RuntimeError("Raid schema must be created before schedule migration.")
@@ -80,7 +92,7 @@ def validate_softres_url(value):
 def set_softres_url(path, number, url):
     """Change just the SoftRes link; leave the raid event/roster untouched."""
     value = validate_softres_url(url)
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         cursor = con.execute(
             "UPDATE raids SET softres_url=? WHERE raid_id=?", (value, number)
         )
@@ -103,7 +115,7 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         raise ValueError("Add instance #2 before instance #3.")
     if announce and announce > start:
         raise ValueError("Roster announcement must not be after the raid starts.")
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         con.execute("""
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
                               instance_3, roster_announce_at, softres_url)
@@ -121,21 +133,21 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
 
 
 def read_raid(path, number):
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         con.row_factory = sqlite3.Row
         row = con.execute("SELECT * FROM raids WHERE raid_id=?", (number,)).fetchone()
         return dict(row) if row else None
 
 
 def latest_raid(path):
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         con.row_factory = sqlite3.Row
         row = con.execute("SELECT * FROM raids ORDER BY raid_id DESC LIMIT 1").fetchone()
         return dict(row) if row else None
 
 
 def active_panels(path):
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         con.row_factory = sqlite3.Row
         return [dict(row) for row in con.execute(
             "SELECT * FROM raids WHERE panel_message_id IS NOT NULL"
@@ -143,7 +155,7 @@ def active_panels(path):
 
 
 def record_panel(path, number, channel_id, message_id):
-    with sqlite3.connect(path, timeout=20) as con:
+    with database(path) as con:
         con.execute(
             "UPDATE raids SET panel_channel_id=?, panel_message_id=? WHERE raid_id=?",
             (channel_id, message_id, number),
