@@ -1378,12 +1378,7 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
     description_parts = []
     if content:
         description_parts.append(content)
-    description_parts.append(source_line)
     description_parts.append(f"[Jump to message]({message.jump_url})")
-    description_parts.append(
-        " · ".join(f"{emoji} **{reaction_counts.get(emoji, 0)}**" for emoji in ("🔥", "😂", "⭐"))
-        + f"  ·  **{sum(reaction_counts.get(emoji, 0) for emoji in ('🔥', '😂', '⭐'))} total**"
-    )
 
     embed = discord.Embed(
         description="\n\n".join(description_parts),
@@ -1396,6 +1391,14 @@ def build_flameboard_embed(message: discord.Message, reaction_counts: dict[str, 
 
     return embed
 
+
+def flameboard_header(message, reaction_counts):
+    """Compact starboard-style reaction summary outside the embed."""
+    reactions = " · ".join(
+        f"{emoji} **{reaction_counts[emoji]}**"
+        for emoji in ("🔥", "😂", "⭐") if reaction_counts.get(emoji, 0) > 0
+    )
+    return f"{reactions}  <#{message.channel.id}>"
 
 def get_flameboard_video_url(message: discord.Message):
     for attachment in message.attachments:
@@ -1460,13 +1463,14 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
 
     if qualifying_count >= FLAMEBOARD_THRESHOLD:
         embed = build_flameboard_embed(message, reaction_counts)
+        header = flameboard_header(message, reaction_counts)
 
         if existing:
             try:
                 board_message = await flameboard_channel.fetch_message(
                     existing["flameboard_message_id"]
                 )
-                await board_message.edit(embed=embed, view=None)
+                await board_message.edit(content=header, embed=embed, view=None)
                 return
             except discord.NotFound:
                 with db() as con:
@@ -1492,12 +1496,13 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                 try:
                     media_file = await media_attachment.to_file()
                     board_message = await flameboard_channel.send(
+                        content=header,
                         embed=embed,
                         file=media_file,
                     )
                 except (discord.HTTPException, discord.NotFound):
                     board_message = await flameboard_channel.send(
-                        content=media_attachment.url,
+                        content=f"{header}\n{media_attachment.url}",
                         embed=embed
                     )
             else:
@@ -1505,10 +1510,10 @@ async def _sync_flameboard_message_locked(channel_id: int, message_id: int):
                     cast_file = await get_flameboard_cast_file()
                 except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                     log_error(f"FLAMEBOARD CAST IMAGE UNAVAILABLE; posting embed without cast: {exc!r}")
-                    board_message = await flameboard_channel.send(embed=embed)
+                    board_message = await flameboard_channel.send(content=header, embed=embed)
                 else:
                     try:
-                        board_message = await flameboard_channel.send(embed=embed, file=cast_file)
+                        board_message = await flameboard_channel.send(content=header, embed=embed, file=cast_file)
                     except discord.HTTPException as exc:
                         log_error(f"FLAMEBOARD CAST UPLOAD FAILED; retrying embed only: {exc!r}")
                         board_message = await flameboard_channel.send(embed=embed)
