@@ -79,7 +79,8 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 instance_3=excluded.instance_3,
                 roster_announce_at=excluded.roster_announce_at
         """, (number, f"<Hyped> Raid #{number}", start.isoformat(),
-              *instances, announce.isoformat() if announce else None))
+              instances[0], instances[1] or None, instances[2] or None,
+              announce.isoformat() if announce else None))
     return read_raid(path, number)
 
 
