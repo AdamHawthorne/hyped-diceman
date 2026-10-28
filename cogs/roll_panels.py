@@ -64,7 +64,7 @@ class CoinLeaderboard(discord.ui.LayoutView):
                 "## Hyped Gold Coins\n"
                 + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
                 + f"\n\n-# {sum(r['coins'] for r in rows)} coins across the server · "
-                  f"Page {self.page + 1} of {pages}\n-# {ogre_say('leaderboard')}\n-# Requested by <@{owner_id}>"
+                  f"Page {self.page + 1} of {pages}\n-# {ogre_say('leaderboard')}\n-# <@{owner_id}> asked..."
             ), accent_color=GOLD,
         ))
         if pages > 1:
