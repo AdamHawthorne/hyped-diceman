@@ -101,6 +101,51 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 raid_schedule.set_softres_url(path, 999, "https://softres.it/raid/abc123")
 
+    async def test_schedule_connections_are_closed_even_on_errors(self):
+        """All raid schedule reads/writes must release SQLite handles on Windows."""
+        class TrackedConnection(sqlite3.Connection):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.was_closed = False
+
+            def close(self):
+                self.was_closed = True
+                super().close()
+
+        original_connect = sqlite3.connect
+        opened = []
+
+        def tracked_connect(*args, **kwargs):
+            connection = original_connect(
+                *args, factory=TrackedConnection, **kwargs
+            )
+            opened.append(connection)
+            return connection
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            with patch.object(raid_schedule.sqlite3, "connect",
+                              side_effect=tracked_connect):
+                raid_schedule.ensure_raid_fields(path)
+                raid_schedule.save_raid(
+                    path, 1, "2026-11-05 20:00", "Molten Core"
+                )
+                raid_schedule.read_raid(path, 1)
+                raid_schedule.latest_raid(path)
+                raid_schedule.active_panels(path)
+                raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 7654)
+                raid_schedule.set_softres_url(
+                    path, 1, "https://softres.it/raid/abc123"
+                )
+                with self.assertRaises(ValueError):
+                    raid_schedule.set_softres_url(
+                        path, 999, "https://softres.it/raid/abc123"
+                    )
+            self.assertTrue(opened)
+            self.assertTrue(all(con.was_closed for con in opened),
+                            "A raid scheduling SQLite connection was left open")
+
     async def test_uk_time_is_discord_localised_and_validated(self):
         summer = raid_schedule.parse_uk_datetime("2026-07-01 20:00")
         winter = raid_schedule.parse_uk_datetime("2026-11-01 20:00")
