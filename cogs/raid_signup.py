@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid,
-    read_raid, record_panel, save_raid,
+    read_raid, record_panel, save_raid, set_softres_url,
 )
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -386,12 +386,14 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         instance_2="Optional second instance",
         instance_3="Optional third instance",
         roster_announce="Roster announcement in UK time: YYYY-MM-DD HH:MM",
+        softres_url="Optional https://softres.it/raid/... link",
     )
     async def raid_setup(self, interaction: discord.Interaction,
                          number: int, date_time: str, instance_1: str,
                          instance_2: str | None = None,
                          instance_3: str | None = None,
-                         roster_announce: str | None = None):
+                         roster_announce: str | None = None,
+                         softres_url: str | None = None):
         if not self.allowed(interaction):
             await interaction.response.send_message(
                 "Raid panels can only be set up by Ogre's owner in private #ogre.",
@@ -401,11 +403,30 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         try:
             event = save_raid(
                 RAID_DB, number, date_time, instance_1, instance_2,
-                instance_3, roster_announce
+                instance_3, roster_announce, softres_url
             )
         except (ValueError, sqlite3.Error) as exc:
             await interaction.response.send_message(
                 f"Ogre couldn't set up raid: {exc}", ephemeral=True
+            )
+            return
+        await self.post_panel(interaction, event)
+
+    @app_commands.command(name="softres", description="Add, change or remove a raid SoftRes link")
+    @app_commands.describe(
+        number="Raid number",
+        url="Optional public SoftRes link; leave empty to remove it",
+    )
+    async def softres(self, interaction: discord.Interaction,
+                      number: int, url: str | None = None):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            return
+        try:
+            event = set_softres_url(RAID_DB, number, url)
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn\u0027t update SoftRes: {exc}", ephemeral=True
             )
             return
         await self.post_panel(interaction, event)
