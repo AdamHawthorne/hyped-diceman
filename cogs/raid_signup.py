@@ -94,9 +94,9 @@ class RaidSignupPreview(discord.ui.LayoutView):
         super().__init__(timeout=300)
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                "## Raid sign-up:\\n"
-                "Ogre building raid. You coming?\\n\\n"
-                "**Sign-ups not open yet**\\n"
+                "## Raid sign-up:\n"
+                "Ogre building raid. You coming?\n\n"
+                "**Sign-ups not open yet**\n"
                 "-# Ogre collecting names. Roster stays hidden until leadership picks."
             ),
             accent_color=ACCENT,
