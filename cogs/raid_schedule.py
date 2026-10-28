@@ -115,9 +115,8 @@ def record_panel(path, number, channel_id, message_id):
 
 def raid_panel_text(event):
     """Only include selected instances; NEVER disclose a provisional roster."""
-    title = discord.utils.escape_mentions(
-        discord.utils.escape_markdown(event["title"])
-    )
+    # This title is generated from a validated integer, not player-supplied text.
+    title = event["title"]
     instances = [
         f"**Raid instance #{i}:** {discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))}"
         for i, key in enumerate(("instance_1", "instance_2", "instance_3"), 1)
