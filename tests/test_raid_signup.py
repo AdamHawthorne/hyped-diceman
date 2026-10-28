@@ -50,6 +50,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("XIszIH.png", text)
             self.assertIn("Roster announce date:", text)
             self.assertIn("Sign-ups hidden", text)
+            self.assertNotIn("~~Sign-ups hidden~~", text)
+            self.assertIn("https://i.vgy.me/WGNGdr.png", text)
+            self.assertNotIn("SoftRes sign-up", text)
+            self.assertTrue(any(isinstance(c, raid_schedule.discord.ui.MediaGallery) for c in panel.children))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
             self.assertTrue(panel.is_persistent())
@@ -66,6 +70,33 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raid_schedule.latest_raid(path)["raid_id"], 1)
             raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
             self.assertEqual(raid_schedule.active_panels(path)[0]["panel_message_id"], 12345)
+
+    async def test_optional_inline_softres_link_and_separate_update(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(path, 1, "2026-11-05 20:00", "Molten Core")
+            event = raid_schedule.set_softres_url(path, 1, "https://softres.it/raid/abc123")
+            panel = raid_schedule.RaidEventPanel(
+                event, on_register=AsyncMock(), on_characters=AsyncMock()
+            )
+            components = json.dumps(panel.to_components())
+            self.assertIn("[SoftRes sign-up](https://softres.it/raid/abc123)", components)
+            self.assertNotIn('"label": "SoftRes"', components)
+            self.assertNotIn('"url": "https://softres.it/raid/abc123"', components)
+            # Editing raid details without a link does not wipe the existing SoftRes.
+            event = raid_schedule.save_raid(path, 1, "2026-11-06 20:00", "Onyxia")
+            self.assertEqual(event["softres_url"], "https://softres.it/raid/abc123")
+            event = raid_schedule.set_softres_url(path, 1, None)
+            self.assertIsNone(event["softres_url"])
+            self.assertNotIn("SoftRes sign-up", raid_schedule.raid_panel_text(event))
+            with self.assertRaises(ValueError):
+                raid_schedule.set_softres_url(path, 1, "http://softres.it/raid/abc123")
+            with self.assertRaises(ValueError):
+                raid_schedule.set_softres_url(path, 1, "https://example.com/raid/abc123")
+            with self.assertRaises(ValueError):
+                raid_schedule.set_softres_url(path, 999, "https://softres.it/raid/abc123")
 
     async def test_uk_time_is_discord_localised_and_validated(self):
         summer = raid_schedule.parse_uk_datetime("2026-07-01 20:00")
