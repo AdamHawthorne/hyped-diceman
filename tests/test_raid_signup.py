@@ -41,6 +41,18 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             await cog.preview.callback(cog, interaction)
             self.assertNotIn("view", response.send_message.await_args.kwargs)
 
+    async def test_character_profile_can_be_updated_without_signup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid.save_character(42, "Snore", "Realm", "Mage", "Frost", "DPS", path)
+            raid.save_character(42, "Snore", "Realm", "Mage", "Fire", "DPS", path)
+            self.assertEqual(raid.list_characters(42, path),
+                             [("Snore", "Realm", "Mage", "Fire", "DPS")])
+            self.assertEqual(raid.list_characters(99, path), [])
+            with raid.database(path) as con:
+                self.assertEqual(con.execute("SELECT COUNT(*) FROM signups").fetchone()[0], 0)
+
     async def test_loaded_but_public_channel_not_posted(self):
         source = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
         self.assertIn('await bot.load_extension("cogs.raid_signup")', source)
