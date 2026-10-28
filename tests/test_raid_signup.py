@@ -91,6 +91,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             event = raid_schedule.set_softres_url(path, 1, None)
             self.assertIsNone(event["softres_url"])
             self.assertNotIn("SoftRes sign-up", raid_schedule.raid_panel_text(event))
+            self.assertEqual(raid_schedule.validate_softres_url(
+                "https://legacy.softres.it/raid/gcz7uk"),
+                "https://legacy.softres.it/raid/gcz7uk")
             with self.assertRaises(ValueError):
                 raid_schedule.set_softres_url(path, 1, "http://softres.it/raid/abc123")
             with self.assertRaises(ValueError):
