@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
+from cogs import raid_schedule
+
 import cogs.raid_signup as raid
 
 
@@ -24,22 +26,87 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(raid.ATTENDANCE_OPTIONS), {"Pending", "Attended", "Late", "AFK", "No-show", "Excused"})
         self.assertIn("Attendance", raid.SHEET_TABS)
 
-    async def test_private_preview_only_and_disabled_buttons(self):
-        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
+    async def test_schedule_migration_and_v2_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.ensure_raid_fields(path)  # startup migration is safe to repeat
+            event = raid_schedule.save_raid(
+                path, 1, "2026-11-05 20:00", "Molten Core",
+                roster_announce="2026-11-04 19:00",
+            )
+            self.assertEqual(event["raid_id"], 1)
+            self.assertIsNone(event["instance_2"])
+            panel = raid_schedule.RaidEventPanel(
+                event, on_register=AsyncMock(), on_characters=AsyncMock()
+            )
+            text = json.dumps(panel.to_components())
+            self.assertIn("<Hyped> Raid #1", text)
+            self.assertIn("Raid instance #1:", text)
+            self.assertIn("Molten Core", text)
+            self.assertNotIn("Raid instance #2:", text)
+            self.assertNotIn("Raid instance #3:", text)
+            self.assertIn("XIszIH.png", text)
+            self.assertIn("Roster announce date:", text)
+            self.assertIn("Sign-ups hidden", text)
+            self.assertIn("<t:", text)
+            self.assertNotIn("Snore Mon", text)
+            self.assertTrue(panel.is_persistent())
+            self.assertIn('"disabled": true', text)
+            event = raid_schedule.save_raid(
+                path, 1, "2026-11-06 20:00", "Molten Core",
+                "Onyxia", "Blackwing Lair", "2026-11-05 18:00",
+            )
+            updated = json.dumps(raid_schedule.RaidEventPanel(
+                event, on_register=AsyncMock(), on_characters=AsyncMock()
+            ).to_components())
+            self.assertIn("Raid instance #2:", updated)
+            self.assertIn("Raid instance #3:", updated)
+            self.assertEqual(raid_schedule.latest_raid(path)["raid_id"], 1)
+            raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
+            self.assertEqual(raid_schedule.active_panels(path)[0]["panel_message_id"], 12345)
+
+    async def test_uk_time_is_discord_localised_and_validated(self):
+        summer = raid_schedule.parse_uk_datetime("2026-07-01 20:00")
+        winter = raid_schedule.parse_uk_datetime("2026-11-01 20:00")
+        self.assertEqual(summer.utcoffset().total_seconds(), 3600)
+        self.assertEqual(winter.utcoffset().total_seconds(), 0)
+        self.assertIn("<t:", raid_schedule.format_discord_date(summer.isoformat()))
+        with self.assertRaises(ValueError):
+            raid_schedule.parse_uk_datetime("tomorrow")
+        with self.assertRaises(ValueError):
+            raid_schedule.parse_uk_datetime("2026-03-29 01:30")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            with self.assertRaises(ValueError):
+                raid_schedule.save_raid(path, 1, "2026-11-05 20:00", "MC", roster_announce="2026-11-06 20:00")
+
+    async def test_live_panel_in_private_channel_and_never_in_public_channel(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
+             patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
+            raid.create_schema(raid.RAID_DB)
+            raid_schedule.ensure_raid_fields(raid.RAID_DB)
             cog = raid.RaidPrototype(SimpleNamespace())
             response = SimpleNamespace(send_message=AsyncMock())
-            interaction = SimpleNamespace(user=SimpleNamespace(id=42), guild_id=77,
-                                          channel_id=raid.TEST_CHANNEL_ID, response=response)
-            await cog.preview.callback(cog, interaction)
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID, response=response,
+                channel=SimpleNamespace(fetch_message=AsyncMock()),
+                original_response=AsyncMock(return_value=SimpleNamespace(id=7654))
+            )
+            await cog.raid_setup.callback(cog, interaction, 2, "2026-11-05 20:00", "Molten Core")
             kwargs = response.send_message.await_args.kwargs
-            self.assertTrue(kwargs["ephemeral"])
-            data = json.dumps(kwargs["view"].to_components())
-            self.assertIn("Raid sign-up:", data)
-            self.assertIn('"disabled": true', data)
+            self.assertNotIn("ephemeral", kwargs)
+            self.assertIsInstance(kwargs["view"], raid_schedule.RaidEventPanel)
+            self.assertEqual(raid_schedule.read_raid(raid.RAID_DB, 2)["panel_message_id"], 7654)
             response.send_message.reset_mock()
             interaction.channel_id = raid.RAID_CHANNEL_ID
-            await cog.preview.callback(cog, interaction)
+            await cog.raid_setup.callback(cog, interaction, 3, "2026-11-06 20:00", "Onyxia")
             self.assertNotIn("view", response.send_message.await_args.kwargs)
+            self.assertIsNone(raid_schedule.read_raid(raid.RAID_DB, 3))
 
     async def test_character_profile_can_be_updated_without_signup(self):
         with tempfile.TemporaryDirectory() as tmp:
