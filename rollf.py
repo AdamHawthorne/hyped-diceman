@@ -2962,6 +2962,7 @@ async def load_hyped_extensions():
     await bot.load_extension("cogs.countdown")
     await bot.load_extension("cogs.suggestions")
     await bot.load_extension("cogs.streams")
+    await bot.load_extension("cogs.raid_signup")
 
 bot.setup_hook = load_hyped_extensions
 
