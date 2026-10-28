@@ -1,6 +1,7 @@
 """Private raid signup prototype. No public raid posts or Sheets credentials required."""
 import os
 import sqlite3
+import time
 from datetime import datetime, timezone
 from contextlib import contextmanager
 
@@ -9,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.raid_schedule import (
-    RaidEventPanel, active_panels, ensure_raid_fields, latest_raid,
+    RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
     read_raid, record_panel, save_raid, set_softres_url,
 )
 
@@ -175,6 +176,211 @@ def character_list_text(discord_id):
         + ("\n".join(lines) if lines else "Ogre not know any characters yet.")
         + "\n\n-# Update an existing character using /raid register and the same name."
     )
+
+
+def member_characters(discord_id, path=RAID_DB):
+    with database(path) as con:
+        return con.execute(
+            "SELECT character_id, name, class_name, spec, role, last_simc_at "
+            "FROM characters WHERE discord_id=? ORDER BY is_main DESC, name",
+            (discord_id,),
+        ).fetchall()
+
+
+def save_gear(discord_id, character_id, text, path=RAID_DB):
+    """Store a reusable raw SimC export independent of any raid application."""
+    text = text.strip()
+    if len(text) < 50 or len(text) > 200000:
+        raise ValueError("Upload a complete SimC export (50–200,000 characters).")
+    if not ("player=" in text.lower() or "level=" in text.lower()
+            or "simulationcraft" in text.lower()):
+        raise ValueError("Ogre need a SimulationCraft character export, not a description.")
+    now = datetime.now(timezone.utc).isoformat()
+    with database(path) as con:
+        character = con.execute(
+            "SELECT character_id FROM characters WHERE character_id=? AND discord_id=?",
+            (character_id, discord_id),
+        ).fetchone()
+        if not character:
+            raise ValueError("Ogre not know that character belongs to you.")
+        con.execute(
+            "INSERT INTO gear_exports (character_id, submitted_at, format, raw_text) "
+            "VALUES (?, ?, 'simc_raw', ?)",
+            (character_id, now, text),
+        )
+        con.execute(
+            "UPDATE characters SET last_simc_at=? WHERE character_id=?",
+            (int(time.time()), character_id),
+        )
+
+
+def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
+    """Only accept an applicant's own character with a submitted SimC export."""
+    with database(path) as con:
+        event = con.execute(
+            "SELECT signup_open, roster_published FROM raids WHERE raid_id=?",
+            (raid_id,),
+        ).fetchone()
+        if not event or not event[0] or event[1]:
+            raise ValueError("Sign-ups aren't open for this raid.")
+        character = con.execute(
+            "SELECT character_id FROM characters "
+            "WHERE character_id=? AND discord_id=?",
+            (character_id, discord_id),
+        ).fetchone()
+        if not character:
+            raise ValueError("Choose one of your own saved characters.")
+        gear = con.execute(
+            "SELECT 1 FROM gear_exports WHERE character_id=? LIMIT 1",
+            (character_id,),
+        ).fetchone()
+        if not gear:
+            raise ValueError(
+                "Ogre need your SimC export first. Use Update gear, then sign up."
+            )
+        con.execute("""
+            INSERT INTO signups(raid_id, discord_id, character_id, availability, submitted_at)
+            VALUES (?, ?, ?, 'Available', ?)
+            ON CONFLICT(raid_id, discord_id) DO UPDATE SET
+                character_id=excluded.character_id, availability='Available',
+                submitted_at=excluded.submitted_at
+        """, (raid_id, discord_id, character_id, datetime.now(timezone.utc).isoformat()))
+
+
+def my_signup(raid_id, discord_id, path=RAID_DB):
+    with database(path) as con:
+        return con.execute(
+            "SELECT c.name, s.availability FROM signups s "
+            "JOIN characters c ON c.character_id=s.character_id "
+            "WHERE s.raid_id=? AND s.discord_id=?",
+            (raid_id, discord_id),
+        ).fetchone()
+
+
+def withdraw_signup(raid_id, discord_id, path=RAID_DB):
+    with database(path) as con:
+        event = con.execute(
+            "SELECT signup_open, roster_published FROM raids WHERE raid_id=?",
+            (raid_id,),
+        ).fetchone()
+        if not event or not event[0] or event[1]:
+            raise ValueError("Sign-ups aren't open for this raid.")
+        return con.execute(
+            "DELETE FROM signups WHERE raid_id=? AND discord_id=?",
+            (raid_id, discord_id),
+        ).rowcount
+
+
+class GearPasteModal(discord.ui.Modal):
+    def __init__(self, owner_id, char_id, char_name):
+        super().__init__(title="Update SimC gear snapshot")
+        self.owner_id = owner_id
+        self.char_id = char_id
+        self.char_name = char_name
+        self.export = discord.ui.TextInput(
+            label="Paste SimC export (up to 4000 characters)",
+            style=discord.TextStyle.paragraph,
+            max_length=4000,
+        )
+        self.add_item(self.export)
+
+    async def on_submit(self, interaction):
+        if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            return
+        try:
+            save_gear(self.owner_id, self.char_id, self.export.value)
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't update gear: {exc}", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            f"Gear saved for **{discord.utils.escape_markdown(self.char_name)}**. "
+            "Raid sign-up not changed.", ephemeral=True
+        )
+
+
+class CharacterActionView(discord.ui.LayoutView):
+    """Ephemeral member-only choices; never publish applicants or gear contents."""
+    def __init__(self, owner_id, *, raid_id=None, purpose="signup"):
+        super().__init__(timeout=300)
+        self.owner_id = owner_id
+        self.raid_id = raid_id
+        self.purpose = purpose
+        rows = member_characters(owner_id)
+        if purpose == "signup":
+            hint = ("Choose the character for this raid. A SimC snapshot is required. "
+                    "Only leadership can see the applicant list.")
+        else:
+            hint = ("Choose which character to update. Paste short SimC exports here; "
+                    "use /raid gear for larger .txt/.simc files.")
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay("## " + ("Raid sign-up" if purpose == "signup" else "Update gear")
+                                   + "\n" + hint), accent_color=ACCENT,
+        ))
+        if not rows:
+            return
+        selection = discord.ui.Select(
+            placeholder="Choose your saved character",
+            options=[
+                discord.SelectOption(
+                    label=name[:100], value=str(char_id),
+                    description=f"{class_name} / {spec} · {role}"[:100],
+                ) for char_id, name, class_name, spec, role, _ in rows[:25]
+            ],
+        )
+
+        async def select_character(interaction):
+            if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message("Private owner test only.", ephemeral=True)
+                return
+            char_id = int(selection.values[0])
+            match = next((r for r in rows if r[0] == char_id), None)
+            if not match:
+                await interaction.response.send_message(
+                    "Character list expired. Reopen from the raid panel.", ephemeral=True
+                )
+                return
+            if self.purpose == "gear":
+                await interaction.response.send_modal(
+                    GearPasteModal(self.owner_id, char_id, match[1])
+                )
+                return
+            try:
+                save_signup(self.raid_id, self.owner_id, char_id)
+            except (ValueError, sqlite3.Error) as exc:
+                await interaction.response.send_message(str(exc), ephemeral=True)
+                return
+            await interaction.response.send_message(
+                f"Ogre got your sign-up for Raid #{self.raid_id}: "
+                f"**{discord.utils.escape_markdown(match[1])}**. "
+                "Applicant list remains hidden.", ephemeral=True
+            )
+
+        selection.callback = select_character
+        self.add_item(discord.ui.ActionRow(selection))
+        if purpose == "signup":
+            withdraw = discord.ui.Button(
+                label="Withdraw my sign-up", style=discord.ButtonStyle.secondary,
+            )
+
+            async def on_withdraw(interaction):
+                if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+                    await interaction.response.send_message("Private owner test only.", ephemeral=True)
+                    return
+                try:
+                    removed = withdraw_signup(self.raid_id, self.owner_id)
+                except (ValueError, sqlite3.Error) as exc:
+                    await interaction.response.send_message(str(exc), ephemeral=True)
+                    return
+                await interaction.response.send_message(
+                    "Ogre withdrew your sign-up." if removed else "No sign-up to withdraw.",
+                    ephemeral=True,
+                )
+
+            withdraw.callback = on_withdraw
+            self.add_item(discord.ui.ActionRow(withdraw))
 
 
 class CharacterNameModal(discord.ui.Modal):
