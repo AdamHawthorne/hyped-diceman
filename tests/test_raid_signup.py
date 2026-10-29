@@ -661,6 +661,11 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(legacy["end_at"], end_at)
             self.assertEqual(legacy["check_channel_id"], 1564075966895231059)
+            moved = raid_schedule.save_raid(
+                path, 1, "2026-12-11 20:00", "Hyjal (20m)"
+            )
+            self.assertTrue(moved["end_at"].startswith("2026-12-12T00:30"))
+            self.assertEqual(moved["check_channel_id"], 1564075966895231059)
             # Explicit default selection clears custom end, but not the Check channel.
             reset = raid_schedule.save_raid(
                 path, 1, "2026-12-09 21:00", "Hyjal (20m)", end_at=None
