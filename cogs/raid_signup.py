@@ -102,6 +102,46 @@ def create_schema(path=RAID_DB):
         );
         """)
 
+        # Historic registrations allowed separate realm/casing variants of
+        # one character. Consolidate those on startup without losing any
+        # sign-ups, attendance references or saved SimC snapshots.
+        con.execute("BEGIN IMMEDIATE")
+        rows = con.execute(
+            "SELECT character_id, discord_id, name, is_main, last_simc_at "
+            "FROM characters ORDER BY character_id"
+        ).fetchall()
+        grouped = {}
+        for character_id, member_id, character_name, is_main, simc_at in rows:
+            normalized = " ".join((character_name or "").split())
+            key = (member_id, normalized.casefold())
+            grouped.setdefault(key, []).append(
+                (character_id, normalized, is_main, simc_at)
+            )
+        for matches in grouped.values():
+            keep_id, clean_name, _, _ = matches[0]
+            for duplicate_id, _, _, _ in matches[1:]:
+                for table in ("signups", "attendance", "gear_exports"):
+                    con.execute(
+                        f"UPDATE {table} SET character_id=? WHERE character_id=?",
+                        (keep_id, duplicate_id),
+                    )
+                con.execute(
+                    "DELETE FROM characters WHERE character_id=?", (duplicate_id,)
+                )
+            con.execute(
+                "UPDATE characters SET name=?, is_main=?, last_simc_at=? "
+                "WHERE character_id=?",
+                (clean_name, max(row[2] for row in matches),
+                 max((row[3] or 0) for row in matches) or None, keep_id),
+            )
+        # One identity per Discord user and character name, ignoring case
+        # and the legacy realm column. Different characters remain separate.
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "idx_raid_characters_member_name "
+            "ON characters(discord_id, name COLLATE NOCASE)"
+        )
+
 
 # Forever launches with nine classic classes. Each spec has one or more raid roles.
 # The guild shares the PvP ruleset; no realm or ruleset field is needed.
@@ -142,12 +182,15 @@ def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
     Keep the legacy realm column in SQLite for migration compatibility, but never
     request or display it. Never modify a profile belonging to another Discord ID.
     """
-    name = name.strip()
+    name = " ".join(name.split())
     if not name or len(name) > 40:
         raise ValueError("Enter a character name (40 characters maximum).")
     if role not in CLASS_SPECS.get(class_name, {}).get(spec, ()):
         raise ValueError("Choose a valid class, spec and raid role.")
     with database(path) as con:
+        # Hold a write lock across lookup+insert to prevent competing clicks
+        # registering the same character twice.
+        con.execute("BEGIN IMMEDIATE")
         previous = con.execute(
             "SELECT character_id FROM characters "
             "WHERE discord_id=? AND name=? COLLATE NOCASE "
@@ -248,7 +291,12 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
             VALUES (?, ?, ?, 'Available', ?)
             ON CONFLICT(raid_id, discord_id) DO UPDATE SET
                 character_id=excluded.character_id, availability='Available',
-                note=NULL, submitted_at=excluded.submitted_at
+                note=NULL,
+                submitted_at=CASE
+                    WHEN signups.character_id=excluded.character_id
+                     AND signups.availability='Available'
+                    THEN signups.submitted_at
+                    ELSE excluded.submitted_at END
         """, (raid_id, discord_id, character_id, datetime.now(timezone.utc).isoformat()))
         # Returning after an absence restores the player's Available status.
         con.execute(
