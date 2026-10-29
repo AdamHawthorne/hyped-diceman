@@ -68,8 +68,9 @@ headed 🔸 and 🔹. The diamond headers stay visible after players appear.
 
 When a player clicks **Absent**, Ogre moves the row to **ABSENT**, sets
 selection to Not selected, disables public display, and removes them from
-the public roster if necessary. The original sign-up information remains
-available for the raid record. A player signing up again is reset to
+the public roster if necessary. The original sign-up time stays in column H,
+and the signed-off timestamp and optional reason are recorded in column G
+alongside any original sign-up note. A player signing up again is reset to
 Pending/No, requiring fresh leadership approval.
 
 When confirmed, subsequent manual changes to dropdowns are ignored for
