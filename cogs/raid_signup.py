@@ -454,10 +454,11 @@ def save_absence(raid_id, discord_id, note="", path=RAID_DB):
             ON CONFLICT(raid_id, discord_id) DO UPDATE SET
                 note=excluded.note, signed_off_at=excluded.signed_off_at
         """, (raid_id, discord_id, note or None, timestamp))
+        # Keep the original sign-up note separate from absence notes.
         con.execute(
-            "UPDATE signups SET availability='Unavailable', note=? "
+            "UPDATE signups SET availability='Unavailable' "
             "WHERE raid_id=? AND discord_id=?",
-            (note or None, raid_id, discord_id),
+            (raid_id, discord_id),
         )
     return timestamp
 
