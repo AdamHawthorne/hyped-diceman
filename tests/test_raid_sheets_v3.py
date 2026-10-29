@@ -37,7 +37,7 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(by_character["Snore Mon"][0], "Snore")
             self.assertEqual(by_character["Snore Mon"][8], "Signed")
             self.assertEqual(by_character["Snore Mon"][9:14],
-                             ["Pending", "No", "No", "No", "No"])
+                             ["Selected", "Yes", "No", "No", "No"])
             self.assertEqual(by_character["Snore Mon"][6], "Main tank")
             self.assertEqual(by_character["Snore Mon"][15], "Not submitted")
             self.assertTrue(by_character["Snore Mon"][7])
