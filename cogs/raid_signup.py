@@ -1,5 +1,7 @@
-"""Private raid signup prototype. No public raid posts or Sheets credentials required."""
+"""Private raid management: local database and optional Google Sheets sync."""
 import os
+import asyncio
+import logging
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -9,10 +11,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from cogs import raid_sheets
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
-    read_raid, record_panel, save_raid, set_softres_url, delete_raid,
+    read_raid, read_public_roster, record_panel, save_raid, set_softres_url, delete_raid,
 )
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -21,6 +24,7 @@ TEST_CHANNEL_ID = 1564594901746716713
 RAID_CHANNEL_ID = 1563663151323553802
 RAID_DB = os.getenv("RAID_DB_PATH", "/data/raid_signup.db" if os.path.isdir("/data") else "raid_signup.db")
 ACCENT = 0xA87535
+LOGGER = logging.getLogger(__name__)
 
 SHEET_TABS = {
     "Characters": ("Character ID", "Discord ID", "Discord Name", "Character", "Realm", "Class", "Spec", "Role", "Main/Alt", "Last Gear Update"),
@@ -79,6 +83,13 @@ def create_schema(path=RAID_DB):
             note TEXT,
             signed_off_at TEXT NOT NULL,
             PRIMARY KEY(raid_id, discord_id)
+        );
+        CREATE TABLE IF NOT EXISTS raid_public_roster(
+            raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
+            position INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            assignment TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (raid_id, position)
         );
         CREATE TABLE IF NOT EXISTS gear_exports(
             export_id INTEGER PRIMARY KEY,
@@ -683,6 +694,10 @@ class RolePickerView(discord.ui.LayoutView):
 class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyped raid sign-up management"):
     def __init__(self, bot):
         self.bot = bot
+        self._sheet_task = None
+        self._last_sheet_error = None
+        self._last_sheet_sync = None
+        self._sync_lock = asyncio.Lock()
 
     def allowed(self, interaction):
         # During testing, live raid panels are ONLY permitted in private #ogre.
@@ -762,6 +777,46 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         for event in active_panels(RAID_DB):
             if event.get("panel_channel_id") == TEST_CHANNEL_ID:
                 self.bot.add_view(self.make_panel(event), message_id=event["panel_message_id"])
+        if raid_sheets.configured():
+            self._sheet_task = asyncio.create_task(self.sheet_sync_loop())
+
+    def cog_unload(self):
+        if self._sheet_task:
+            self._sheet_task.cancel()
+
+    async def sheet_sync_loop(self):
+        await self.bot.wait_until_ready()
+        while True:
+            try:
+                await self.sync_raid_sheets()
+            except Exception as exc:
+                # A Sheets outage may not interrupt Discord raid registrations.
+                self._last_sheet_error = str(exc)
+                LOGGER.warning("Raid Sheets sync failed: %s", exc)
+            await asyncio.sleep(60)
+
+    async def sync_raid_sheets(self):
+        async with self._sync_lock:
+            counts, changed = await asyncio.to_thread(
+                raid_sheets.sync_once, RAID_DB
+            )
+            self._last_sheet_error = None
+            self._last_sheet_sync = datetime.now(timezone.utc)
+            for raid_id in changed:
+                event = read_raid(RAID_DB, raid_id)
+                if not event or not event.get("panel_message_id"):
+                    continue
+                if event.get("panel_channel_id") != TEST_CHANNEL_ID:
+                    continue
+                channel = self.bot.get_channel(TEST_CHANNEL_ID)
+                if channel is None:
+                    continue
+                try:
+                    message = await channel.fetch_message(event["panel_message_id"])
+                    await message.edit(view=self.make_panel(event))
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    LOGGER.warning("Unable to refresh revealed roster for Raid #%s", raid_id)
+            return counts, changed
 
     async def on_register(self, interaction):
         if not is_test_member(interaction):
@@ -831,6 +886,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         return RaidEventPanel(
             event, on_register=self.on_register, on_characters=self.on_characters,
             on_signup=signup, on_gear=self.on_gear,
+            public_roster=read_public_roster(RAID_DB, event["raid_id"]),
         )
 
     async def post_panel(self, interaction, event):
@@ -868,6 +924,37 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         record_panel(RAID_DB, event["raid_id"], interaction.channel_id, message.id)
         await interaction.followup.send(
             f"Ogre posted raid panel: {message.jump_url}", ephemeral=True
+        )
+
+    @app_commands.command(name="sync", description="Synchronise raid SQLite data and visible roster with Google Sheets")
+    async def sync(self, interaction: discord.Interaction):
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Only Ogre's owner can sync raids in private #ogre.", ephemeral=True
+            )
+            return
+        if not raid_sheets.configured():
+            await interaction.response.send_message(
+                "Google Sheets not connected to Ogre yet. "
+                "Set RAID_GOOGLE_SERVICE_ACCOUNT_B64 on Fly and share "
+                "the <Hyped> Forever sheet with that service account.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            counts, changed = await self.sync_raid_sheets()
+        except Exception as exc:
+            self._last_sheet_error = str(exc)
+            await interaction.followup.send(
+                f"Ogre couldn't sync Google Sheets: {exc}", ephemeral=True
+            )
+            return
+        await interaction.followup.send(
+            "Ogre synced raid data to Google Sheets. "
+            f"Updated/added: {sum(counts.values())} rows. "
+            f"Refreshed {len(changed)} raid roster(s).",
+            ephemeral=True,
         )
 
     @app_commands.command(
