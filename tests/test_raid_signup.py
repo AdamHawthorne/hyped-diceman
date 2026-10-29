@@ -67,7 +67,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertLess(panel_text.index("**Roster Announcement:**"),
                             panel_text.index("### Roster"))
             self.assertIn("**Selected players**", panel_text)
-            self.assertIn("-# *Not announced*", panel_text)
+            self.assertIn("- Not announced", panel_text)
             visible = raid_schedule.raid_panel_text(
                 event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
             )
@@ -119,16 +119,21 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 roster_announce="2026-12-08 21:00",
             )
             empty = raid_schedule.raid_panel_text(event)
-            self.assertIn("**Hyjal · 20-player**", empty)
-            self.assertEqual(empty.count("**Hyjal · 20-player**"), 1)
-            self.assertEqual(empty.count("🔹🔸 - Forming, await announcement"), 1)
+            self.assertIn("**Hyjal**", empty)
+            self.assertEqual(empty.count("**Hyjal**"), 1)
+            self.assertEqual(empty.count("🔹🔸 - Not announced"), 1)
             self.assertIn("🔸 - Not announced", empty)
             self.assertIn("🔹 - Not announced", empty)
-            self.assertIn("**Barrows · 10-player**", empty)
-            self.assertIn("**Ony · 40-player**", empty)
+            self.assertIn("**Barrows**", empty)
+            self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
             self.assertLess(empty.index("**Roster Announcement:**"),
                             empty.index("### Roster"))
+            self.assertNotIn("20-player", empty)
+            self.assertNotIn("10-player", empty)
+            self.assertNotIn("40-player", empty)
+            self.assertIn("**Ony**\n- Not announced", empty)
+            self.assertNotIn("Forming, await announcement", empty)
             self.assertNotIn("Group A", empty)
             self.assertNotIn("Group B", empty)
 
@@ -150,8 +155,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 ("Selected · group pending", ["Gamer TBC"]),
             ])
             text = raid_schedule.raid_panel_text(event, members)
-            self.assertIn("**Hyjal · 20-player**", text)
-            self.assertEqual(text.count("**Hyjal · 20-player**"), 1)
+            self.assertIn("**Hyjal**", text)
+            self.assertEqual(text.count("**Hyjal**"), 1)
             self.assertNotIn("**Hyjal · 20-player 🔸**", text)
             self.assertNotIn("**Hyjal · 20-player 🔹**", text)
             self.assertEqual(text.count("• Snore Mon"), 3)
@@ -194,8 +199,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 2, "2026-12-10 20:00", "Hyjal (20m)"
             )
             hyjal_text = raid_schedule.raid_panel_text(hyjal_only)
-            self.assertEqual(hyjal_text.count("🔹🔸 - Forming, await announcement"), 1)
-            self.assertIn("**Hyjal · 20-player**", hyjal_text)
+            self.assertEqual(hyjal_text.count("🔹🔸 - Not announced"), 1)
+            self.assertIn("**Hyjal**", hyjal_text)
             self.assertNotIn("\n\n\n", hyjal_text)
 
             barrows_only = raid_schedule.save_raid(
@@ -206,8 +211,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("🔸 - Not announced", barrows_text)
             self.assertIn("🔹\n• Split Two", barrows_text)
-            self.assertNotIn("**Hyjal · 20-player**", barrows_text)
-            self.assertNotIn("**Ony · 40-player**", barrows_text)
+            self.assertNotIn("**Hyjal**", barrows_text)
+            self.assertNotIn("**Ony**", barrows_text)
 
     async def test_optional_raid_title_round_trip_edit_preserve_and_clear(self):
         with tempfile.TemporaryDirectory() as tmp:
