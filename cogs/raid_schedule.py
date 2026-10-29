@@ -90,7 +90,7 @@ def validate_check_message_url(value):
     parts = urlsplit(url)
     if (parts.scheme != "https" or parts.hostname != "discord.com"
             or parts.username or parts.password or parts.port
-            or not re.fullmatch(r"/channels/\\d{16,20}/\\d{16,20}/\\d{16,20}/?", parts.path)):
+            or not re.fullmatch(r"/channels/\d{16,20}/\d{16,20}/\d{16,20}/?", parts.path)):
         raise ValueError("Use a Discord message permalink, not a channel link.")
     return "https://discord.com" + parts.path.rstrip("/")
 
