@@ -494,7 +494,7 @@ class StageSelect(discord.ui.Select):
                     label=value,
                     value=value,
                     description=descriptions.get(value),
-                    emoji=option_emoji(value if stage == "class" else combat_role(value)) if stage in ("class", "roles") else None,
+                    emoji=option_emoji(value if stage == "class" else combat_role(value, state.draft.class_name)) if stage in ("class", "roles") else None,
                     default=value in selected,
                 ) for value in options
             ],
@@ -857,7 +857,7 @@ class CharacterEditSelect(discord.ui.Select):
             min_values=1,
             max_values=len(values) if stage == "roles" else 1,
             options=[discord.SelectOption(label=value, value=value,
-                                          emoji=option_emoji(value if stage == "class" else combat_role(value)) if stage in ("class", "roles") else None,
+                                          emoji=option_emoji(value if stage == "class" else combat_role(value, editor.class_name)) if stage in ("class", "roles") else None,
                                           default=value in selected)
                      for value in values],
         )
