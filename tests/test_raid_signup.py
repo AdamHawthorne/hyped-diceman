@@ -21,7 +21,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             raid.create_schema(path)
             with raid.database(path) as con:
                 tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                self.assertTrue({"characters", "raids", "signups", "gear_exports", "attendance"} <= tables)
+                self.assertTrue({"characters", "raids", "signups", "raid_absences", "gear_exports", "attendance"} <= tables)
                 fields = {row[1] for row in con.execute("PRAGMA table_info(attendance)")}
                 self.assertTrue({"raid_id", "discord_id", "character_id", "status", "late_minutes", "afk_minutes", "leadership_notes"} <= fields)
         self.assertEqual(set(raid.ATTENDANCE_OPTIONS), {"Pending", "Attended", "Late", "AFK", "No-show", "Excused"})
@@ -44,17 +44,15 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             text = json.dumps(panel.to_components())
             self.assertIn("<Hyped> Raid #1", text)
-            self.assertIn("Raid instance #1:", text)
-            self.assertIn("Molten Core", text)
-            self.assertNotIn("Raid instance #2:", text)
-            self.assertNotIn("Raid instance #3:", text)
+            self.assertIn("**Raid:** Molten Core", text)
+            self.assertNotIn("Raid instance #1:", text)
             self.assertIn("XIszIH.png", text)
             self.assertIn("Roster announce date:", text)
-            self.assertIn("Sign-ups hidden", text)
-            self.assertNotIn("~~Sign-ups hidden~~", text)
-            self.assertIn("https://i.vgy.me/WGNGdr.png", text)
+            self.assertIn("-# *Collecting gamers*", text)
+            self.assertNotIn("Sign-ups hidden", text)
+            self.assertNotIn("WGNGdr.png", text)
             self.assertNotIn("SoftRes sign-up", text)
-            self.assertTrue(any(isinstance(c, raid_schedule.discord.ui.MediaGallery) for c in panel.children))
+            self.assertFalse(any(isinstance(c, raid_schedule.discord.ui.MediaGallery) for c in panel.children))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
             self.assertTrue(panel.is_persistent())
@@ -66,8 +64,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             updated = json.dumps(raid_schedule.RaidEventPanel(
                 event, on_register=AsyncMock(), on_characters=AsyncMock()
             ).to_components())
-            self.assertIn("Raid instance #2:", updated)
-            self.assertIn("Raid instance #3:", updated)
+            self.assertIn("**Raid:** Molten Core, Onyxia, Blackwing Lair", updated)
+            self.assertNotIn("Raid instance #", updated)
             self.assertEqual(raid_schedule.latest_raid(path)["raid_id"], 1)
             raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
             self.assertEqual(raid_schedule.active_panels(path)[0]["panel_message_id"], 12345)
@@ -195,8 +193,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 on_signup=AsyncMock(), on_gear=AsyncMock(),
             )
             components = json.dumps(panel.to_components())
-            self.assertIn("Sign-ups hidden", components)
+            self.assertIn("Collecting gamers", components)
             self.assertIn('"label": "Sign up"', components)
+            self.assertIn('"style": 3', components)
             self.assertIn('"label": "Update gear"', components)
             self.assertNotIn("Signed up:", components)
             # Existing panels get active signup buttons when an on_signup is bound.
@@ -217,8 +216,13 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             with raid.database(path) as con:
                 self.assertEqual(con.execute("SELECT COUNT(*) FROM signups").fetchone()[0], 1)
                 self.assertEqual(con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 1)
-            self.assertEqual(raid.withdraw_signup(1, 42, path), 1)
-            self.assertIsNone(raid.my_signup(1, 42, path))
+            timestamp = raid.save_absence(1, 42, "Running late", path)
+            self.assertTrue(timestamp.endswith("+00:00"))
+            self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Unavailable"))
+            self.assertEqual(raid.my_absence(1, 42, path), ("Running late", timestamp))
+            raid.save_signup(1, 42, char_id, path)
+            self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
+            self.assertIsNone(raid.my_absence(1, 42, path))
 
     async def test_poster_publish_updates_existing_raid_and_removes_optional_softres(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -304,6 +308,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                     path, number, "2026-11-05 20:00", "Hyjal (20m)"
                 )
                 raid.save_signup(number, 42, char_id, path)
+                raid.save_absence(number, 99, "", path)
                 with raid.database(path) as con:
                     con.execute(
                         "INSERT INTO attendance (raid_id, discord_id, character_id) "
@@ -314,6 +319,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(raid_schedule.read_raid(path, 2))
             self.assertIsNone(raid.my_signup(1, 42, path))
             self.assertEqual(raid.my_signup(2, 42, path), ("Snore Mon", "Available"))
+            self.assertIsNone(raid.my_absence(1, 99, path))
+            self.assertIsNotNone(raid.my_absence(2, 99, path))
             with raid.database(path) as con:
                 self.assertEqual(
                     con.execute("SELECT COUNT(*) FROM attendance").fetchone()[0], 1
@@ -440,6 +447,48 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             await cog.raid_setup.callback(cog, interaction, 3, "2026-11-06 20:00", "Onyxia")
             self.assertNotIn("view", response.send_message.await_args.kwargs)
             self.assertIsNone(raid_schedule.read_raid(raid.RAID_DB, 3))
+
+    async def test_absence_without_character_and_optional_note_timestamps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(path, 1, "2026-11-05 20:00", "Hyjal (20m)")
+            moment = raid.save_absence(1, 99, path=path)
+            self.assertEqual(raid.my_absence(1, 99, path), (None, moment))
+            self.assertIsNone(raid.my_signup(1, 99, path))
+            update = raid.save_absence(1, 99, "Away from keyboard", path)
+            self.assertEqual(raid.my_absence(1, 99, path), ("Away from keyboard", update))
+            with raid.database(path) as con:
+                self.assertEqual(con.execute(
+                    "SELECT COUNT(*) FROM raid_absences WHERE raid_id=1"
+                ).fetchone()[0], 1)
+            with self.assertRaises(ValueError):
+                raid.save_absence(999, 99, path=path)
+            with self.assertRaises(ValueError):
+                raid.save_absence(1, 99, "x" * 501, path)
+
+    async def test_absence_is_red_button_not_withdraw_and_asks_only_note(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            raid, "RAID_DB", str(Path(tmp) / "raid.db")
+        ):
+            raid.create_schema(raid.RAID_DB)
+            view = raid.CharacterActionView(42, raid_id=9)
+            data = json.dumps(view.to_components())
+            self.assertIn('"label": "Absence"', data)
+            self.assertNotIn("Withdraw my sign-up", data)
+            self.assertNotIn("Applicant list remains hidden", data)
+            self.assertIn("Ogre sort your sign-up", data)
+            absence = next(item for item in view.walk_children()
+                           if isinstance(item, discord.ui.Button)
+                           and item.label == "Absence")
+            self.assertEqual(absence.style, discord.ButtonStyle.danger)
+            first_time = raid.ClassPickerView(42, signup_raid_id=9)
+            self.assertIn('"label": "Absence"', json.dumps(first_time.to_components()))
+            modal = raid.AbsenceNoteModal(42, 9)
+            self.assertEqual(modal.note.label, "Note (optional)")
+            self.assertFalse(modal.note.required)
+            self.assertEqual(modal.note.max_length, 500)
 
     async def test_character_profile_can_be_updated_without_signup(self):
         with tempfile.TemporaryDirectory() as tmp:
