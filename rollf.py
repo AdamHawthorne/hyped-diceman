@@ -566,35 +566,45 @@ def insert_roll(user_id, username, value, actor_type):
 
     ts = int(time.time())
     roll_date = datetime.fromtimestamp(ts, TZ).date().isoformat()
+    con = db()
 
-    with db() as con:
-
-        try:
-            if actor_type == "bot":
-                # One atomic write per UK day, even across task restarts.
-                day_start = int(datetime.combine(datetime.fromtimestamp(ts, TZ).date(),
-                                                 datetime.min.time(), TZ).timestamp())
-                next_day = datetime.fromtimestamp(ts, TZ).date() + timedelta(days=1)
-                day_end = int(datetime.combine(next_day, datetime.min.time(), TZ).timestamp())
-                inserted = con.execute(
-                    """INSERT INTO rolls (user_id, username, value, rolled_at, actor_type, roll_date)
-                       SELECT ?, ?, ?, ?, ?, ?
-                       WHERE NOT EXISTS (
-                           SELECT 1 FROM rolls WHERE actor_type='bot'
-                           AND rolled_at >= ? AND rolled_at < ?
-                       )""",
-                    (user_id, username, value, ts, actor_type, roll_date, day_start, day_end),
-                )
-                if inserted.rowcount != 1:
-                    return False
-            else:
+    # db() uses autocommit for the long-lived connection. A savepoint makes the
+    # canonical roll and its derived score rows all-or-nothing without changing
+    # the connection mode used elsewhere in the bot.
+    con.execute("SAVEPOINT insert_roll")
+    try:
+        if actor_type == "bot":
+            # One atomic write per UK day, even across task restarts.
+            day_start = int(datetime.combine(datetime.fromtimestamp(ts, TZ).date(),
+                                             datetime.min.time(), TZ).timestamp())
+            next_day = datetime.fromtimestamp(ts, TZ).date() + timedelta(days=1)
+            day_end = int(datetime.combine(next_day, datetime.min.time(), TZ).timestamp())
+            inserted = con.execute(
+                """INSERT INTO rolls (user_id, username, value, rolled_at, actor_type, roll_date)
+                   SELECT ?, ?, ?, ?, ?, ?
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM rolls WHERE actor_type='bot'
+                       AND rolled_at >= ? AND rolled_at < ?
+                   )""",
+                (user_id, username, value, ts, actor_type, roll_date, day_start, day_end),
+            )
+            if inserted.rowcount != 1:
+                con.execute("ROLLBACK TO insert_roll")
+                con.execute("RELEASE insert_roll")
+                return False
+        else:
+            try:
                 con.execute(
                     """INSERT INTO rolls (user_id, username, value, rolled_at, actor_type, roll_date)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (user_id, username, value, ts, actor_type, roll_date),
                 )
-        except sqlite3.IntegrityError:
-            return False
+            except sqlite3.IntegrityError:
+                # The one-roll-per-day index rejected a duplicate. Do not touch
+                # either aggregate table.
+                con.execute("ROLLBACK TO insert_roll")
+                con.execute("RELEASE insert_roll")
+                return False
 
         if actor_type == 'user':
             con.execute("""
@@ -613,7 +623,14 @@ def insert_roll(user_id, username, value, actor_type):
                 score = score + excluded.score,
                 rolls = rolls + 1
             """, (user_id, roll_date, value))
+    except Exception:
+        # A failure after the canonical insert must never leave a saved roll
+        # without its matching counters (or vice versa).
+        con.execute("ROLLBACK TO insert_roll")
+        con.execute("RELEASE insert_roll")
+        raise
 
+    con.execute("RELEASE insert_roll")
     return True
 
 def setup_logging():

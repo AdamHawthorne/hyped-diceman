@@ -16,6 +16,8 @@ jobs:
         run: python -m compileall -q rollf.py cogs tests
       - name: Install runtime dependencies for interaction tests
         run: pip install -r requirements.txt
+      - name: Verify installed dependencies
+        run: python -m pip check
       - name: Run migration regression guards
         run: python -m unittest discover -s tests -v
       - name: Verify Docker build includes modules

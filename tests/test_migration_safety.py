@@ -4,6 +4,7 @@ Run: python -m unittest discover -s tests -v
 No Discord token, network or persistent database required.
 """
 import ast
+import re
 from pathlib import Path
 import unittest
 
@@ -159,6 +160,50 @@ class MigrationSafetyTests(unittest.TestCase):
     def test_no_alter_existing_dice_tables(self):
         self.assertNotIn("DROP TABLE", self.source.upper())
         self.assertNotIn("DELETE FROM ROLLS", self.source.upper())
+
+    def test_roll_history_is_append_only_across_runtime_sources(self):
+        runtime_sources = [ROOT / "rollf.py", *(ROOT / "cogs").glob("*.py")]
+        forbidden = (
+            "DELETE FROM ROLLS",
+            "DROP TABLE ROLLS",
+            "REPLACE INTO ROLLS",
+            "TRUNCATE TABLE ROLLS",
+        )
+        for path in runtime_sources:
+            source = path.read_text(encoding="utf-8").upper()
+            for sql in forbidden:
+                with self.subTest(path=path.name, sql=sql):
+                    self.assertNotIn(sql, source)
+
+            # The only historic UPDATE allowed on the canonical table is the
+            # additive roll_date backfill; roll values/timestamps/owners stay immutable.
+            for match in re.finditer(r"UPDATE\s+ROLLS\s+SET\s+([^\n]+)", source):
+                with self.subTest(path=path.name, update=match.group(0)):
+                    self.assertTrue(match.group(1).lstrip().startswith("ROLL_DATE"))
+
+    def test_feature_databases_are_explicitly_persisted_on_fly_volume(self):
+        fly = (ROOT / "fly.toml").read_text(encoding="utf-8")
+        self.assertIn('destination = "/data"', fly)
+        for path in (
+            "/data/bot.db",
+            "/data/raid_signup.db",
+            "/data/lfg_board.db",
+            "/data/countdown.db",
+            "/data/streams.db",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path, fly)
+
+    def test_raid_and_feature_databases_never_reuse_bot_db(self):
+        for relative in (
+            "cogs/raid_signup.py",
+            "cogs/lfg_preview.py",
+            "cogs/countdown.py",
+            "cogs/streams.py",
+        ):
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(source=relative):
+                self.assertNotIn('"/data/bot.db"', source)
 
 
 if __name__ == "__main__":
