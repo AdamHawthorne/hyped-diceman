@@ -182,7 +182,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 raid_poster.RaidPosterView(dummy_cog, 42).to_components()
             ))
 
-    async def test_signup_hidden_but_enabled_and_requires_own_simc(self):
+    async def test_signup_hidden_and_gear_check_is_independent(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             raid.create_schema(path)
@@ -206,12 +206,12 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(next(b for b in buttons if b.label == "Update gear").disabled)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
-            with self.assertRaises(ValueError):
-                raid.save_signup(1, 42, char_id, path)
+            # Registration and signup must work before any SimC gear upload.
+            raid.save_signup(1, 42, char_id, path)
+            self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             with self.assertRaises(ValueError):
                 raid.save_gear(999, char_id, "player=SnoreMon\nlevel=60\n" * 5, path)
             raid.save_gear(42, char_id, "player=SnoreMon\nlevel=60\n" * 5, path)
-            raid.save_signup(1, 42, char_id, path)
             raid.save_signup(1, 42, char_id, path)
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             with raid.database(path) as con:
@@ -498,6 +498,82 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         modal = raid.CharacterNameModal(42, "Mage", "Frost", "DPS")
         self.assertEqual(len(modal.children), 1)
         self.assertEqual(modal.children[0].label, "Character name")
+        self.assertEqual(modal.children[0].placeholder, "Firstname Lastname")
+        self.assertNotIn("no realm needed", json.dumps(raid.ClassPickerView(42).to_components()))
+
+    async def test_signup_button_defers_and_sends_v2_view_without_content(self):
+        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "read_raid", return_value={
+                 "raid_id": 9, "signup_open": 1, "roster_published": 0,
+             }), patch.object(raid, "member_characters", return_value=[
+                 (12, "Firstname Lastname", "Mage", "Frost", "DPS", None),
+             ]), patch.object(raid, "my_signup", return_value=(
+                 "Firstname Lastname", "Available",
+             )):
+            cog = raid.RaidPrototype(SimpleNamespace())
+            response = SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock())
+            followup = SimpleNamespace(send=AsyncMock())
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID, response=response,
+                followup=followup,
+            )
+            await cog.on_signup(interaction, 9)
+            response.defer.assert_awaited_once_with(ephemeral=True)
+            kwargs = followup.send.await_args.kwargs
+            self.assertIsInstance(kwargs["view"], raid.CharacterActionView)
+            self.assertTrue(kwargs["ephemeral"])
+            self.assertNotIn("content", kwargs)
+            self.assertEqual(followup.send.await_args.args, ())
+            self.assertIn("Your current sign-up", json.dumps(kwargs["view"].to_components()))
+            self.assertFalse(response.send_message.called)
+
+    async def test_first_time_signup_opens_registration_with_raid_context(self):
+        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "read_raid", return_value={
+                 "raid_id": 9, "signup_open": 1, "roster_published": 0,
+             }), patch.object(raid, "member_characters", return_value=[]):
+            cog = raid.RaidPrototype(SimpleNamespace())
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID,
+                response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+                followup=SimpleNamespace(send=AsyncMock()),
+            )
+            await cog.on_signup(interaction, 9)
+            kwargs = interaction.followup.send.await_args.kwargs
+            self.assertIsInstance(kwargs["view"], raid.ClassPickerView)
+            self.assertEqual(kwargs["view"].signup_raid_id, 9)
+            self.assertNotIn("content", kwargs)
+            self.assertIn("Raid #9", json.dumps(kwargs["view"].to_components()))
+            spec = raid.SpecPickerView(42, "Mage", signup_raid_id=9)
+            self.assertEqual(spec.signup_raid_id, 9)
+            role = raid.RolePickerView(42, "Druid", "Feral",
+                                       ("Tank", "DPS"), signup_raid_id=9)
+            self.assertEqual(role.signup_raid_id, 9)
+
+    async def test_registration_modal_auto_signs_up_first_time(self):
+        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "save_character") as save_character_mock, \
+             patch.object(raid, "save_signup") as save_signup_mock, \
+             patch.object(raid, "member_characters", return_value=[
+                 (12, "Firstname Lastname", "Mage", "Frost", "DPS", None),
+             ]):
+            modal = raid.CharacterNameModal(42, "Mage", "Frost", "DPS", signup_raid_id=9)
+            modal.name._value = "Firstname Lastname"
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID,
+                response=SimpleNamespace(send_message=AsyncMock()),
+            )
+            await modal.on_submit(interaction)
+            save_character_mock.assert_called_once_with(
+                42, "Firstname Lastname", "Mage", "Frost", "DPS"
+            )
+            save_signup_mock.assert_called_once_with(9, 42, 12)
+            self.assertIn("registered and signed up",
+                          interaction.response.send_message.await_args.args[0])
+            self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
     async def test_character_lookup_command_is_private(self):
         with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
