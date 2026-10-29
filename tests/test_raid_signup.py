@@ -70,7 +70,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("asI88C.png", text)
             self.assertIn("y6bCxy.png", text)
             self.assertNotIn("XIszIH.png", text)
-            self.assertIn("Roster Announcement:", text)
+            self.assertIn("Roster:", text)
             self.assertIn("**Check:** <#1563663258047619123>", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(
@@ -80,17 +80,17 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"\*\*Roster Announcement:\*\* <t:\d+:R>")
+                             r"\*\*Roster:\*\* Forming, awaiting confirmation")
             self.assertNotIn("Collecting gamers", text)
             self.assertIn("### Roster", text)
-            self.assertIn("**Roster Announcement:**", text)
+            self.assertIn("**Roster:**", text)
             panel_text = raid_schedule.raid_panel_text(event)
             self.assertIn("**Check:** <#1563663258047619123>\n### Roster", panel_text)
             self.assertNotIn("\n\n### Roster", panel_text)
             self.assertLess(panel_text.index("**Check:**"),
                             panel_text.index("### Roster"))
             self.assertLess(panel_text.index("### Roster"),
-                            panel_text.index("**Roster Announcement:**"))
+                            panel_text.index("**Roster:**"))
             self.assertIn("**Selected players**", panel_text)
             self.assertIn("- TBD", panel_text)
             visible = raid_schedule.raid_panel_text(
@@ -98,7 +98,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("• Snore Mon", visible)
             self.assertIn("• Healer Main", visible)
-            self.assertGreater(visible.index("Roster Announcement"), visible.index("Snore Mon"))
+            self.assertGreater(visible.index("Roster"), visible.index("Snore Mon"))
             self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
@@ -114,7 +114,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(components[0]["components"][0]["type"], 9)  # Section
             self.assertEqual(components[0]["components"][-1]["type"], 12) # Media gallery
             self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][-1]))
-            self.assertLess(text.index("Roster Announcement:"), text.index("y6bCxy.png"))
+            self.assertLess(text.index("Roster:"), text.index("y6bCxy.png"))
             self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Sign"'))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
@@ -152,7 +152,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Barrows**", empty)
             self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
-            self.assertGreater(empty.index("**Roster Announcement:**"),
+            self.assertGreater(empty.index("**Roster:**"),
                                empty.index("### Roster"))
             self.assertNotIn("20-player", empty)
             self.assertNotIn("10-player", empty)
@@ -220,7 +220,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 ["Sign", "Update", "Gear", "Absent"],
             )
             self.assertLess(
-                json.dumps(rendered).index("Roster Announcement:"),
+                json.dumps(rendered).index("Roster:"),
                 json.dumps(rendered).index("y6bCxy.png"),
             )
 
