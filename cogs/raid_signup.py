@@ -73,6 +73,13 @@ def create_schema(path=RAID_DB):
             submitted_at TEXT NOT NULL,
             PRIMARY KEY(raid_id, discord_id)
         );
+        CREATE TABLE IF NOT EXISTS raid_absences(
+            raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
+            discord_id INTEGER NOT NULL,
+            note TEXT,
+            signed_off_at TEXT NOT NULL,
+            PRIMARY KEY(raid_id, discord_id)
+        );
         CREATE TABLE IF NOT EXISTS gear_exports(
             export_id INTEGER PRIMARY KEY,
             character_id INTEGER NOT NULL REFERENCES characters(character_id),
@@ -241,8 +248,13 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
             VALUES (?, ?, ?, 'Available', ?)
             ON CONFLICT(raid_id, discord_id) DO UPDATE SET
                 character_id=excluded.character_id, availability='Available',
-                submitted_at=excluded.submitted_at
+                note=NULL, submitted_at=excluded.submitted_at
         """, (raid_id, discord_id, character_id, datetime.now(timezone.utc).isoformat()))
+        # Returning after an absence restores the player's Available status.
+        con.execute(
+            "DELETE FROM raid_absences WHERE raid_id=? AND discord_id=?",
+            (raid_id, discord_id),
+        )
 
 
 def my_signup(raid_id, discord_id, path=RAID_DB):
@@ -255,18 +267,97 @@ def my_signup(raid_id, discord_id, path=RAID_DB):
         ).fetchone()
 
 
-def withdraw_signup(raid_id, discord_id, path=RAID_DB):
+def save_absence(raid_id, discord_id, note="", path=RAID_DB):
+    """Record the time someone marked themselves absent, with an optional note.
+
+    Absence never requires a character; keep prior signed-up characters linked
+    as Unavailable so leadership can still see the original application.
+    """
+    note = (note or "").strip()
+    if len(note) > 500:
+        raise ValueError("Note must be 500 characters or less.")
+    timestamp = datetime.now(timezone.utc).isoformat()
     with database(path) as con:
         event = con.execute(
-            "SELECT signup_open, roster_published FROM raids WHERE raid_id=?",
-            (raid_id,),
+            "SELECT raid_id FROM raids WHERE raid_id=?", (raid_id,),
         ).fetchone()
-        if not event or not event[0] or event[1]:
-            raise ValueError("Sign-ups aren't open for this raid.")
+        if not event:
+            raise ValueError("Raid no longer exists.")
+        con.execute("""
+            INSERT INTO raid_absences(raid_id, discord_id, note, signed_off_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(raid_id, discord_id) DO UPDATE SET
+                note=excluded.note, signed_off_at=excluded.signed_off_at
+        """, (raid_id, discord_id, note or None, timestamp))
+        con.execute(
+            "UPDATE signups SET availability='Unavailable', note=? "
+            "WHERE raid_id=? AND discord_id=?",
+            (note or None, raid_id, discord_id),
+        )
+    return timestamp
+
+
+def my_absence(raid_id, discord_id, path=RAID_DB):
+    with database(path) as con:
         return con.execute(
-            "DELETE FROM signups WHERE raid_id=? AND discord_id=?",
+            "SELECT note, signed_off_at FROM raid_absences "
+            "WHERE raid_id=? AND discord_id=?",
             (raid_id, discord_id),
-        ).rowcount
+        ).fetchone()
+
+
+class AbsenceNoteModal(discord.ui.Modal):
+    """Note optional; signed-off time comes from the server, not user input."""
+    def __init__(self, owner_id, raid_id):
+        super().__init__(title=f"Absence · Raid #{raid_id}")
+        self.owner_id = owner_id
+        self.raid_id = raid_id
+        self.note = discord.ui.TextInput(
+            label="Note (optional)", placeholder="Anything Ogre should know?",
+            required=False, style=discord.TextStyle.paragraph,
+            max_length=500,
+        )
+        self.add_item(self.note)
+
+    async def on_submit(self, interaction):
+        if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "This absence form belongs to another player.", ephemeral=True
+            )
+            return
+        try:
+            signed_off = save_absence(
+                self.raid_id, self.owner_id, self.note.value
+            )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't record absence: {exc}", ephemeral=True
+            )
+            return
+        unix = int(datetime.fromisoformat(signed_off).timestamp())
+        await interaction.response.send_message(
+            f"Ogre mark you absent for Raid #{self.raid_id}. "
+            f"Signed off <t:{unix}:F>.", ephemeral=True,
+        )
+
+
+def absence_button(owner_id, raid_id):
+    button = discord.ui.Button(
+        label="Absence", style=discord.ButtonStyle.danger,
+    )
+
+    async def open_absence(interaction):
+        if not is_test_member(interaction) or interaction.user.id != owner_id:
+            await interaction.response.send_message(
+                "This sign-up belongs to another player.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(
+            AbsenceNoteModal(owner_id, raid_id)
+        )
+
+    button.callback = open_absence
+    return button
 
 
 class GearPasteModal(discord.ui.Modal):
