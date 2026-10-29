@@ -64,9 +64,9 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", "Characters", "SimC", "Alarm", "Absent"])
-            self.assertTrue(all(not b.disabled for b in buttons if b.label != "Alarm"))
-            self.assertTrue(next(b for b in buttons if b.label == "Alarm").disabled)
+                             ["Attend", None, "Characters", "SimC", "Absent"])
+            self.assertTrue(all(not b.disabled for b in buttons if b.label is not None))
+            self.assertTrue(next(b for b in buttons if b.label is None).disabled)
             self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             self.assertTrue(panel.is_persistent())
