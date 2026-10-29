@@ -297,6 +297,40 @@ def member_characters(discord_id, path=RAID_DB):
         ).fetchall()
 
 
+def set_main_character(discord_id, character_id, path=RAID_DB):
+    """Mark exactly one owned character Main; leave all raid/SimC records intact."""
+    with database(path) as con:
+        row = con.execute(
+            "SELECT 1 FROM characters WHERE discord_id=? AND character_id=?",
+            (discord_id, character_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("Ogre cannot edit someone else's character.")
+        con.execute("UPDATE characters SET is_main=0 WHERE discord_id=?", (discord_id,))
+        con.execute(
+            "UPDATE characters SET is_main=1 WHERE discord_id=? AND character_id=?",
+            (discord_id, character_id),
+        )
+
+
+def main_character_ids(discord_id, path=RAID_DB):
+    with database(path) as con:
+        return {row[0] for row in con.execute(
+            "SELECT character_id FROM characters WHERE discord_id=? AND is_main=1",
+            (discord_id,),
+        )}
+
+
+def signup_note_details(raid_id, discord_id, path=RAID_DB):
+    with database(path) as con:
+        return con.execute(
+            "SELECT c.name,s.availability,s.note FROM signups s "
+            "JOIN characters c ON c.character_id=s.character_id "
+            "WHERE s.raid_id=? AND s.discord_id=?",
+            (raid_id, discord_id),
+        ).fetchone()
+
+
 def save_gear(discord_id, character_id, text, path=RAID_DB):
     """Store a reusable raw SimC export independent of any raid application."""
     text = text.strip()
@@ -557,24 +591,24 @@ class SignupNoteModal(discord.ui.Modal):
 
 
 class GearUploadModal(discord.ui.Modal):
-    """SimC text, SimC file, character-panel screenshot, or both together."""
+    """Submit SimulationCraft text directly or as a text file."""
 
     def __init__(self, member_id, char_id, char_name):
-        super().__init__(title="Gear · " + char_name[:32])
+        super().__init__(title="SimC · " + char_name[:32])
         self.member_id = member_id
         self.char_id = char_id
         self.char_name = char_name
         self.simc = discord.ui.TextInput(
-            label="SimC paste (optional)", required=False,
+            label="Paste SimC export (or upload .txt)", required=False,
             style=discord.TextStyle.paragraph, max_length=4000,
         )
         self.uploads = discord.ui.FileUpload(
-            required=False, min_values=0, max_values=2,
+            required=False, min_values=0, max_values=1,
         )
         self.add_item(self.simc)
         self.add_item(discord.ui.Label(
-            text="SimC file or character screenshot",
-            description="Optional .txt/.simc, PNG, JPG or WEBP (up to 2 files)",
+            text="Or upload SimC file (.txt/.simc)",
+            description="Only needed if not pasting a SimC export",
             component=self.uploads,
         ))
 
@@ -588,7 +622,7 @@ class GearUploadModal(discord.ui.Modal):
         attachments = list(self.uploads.values or [])
         if not simc_text and not attachments:
             await interaction.response.send_message(
-                "Ogre need SimC text or a character-panel screenshot.", ephemeral=True
+                "Ogre need a pasted SimC export or a .txt/.simc file.", ephemeral=True
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -609,16 +643,8 @@ class GearUploadModal(discord.ui.Modal):
                         self.member_id, self.char_id, data.decode("utf-8-sig")
                     )
                     saved.append("SimC")
-                elif filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
-                    if attachment.size > 8 * 1024 * 1024:
-                        raise ValueError("Screenshot must be under 8 MB.")
-                    data = await attachment.read()
-                    save_gear_image(
-                        self.member_id, self.char_id, filename, data
-                    )
-                    saved.append("screenshot")
                 else:
-                    raise ValueError("Use a .txt/.simc or PNG/JPG/WEBP file.")
+                    raise ValueError("Upload a .txt or .simc file.")
         except (ValueError, UnicodeError, sqlite3.Error, discord.HTTPException) as exc:
             await interaction.followup.send(
                 f"Ogre couldn't save all gear: {exc}", ephemeral=True
