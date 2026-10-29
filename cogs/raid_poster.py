@@ -22,7 +22,7 @@ ANNOUNCEMENTS = {
     "7": "1 week before",
     "0": "On raid day",
     "none": "To be confirmed",
-    "custom": "Custom time",
+    "custom": "Choose exact announcement date & time…",
 }
 
 
@@ -347,7 +347,7 @@ class RaidPosterView(discord.ui.LayoutView):
                 ))
             else:
                 await self.changed(interaction, announce=picker.values[0])
-        picker = self._select("Roster announce date", options, choose)
+        picker = self._select("When to announce the roster?", options, choose)
 
     def add_controls(self):
         row = discord.ui.ActionRow()
