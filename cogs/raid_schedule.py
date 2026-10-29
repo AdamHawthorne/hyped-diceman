@@ -258,7 +258,7 @@ class RaidEventPanel(discord.ui.LayoutView):
         ))
         controls = discord.ui.ActionRow()
         sign_up = discord.ui.Button(
-            label="Sign up", custom_id=f"hyped_raid_{event_id}_signup",
+            label="Sign", custom_id=f"hyped_raid_{event_id}_signup",
             style=discord.ButtonStyle.success,
             disabled=not bool(event.get("signup_open")) or bool(event.get("roster_published")),
         )
