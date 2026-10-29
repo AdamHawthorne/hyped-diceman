@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
     read_raid, record_panel, save_raid, set_softres_url,
@@ -520,6 +521,9 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         # During testing, live raid panels are ONLY permitted in private #ogre.
         return is_test_owner(interaction)
 
+    def raid_db_path(self):
+        return RAID_DB
+
     async def cog_load(self):
         # Reattach real panel buttons after restarts so posted panels keep working.
         for event in active_panels(RAID_DB):
@@ -616,6 +620,34 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         record_panel(RAID_DB, event["raid_id"], interaction.channel_id, message.id)
         await interaction.followup.send(
             f"Ogre posted raid panel: {message.jump_url}", ephemeral=True
+        )
+
+    @app_commands.command(
+        name="poster", description="Open the V2 raid setup menu in private #ogre"
+    )
+    async def poster(self, interaction: discord.Interaction):
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Only Ogre's owner can open raid poster in private #ogre.",
+                ephemeral=True,
+            )
+            return
+        # The poster itself is a normal visible bot message, not an ephemeral preview.
+        await interaction.response.defer(ephemeral=True)
+        try:
+            message = await interaction.channel.send(
+                view=RaidPosterView(self, interaction.user.id),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.HTTPException, discord.Forbidden, ValueError) as exc:
+            await interaction.followup.send(
+                f"Ogre couldn't open raid poster: {exc}", ephemeral=True
+            )
+            return
+        await interaction.followup.send(
+            f"Raid poster ready: {message.jump_url}\n"
+            "Choose date, time, instances and roster announcement, then post.",
+            ephemeral=True,
         )
 
     @app_commands.command(name="setup", description="Post or update a real raid panel in private #ogre")
