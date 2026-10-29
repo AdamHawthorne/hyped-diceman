@@ -469,10 +469,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 raid.save_absence(1, 99, "x" * 501, path)
 
     async def test_absence_is_red_button_not_withdraw_and_asks_only_note(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(
-            raid, "RAID_DB", str(Path(tmp) / "raid.db")
-        ):
-            raid.create_schema(raid.RAID_DB)
+        # This is a UI-only test; don't accidentally open the live/default DB.
+        with patch.object(raid, "member_characters", return_value=[]):
             view = raid.CharacterActionView(42, raid_id=9)
             data = json.dumps(view.to_components())
             self.assertIn('"label": "Absence"', data)
@@ -574,7 +572,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(kwargs["ephemeral"])
             self.assertNotIn("content", kwargs)
             self.assertEqual(followup.send.await_args.args, ())
-            self.assertIn("Your current sign-up", json.dumps(kwargs["view"].to_components()))
+            self.assertIn("**Now:** Firstname Lastname", json.dumps(kwargs["view"].to_components()))
             self.assertFalse(response.send_message.called)
 
     async def test_first_time_signup_opens_registration_with_raid_context(self):
