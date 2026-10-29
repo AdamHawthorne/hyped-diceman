@@ -157,7 +157,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
         modal = raid.GearUploadModal(42, 15, "First Last")
         self.assertFalse(modal.simc.required)
         self.assertFalse(modal.uploads.required)
-        self.assertEqual(modal.uploads.max_values, 2)
+        self.assertEqual(modal.uploads.max_values, 1)
         self.assertEqual(modal.uploads.min_values, 0)
         self.assertEqual(modal.simc.max_length, 4000)
 
