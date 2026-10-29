@@ -1,6 +1,5 @@
 """Components V2 daily roll and all-time coin leaderboard."""
 import discord
-from cogs.ogre_voice import pick as ogre_say
 
 COIN_IMAGE = "https://i.vgy.me/agW53e.png"
 OGRE_IMAGE = "https://i.vgy.me/zJXBXg.png"
@@ -61,10 +60,11 @@ class CoinLeaderboard(discord.ui.LayoutView):
         lines = [f"**{r['rank']}.** <@{ogre_id if r['user_id'] == 0 and ogre_id else r['user_id']}> · **{r['coins']}** {coin_emoji}" for r in visible]
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                "## Hyped Gold Coins\n"
+                "## Ledger\n"
                 + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
-                + f"\n\n-# {sum(r['coins'] for r in rows)} coins across the server · "
-                  f"Page {self.page + 1} of {pages}\n-# {ogre_say('leaderboard')}\n-# <@{owner_id}> asked..."
+                + f"\n\n-# Ogre give out {sum(r['coins'] for r in rows)} "
+                  f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'}.\n"
+                  f"-# <@{owner_id}> asked who has most shiny."
             ), accent_color=GOLD,
         ))
         if pages > 1:
