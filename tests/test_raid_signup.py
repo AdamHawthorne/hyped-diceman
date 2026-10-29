@@ -46,12 +46,16 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<Hyped> Raid #1", text)
             self.assertIn("**Raid:** Molten Core", text)
             self.assertNotIn("Raid instance #1:", text)
-            self.assertIn("XIszIH.png", text)
+            self.assertIn("asI88C.png", text)
+            self.assertIn("y6bCxy.png", text)
+            self.assertNotIn("XIszIH.png", text)
             self.assertIn("Roster Announcement:", text)
             self.assertIn("**Check:** <#1563663258047619123>", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"\*\*Date:\*\* <t:\d+:F>")
+                             r"\*\*Date:\*\* <t:\d+:D>")
+            self.assertRegex(raid_schedule.raid_panel_text(event),
+                             r"\*\*Time:\*\* <t:\d+:t>")
             self.assertRegex(raid_schedule.raid_panel_text(event),
                              r"\*\*Roster Announcement:\*\* <t:\d+:R>")
             self.assertNotIn("Collecting gamers", text)
@@ -74,7 +78,19 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
             self.assertNotIn("SoftRes sign-up", text)
-            self.assertFalse(any(isinstance(c, raid_schedule.discord.ui.MediaGallery) for c in panel.children))
+            self.assertFalse(any(isinstance(c, raid_schedule.discord.ui.MediaGallery)
+                                 for c in panel.children))
+            # The banner belongs inside the same gold-bordered container,
+            # after the roster text and before the independent button row.
+            components = panel.to_components()
+            self.assertEqual(len(components), 2)
+            self.assertEqual(components[0]["type"], 17)  # Container
+            self.assertEqual(components[1]["type"], 1)   # Action row of buttons
+            self.assertEqual(components[0]["components"][0]["type"], 9)  # Section
+            self.assertEqual(components[0]["components"][1]["type"], 12) # Media gallery
+            self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][1]))
+            self.assertLess(text.index("Roster Announcement:"), text.index("y6bCxy.png"))
+            self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Sign"'))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
             self.assertTrue(panel.is_persistent())
