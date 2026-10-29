@@ -328,18 +328,26 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             panel = raid_schedule.RaidEventPanel(
                 event, on_register=AsyncMock(), on_characters=AsyncMock(),
                 on_signup=AsyncMock(), on_gear=AsyncMock(),
+                on_update=AsyncMock(), on_absent=AsyncMock(),
             )
             components = json.dumps(panel.to_components())
             self.assertNotIn("Collecting gamers", components)
             self.assertIn('"label": "Sign up"', components)
             self.assertIn('"style": 3', components)
-            self.assertIn('"label": "Update gear"', components)
+            self.assertIn('"label": "Update"', components)
+            self.assertIn('"label": "Gear"', components)
+            self.assertIn('"label": "Absent"', components)
+            self.assertNotIn('"label": "Register character"', components)
+            self.assertNotIn('"label": "My characters"', components)
             self.assertNotIn("Signed up:", components)
             # Existing panels get active signup buttons when an on_signup is bound.
             buttons = [item for item in panel.walk_children()
                        if isinstance(item, discord.ui.Button)]
             self.assertFalse(next(b for b in buttons if b.label == "Sign up").disabled)
-            self.assertFalse(next(b for b in buttons if b.label == "Update gear").disabled)
+            self.assertEqual([b.label for b in buttons],
+                             ["Sign up", "Update", "Gear", "Absent"])
+            self.assertFalse(all(b.disabled for b in buttons))
+            self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
             # Registration and signup must work before any SimC gear upload.
@@ -605,21 +613,17 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 raid.save_absence(1, 99, "x" * 501, path)
 
-    async def test_absence_is_red_button_not_withdraw_and_asks_only_note(self):
-        # This is a UI-only test; don't accidentally open the live/default DB.
+    async def test_absence_is_only_red_main_card_button_not_in_signup(self):
         with patch.object(raid, "member_characters", return_value=[]):
             view = raid.CharacterActionView(42, raid_id=9)
             data = json.dumps(view.to_components())
-            self.assertIn('"label": "Absence"', data)
+            self.assertNotIn('"label": "Absent"', data)
             self.assertNotIn("Withdraw my sign-up", data)
             self.assertNotIn("Applicant list remains hidden", data)
-            self.assertIn("Ogre sort your sign-up", data)
-            absence = next(item for item in view.walk_children()
-                           if isinstance(item, discord.ui.Button)
-                           and item.label == "Absence")
-            self.assertEqual(absence.style, discord.ButtonStyle.danger)
+            self.assertIn("Pick character", data)
             first_time = raid.ClassPickerView(42, signup_raid_id=9)
-            self.assertIn('"label": "Absence"', json.dumps(first_time.to_components()))
+            self.assertNotIn('"label": "Absent"',
+                             json.dumps(first_time.to_components()))
             modal = raid.AbsenceNoteModal(42, 9)
             self.assertEqual(modal.note.label, "Note (optional)")
             self.assertFalse(modal.note.required)
@@ -772,6 +776,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
              ]):
             modal = raid.CharacterNameModal(42, "Mage", "Frost", "DPS", signup_raid_id=9)
             modal.name._value = "Firstname Lastname"
+            modal.note._value = "Can stay for three hours"
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=42), guild_id=77,
                 channel_id=raid.TEST_CHANNEL_ID,
@@ -781,7 +786,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             save_character_mock.assert_called_once_with(
                 42, "Firstname Lastname", "Mage", "Frost", "DPS"
             )
-            save_signup_mock.assert_called_once_with(9, 42, 12)
+            save_signup_mock.assert_called_once_with(
+                9, 42, 12, note="Can stay for three hours"
+            )
             self.assertIn("registered and signed up",
                           interaction.response.send_message.await_args.args[0])
             self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
