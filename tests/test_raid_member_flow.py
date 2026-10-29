@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import discord
 from PIL import Image
 
-from cogs import raid_schedule, raid_signup as raid, raid_sheets
+from cogs import raid_schedule, raid_signup as raid, raid_sheets, raid_sheets_v3
 
 
 class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -38,7 +38,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 # A cached name avoids additional requests on the next sync.
                 self.assertEqual(await cog.raid_discord_names(), names)
                 guild.fetch_member.assert_awaited_once_with(42)
-                with patch.object(raid_sheets, "sync_once", return_value=(
+                with patch.object(raid_sheets_v3, "sync_once", return_value=(
                     {"characters": 2}, set()
                 )) as sync:
                     self.assertEqual(
