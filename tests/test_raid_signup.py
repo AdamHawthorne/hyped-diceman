@@ -198,7 +198,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [button.label for button in panel.walk_children()
                  if isinstance(button, discord.ui.Button)],
-                ["Attend", "Characters", "SimC", "Alarm", "Absent"],
+                ["Attend", None, "Characters", "SimC", "Absent"],
             )
             self.assertLess(
                 json.dumps(rendered).index("Roster confirmation:"),
@@ -706,7 +706,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                        if isinstance(item, discord.ui.Button)]
             self.assertFalse(next(b for b in buttons if b.label == "Attend").disabled)
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", "Characters", "SimC", "Alarm", "Absent"])
+                             ["Attend", None, "Characters", "SimC", "Absent"])
             self.assertFalse(all(b.disabled for b in buttons))
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
