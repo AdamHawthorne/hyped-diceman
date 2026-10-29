@@ -195,21 +195,21 @@ def raid_panel_text(event):
     # This title is generated from a validated integer, not player-supplied text.
     title = event["title"]
     instances = [
-        f"**Raid instance #{i}:** {discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))}"
-        for i, key in enumerate(("instance_1", "instance_2", "instance_3"), 1)
+        discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))
+        for key in ("instance_1", "instance_2", "instance_3")
         if event.get(key)
     ]
     roster_date = format_discord_date(event.get("roster_announce_at"))
     roster_text = (
         "Roster published — check the official raid announcement."
-        if event.get("roster_published") else "Sign-ups hidden"
+        if event.get("roster_published") else "-# *Collecting gamers*"
     )
     softres = event.get("softres_url")
     softres_line = f"\n\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
         f"**Date:** {format_discord_date(event['raid_at'])}\n\n"
-        + "\n".join(instances)
+        + "**Raid:** " + ", ".join(instances)
         + f"\n\n### Roster\n**Roster announce date:** {roster_date}\n"
         + roster_text
         + softres_line
@@ -230,15 +230,10 @@ class RaidEventPanel(discord.ui.LayoutView):
             ),
             accent_color=ACCENT,
         ))
-        # Decorative page-break image lives outside the bordered V2 container.
-        self.add_item(discord.ui.MediaGallery(
-            discord.MediaGalleryItem(media=RAID_DIVIDER_IMAGE,
-                                     description="Hyped raid divider"),
-        ))
         controls = discord.ui.ActionRow()
         sign_up = discord.ui.Button(
             label="Sign up", custom_id=f"hyped_raid_{event_id}_signup",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.success,
             disabled=not bool(event.get("signup_open")) or bool(event.get("roster_published")),
         )
         register = discord.ui.Button(
