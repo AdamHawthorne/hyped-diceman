@@ -231,17 +231,22 @@ def _sync_rows(session, kind, rows, desired):
     return len(updates) + len(additions)
 
 
-def _public_rows(rows):
-    """Only leadership-flagged Selected players may appear in Discord.
+def _public_rows(rows, *, raid_dates=None, unavailable=()):
+    """Reveal only Selected + Yes on active raid dates, excluding absent users.
 
     K = Show on Discord, I = Selection; L:N = per-instance assignments.
     PUGs can be entered directly into roster sheet without Discord IDs.
     """
     result = {}
+    unavailable = set(unavailable)
     for row in rows[1:]:
         fields = (row + [""] * 15)[:15]
-        raid_id, _, _, _, name, _, _, _, selection, _, show, ony, hyjal, barrows, _ = fields
+        raid_id, raid_date, discord_id, _, name, _, _, _, selection, _, show, ony, hyjal, barrows, _ = fields
         if not raid_id.isdecimal() or not name.strip():
+            continue
+        if raid_dates is not None and raid_dates.get(int(raid_id)) != raid_date:
+            continue
+        if discord_id and f"{raid_id}:{discord_id}" in unavailable:
             continue
         if selection.strip().casefold() != "selected" or show.strip().casefold() != "yes":
             continue
@@ -306,7 +311,16 @@ def sync_once(db_path):
             + quote("'RM - Roster Builder'!A1:O2000", safe="'!:"),
             params={"valueRenderOption": "FORMATTED_VALUE"},
         ).get("values", [])
-        changed = _save_public(db_path, _public_rows(roster))
+        _, raids, _, _, _ = _raid_snapshot(db_path)
+        raid_dates = {number: _date_iso(event["raid_at"])
+                      for number, event in raids.items()}
+        unavailable = {key for key, values in desired["signups"].items()
+                       if values[5] == "Unavailable"}
+        changed = _save_public(
+            db_path, _public_rows(
+                roster, raid_dates=raid_dates, unavailable=unavailable
+            )
+        )
         return counts, changed
     finally:
         session.close()
