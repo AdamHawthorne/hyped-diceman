@@ -105,7 +105,19 @@ def _legacy_choices(session, event):
     for source in data[1:]:
         row = (source + [""] * 15)[:15]
         if (row[0] != str(event["raid_id"]) or
-                row[1] != event["raid_at"][:10] or not row[2].isdigit()):
+                row[1] != event["raid_at"][:10]):
+            continue
+        if not row[2].isdigit():
+            if row[4] and row[14] == "PUG":
+                migrated.setdefault("_guests", []).append([
+                    "PUG", row[4], row[5], row[6], row[7], "Guest",
+                    "", "", "Signed", row[8] or "Pending",
+                    row[10] or "No", "Yes" if row[12] == "Selected" else "No",
+                    {"Group A": "🔸", "Group B": "🔹",
+                     "🔸": "🔸", "🔹": "🔹"}.get(row[13], "No"),
+                    "Yes" if row[11] == "Selected" else "No",
+                    row[9], "", "",
+                ])
             continue
         migrated[row[2]] = {
             "selection": row[8] or "Pending", "show": row[10] or "No",
@@ -128,6 +140,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
     }
     manual, guests = _leadership(old_rows)
     legacy = legacy or {}
+    guests.extend(legacy.get("_guests", []))
     groups = {section: [] for section in SECTIONS}
     registered = set()
     for signup in signups:
