@@ -573,7 +573,9 @@ class GearUploadModal(discord.ui.Modal):
                 "This character belongs to another player.", ephemeral=True
             )
             return
-        if not self.simc.value.strip() and not self.uploads.values:
+        simc_text = (self.simc.value or "").strip()
+        attachments = list(self.uploads.values or [])
+        if not simc_text and not attachments:
             await interaction.response.send_message(
                 "Ogre need SimC text or a character-panel screenshot.", ephemeral=True
             )
@@ -581,10 +583,10 @@ class GearUploadModal(discord.ui.Modal):
         await interaction.response.defer(ephemeral=True)
         saved = []
         try:
-            if self.simc.value.strip():
-                save_gear(self.member_id, self.char_id, self.simc.value)
+            if simc_text:
+                save_gear(self.member_id, self.char_id, simc_text)
                 saved.append("SimC")
-            for attachment in self.uploads.values:
+            for attachment in attachments:
                 filename = attachment.filename.lower()
                 if filename.endswith((".txt", ".simc")):
                     if attachment.size > 200_000:
