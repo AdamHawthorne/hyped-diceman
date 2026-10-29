@@ -15,7 +15,7 @@ from discord.ext import commands
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from cogs import raid_sheets, raid_sheets_v3
-from cogs.emojis import markup as guild_emoji, option_emoji, EMOJI_IDS
+from cogs.emojis import markup as guild_emoji, option_emoji, combat_role, EMOJI_IDS
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
@@ -868,7 +868,7 @@ class RolePickerView(discord.ui.LayoutView):
         ))
         select = discord.ui.Select(
             placeholder="Choose raid role",
-            options=[discord.SelectOption(label=role, value=role, emoji=option_emoji(role if role != "DPS" else "Melee")) for role in roles],
+            options=[discord.SelectOption(label=role, value=role, emoji=option_emoji(combat_role(role, class_name, spec))) for role in roles],
         )
 
         async def select_role(interaction):
