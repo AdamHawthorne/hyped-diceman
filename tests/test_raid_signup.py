@@ -593,7 +593,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("y6bCxy.png", components)
             self.assertIn("Choose raid date", components)
             self.assertIn("Choose start time", components)
+            self.assertIn("Other start time (HH:MM)", components)
             self.assertIn("Choose end time", components)
+            self.assertIn("Other time (HH:MM)", components)
             self.assertIn("Choose Check channel", components)
             self.assertIn("**Check channel:** <#1563663258047619123>", poster.description())
             self.assertIn("Raid instance #1", components)
@@ -748,7 +750,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                                   post_panel=AsyncMock())
             draft = raid_poster.draft_from_event(raid_schedule.read_raid(path, 1))
             draft.update(day="2026-11-06", instance_1="Onyxia's Lair",
-                         instance_2=None, instance_3=None, softres_url=None)
+                         instance_2=None, instance_3=None, softres_url=None,
+                         end_time="00:30", check_channel_id=1564075966895231059)
             poster = raid_poster.RaidPosterView(cog, 42, draft)
             button = next(
                 item for item in poster.walk_children()
@@ -764,6 +767,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             saved = raid_schedule.read_raid(path, 1)
             self.assertEqual(saved["instance_1"], "Onyxia's Lair")
             self.assertEqual(saved["raid_at"][:10], "2026-11-06")
+            self.assertEqual(saved["end_at"][:16], "2026-11-07T00:30")
+            self.assertEqual(saved["check_channel_id"], 1564075966895231059)
             self.assertIsNone(saved["softres_url"])
             self.assertEqual(saved["signup_open"], 1)
             cog.post_panel.assert_awaited_once()
