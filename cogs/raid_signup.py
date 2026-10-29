@@ -216,7 +216,7 @@ def save_gear(discord_id, character_id, text, path=RAID_DB):
 
 
 def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
-    """Only accept an applicant's own character with a submitted SimC export."""
+    """Accept an applicant's own saved character; gear updates are independent."""
     with database(path) as con:
         event = con.execute(
             "SELECT signup_open, roster_published FROM raids WHERE raid_id=?",
@@ -231,14 +231,6 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
         ).fetchone()
         if not character:
             raise ValueError("Choose one of your own saved characters.")
-        gear = con.execute(
-            "SELECT 1 FROM gear_exports WHERE character_id=? LIMIT 1",
-            (character_id,),
-        ).fetchone()
-        if not gear:
-            raise ValueError(
-                "Ogre need your SimC export first. Use Update gear, then sign up."
-            )
         con.execute("""
             INSERT INTO signups(raid_id, discord_id, character_id, availability, submitted_at)
             VALUES (?, ?, ?, 'Available', ?)
@@ -304,15 +296,23 @@ class GearPasteModal(discord.ui.Modal):
 
 class CharacterActionView(discord.ui.LayoutView):
     """Ephemeral member-only choices; never publish applicants or gear contents."""
-    def __init__(self, owner_id, *, raid_id=None, purpose="signup"):
+    def __init__(self, owner_id, *, raid_id=None, purpose="signup", current_signup=None):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.raid_id = raid_id
         self.purpose = purpose
         rows = member_characters(owner_id)
         if purpose == "signup":
-            hint = ("Choose the character for this raid. A SimC snapshot is required. "
-                    "Only leadership can see the applicant list.")
+            status = (
+                f"**Your current sign-up:** {discord.utils.escape_markdown(current_signup[0])} "
+                f"({current_signup[1]})\n"
+                if current_signup else ""
+            )
+            hint = (
+                f"{status}Choose a saved character to sign up or change your choice.\n"
+                "Only leadership can see who signed up. "
+                "Update gear separately when you have a SimC export."
+            )
         else:
             hint = ("Choose which character to update. Paste short SimC exports here; "
                     "use /raid gear for larger .txt/.simc files.")
