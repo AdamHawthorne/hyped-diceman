@@ -314,11 +314,14 @@ def set_main_character(discord_id, character_id, path=RAID_DB):
 
 
 def main_character_ids(discord_id, path=RAID_DB):
-    with database(path) as con:
-        return {row[0] for row in con.execute(
-            "SELECT character_id FROM characters WHERE discord_id=? AND is_main=1",
-            (discord_id,),
-        )}
+    try:
+        with database(path) as con:
+            return {row[0] for row in con.execute(
+                "SELECT character_id FROM characters WHERE discord_id=? AND is_main=1",
+                (discord_id,),
+            )}
+    except sqlite3.OperationalError:
+        return set()
 
 
 def signup_note_details(raid_id, discord_id, path=RAID_DB):
