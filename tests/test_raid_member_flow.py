@@ -64,10 +64,10 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", "Characters", "SimC", "Alarm"])
+                             ["Attend", "Characters", "SimC", "Alarm", "Absent"])
             self.assertTrue(all(not b.disabled for b in buttons))
             self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
-            self.assertEqual(buttons[-1].style, discord.ButtonStyle.secondary)
+            self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             self.assertTrue(panel.is_persistent())
 
     async def test_signup_notes_optional_and_one_signup_per_raid(self):
