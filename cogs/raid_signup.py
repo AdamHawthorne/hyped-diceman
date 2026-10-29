@@ -502,82 +502,142 @@ class AbsenceNoteModal(discord.ui.Modal):
         )
 
 
-def absence_button(owner_id, raid_id):
-    button = discord.ui.Button(
-        label="Absence", style=discord.ButtonStyle.danger,
-    )
+class SignupNoteModal(discord.ui.Modal):
+    """One sign-up for the whole raid night, including an optional note."""
 
-    async def open_absence(interaction):
-        if not is_test_member(interaction) or interaction.user.id != owner_id:
-            await interaction.response.send_message(
-                "This sign-up belongs to another player.", ephemeral=True
-            )
-            return
-        await interaction.response.send_modal(
-            AbsenceNoteModal(owner_id, raid_id)
-        )
-
-    button.callback = open_absence
-    return button
-
-
-class GearPasteModal(discord.ui.Modal):
-    def __init__(self, owner_id, char_id, char_name):
-        super().__init__(title="Update SimC gear snapshot")
-        self.owner_id = owner_id
+    def __init__(self, member_id, raid_id, char_id, name):
+        super().__init__(title=f"Sign up · Raid #{raid_id}")
+        self.member_id = member_id
+        self.raid_id = raid_id
         self.char_id = char_id
-        self.char_name = char_name
-        self.export = discord.ui.TextInput(
-            label="Paste SimC export (up to 4000 characters)",
-            style=discord.TextStyle.paragraph,
-            max_length=4000,
+        self.name = name
+        self.note = discord.ui.TextInput(
+            label="Note (optional)", placeholder="Any plans Ogre should know?",
+            required=False, style=discord.TextStyle.paragraph, max_length=500,
         )
-        self.add_item(self.export)
+        self.add_item(self.note)
 
     async def on_submit(self, interaction):
-        if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
-            return
-        try:
-            save_gear(self.owner_id, self.char_id, self.export.value)
-        except (ValueError, sqlite3.Error) as exc:
+        if not is_test_member(interaction) or interaction.user.id != self.member_id:
             await interaction.response.send_message(
-                f"Ogre couldn't update gear: {exc}", ephemeral=True
+                "That sign-up isn't yours.", ephemeral=True
             )
             return
+        try:
+            existing = my_signup(self.raid_id, self.member_id)
+            save_signup(self.raid_id, self.member_id, self.char_id,
+                        note=self.note.value)
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't sign you up: {exc}", ephemeral=True
+            )
+            return
+        already = existing and existing[0].casefold() == self.name.casefold() \
+            and existing[1] == "Available"
         await interaction.response.send_message(
-            f"Gear saved for **{discord.utils.escape_markdown(self.char_name)}**. "
-            "Raid sign-up not changed.", ephemeral=True
+            f"Ogre {'updated' if already else 'saved'} "
+            f"**{discord.utils.escape_markdown(self.name)}** for Raid "
+            f"#{self.raid_id}.", ephemeral=True,
+        )
+
+
+class GearUploadModal(discord.ui.Modal):
+    """SimC text, SimC file, character-panel screenshot, or both together."""
+
+    def __init__(self, member_id, char_id, char_name):
+        super().__init__(title="Gear · " + char_name[:32])
+        self.member_id = member_id
+        self.char_id = char_id
+        self.char_name = char_name
+        self.simc = discord.ui.TextInput(
+            label="SimC paste (optional)", required=False,
+            style=discord.TextStyle.paragraph, max_length=4000,
+        )
+        self.uploads = discord.ui.FileUpload(
+            required=False, min_values=0, max_values=2,
+        )
+        self.add_item(self.simc)
+        self.add_item(discord.ui.Label(
+            text="SimC file or character screenshot",
+            description="Optional .txt/.simc, PNG, JPG or WEBP (up to 2 files)",
+            component=self.uploads,
+        ))
+
+    async def on_submit(self, interaction):
+        if not is_test_member(interaction) or interaction.user.id != self.member_id:
+            await interaction.response.send_message(
+                "This character belongs to another player.", ephemeral=True
+            )
+            return
+        if not self.simc.value.strip() and not self.uploads.values:
+            await interaction.response.send_message(
+                "Ogre need SimC text or a character-panel screenshot.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        saved = []
+        try:
+            if self.simc.value.strip():
+                save_gear(self.member_id, self.char_id, self.simc.value)
+                saved.append("SimC")
+            for attachment in self.uploads.values:
+                filename = attachment.filename.lower()
+                if filename.endswith((".txt", ".simc")):
+                    if attachment.size > 200_000:
+                        raise ValueError("SimC file must be under 200 KB.")
+                    data = await attachment.read()
+                    if len(data) > 200_000:
+                        raise ValueError("SimC file must be under 200 KB.")
+                    save_gear(
+                        self.member_id, self.char_id, data.decode("utf-8-sig")
+                    )
+                    saved.append("SimC")
+                elif filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    if attachment.size > 8 * 1024 * 1024:
+                        raise ValueError("Screenshot must be under 8 MB.")
+                    data = await attachment.read()
+                    save_gear_image(
+                        self.member_id, self.char_id, filename, data
+                    )
+                    saved.append("screenshot")
+                else:
+                    raise ValueError("Use a .txt/.simc or PNG/JPG/WEBP file.")
+        except (ValueError, UnicodeError, sqlite3.Error, discord.HTTPException) as exc:
+            await interaction.followup.send(
+                f"Ogre couldn't save all gear: {exc}", ephemeral=True
+            )
+            return
+        await interaction.followup.send(
+            f"Ogre saved **{discord.utils.escape_markdown(self.char_name)}** gear: "
+            f"{', '.join(saved)}.", ephemeral=True
         )
 
 
 class CharacterActionView(discord.ui.LayoutView):
-    """Ephemeral member-only choices; never publish applicants or gear contents."""
+    """Private player choice before sign-up, edit or gear upload."""
+
     def __init__(self, owner_id, *, raid_id=None, purpose="signup", current_signup=None):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.raid_id = raid_id
         self.purpose = purpose
         rows = member_characters(owner_id)
-        if purpose == "signup":
-            status = (
-                f"**Now:** {discord.utils.escape_markdown(current_signup[0])} "
-                f"· {current_signup[1]}\n"
-                if current_signup else ""
+        titles = {"signup": "Sign up", "gear": "Gear", "update": "Update"}
+        hint = {
+            "signup": "Pick character. Ogre save your raid-night note.",
+            "gear": "Pick character. Add SimC, panel screenshot, or both.",
+            "update": "Pick character. Ogre change class, spec or role.",
+        }[purpose]
+        if purpose == "signup" and current_signup:
+            hint = (
+                f"**Now:** {discord.utils.escape_markdown(current_signup[0])}"
+                f" · {current_signup[1]}\n" + hint
             )
-            hint = f"{status}Pick character. Ogre sort your sign-up."
-        else:
-            hint = ("Choose which character to update. Paste short SimC exports here; "
-                    "use /raid gear for larger .txt/.simc files.")
         self.add_item(discord.ui.Container(
-            discord.ui.TextDisplay("## " + ("Raid sign-up" if purpose == "signup" else "Update gear")
-                                   + "\n" + hint), accent_color=ACCENT,
+            discord.ui.TextDisplay(f"## {titles[purpose]}\n{hint}"),
+            accent_color=ACCENT,
         ))
         if not rows:
-            if purpose == "signup":
-                self.add_item(discord.ui.ActionRow(
-                    absence_button(owner_id, raid_id)
-                ))
             return
         selection = discord.ui.Select(
             placeholder="Choose your saved character",
@@ -591,38 +651,35 @@ class CharacterActionView(discord.ui.LayoutView):
 
         async def select_character(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("Private owner test only.", ephemeral=True)
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True
+                )
                 return
             char_id = int(selection.values[0])
             match = next((r for r in rows if r[0] == char_id), None)
             if not match:
                 await interaction.response.send_message(
-                    "Character list expired. Reopen from the raid panel.", ephemeral=True
+                    "Character list expired. Reopen from the raid panel.",
+                    ephemeral=True,
                 )
                 return
             if self.purpose == "gear":
                 await interaction.response.send_modal(
-                    GearPasteModal(self.owner_id, char_id, match[1])
+                    GearUploadModal(self.owner_id, char_id, match[1])
                 )
-                return
-            try:
-                existing = my_signup(self.raid_id, self.owner_id)
-                save_signup(self.raid_id, self.owner_id, char_id)
-            except (ValueError, sqlite3.Error) as exc:
-                await interaction.response.send_message(str(exc), ephemeral=True)
-                return
-            already = existing and existing[0].casefold() == match[1].casefold() \
-                and existing[1] == "Available"
-            await interaction.response.send_message(
-                f"Ogre {'already got' if already else 'got'} "
-                f"**{discord.utils.escape_markdown(match[1])}** "
-                f"for Raid #{self.raid_id}.", ephemeral=True
-            )
+            elif self.purpose == "update":
+                await interaction.response.edit_message(
+                    view=ClassPickerView(
+                        self.owner_id, editing_character_id=char_id,
+                    )
+                )
+            else:
+                await interaction.response.send_modal(
+                    SignupNoteModal(self.owner_id, self.raid_id, char_id, match[1])
+                )
 
         selection.callback = select_character
         self.add_item(discord.ui.ActionRow(selection))
-        if purpose == "signup":
-            self.add_item(discord.ui.ActionRow(absence_button(owner_id, raid_id)))
 
 
 class CharacterNameModal(discord.ui.Modal):
