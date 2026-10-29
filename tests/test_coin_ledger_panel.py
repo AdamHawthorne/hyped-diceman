@@ -10,12 +10,12 @@ class CoinLedgerPanelTests(unittest.TestCase):
     @staticmethod
     def render(rows, *, owner=123, page=0):
         panel = CoinLeaderboard(rows, owner_id=owner, coin_emoji="🪙", page=page)
-        return panel, json.dumps(panel.to_components())
+        return panel, json.dumps(panel.to_components(), ensure_ascii=False)
 
     def test_ledger_has_short_singular_footer_and_one_requester_line(self):
         rows = [{"rank": 1, "user_id": 456, "coins": 1}]
         _, content = self.render(rows)
-        self.assertIn("## Ledger", content)
+        self.assertIn("## Ogre\' Ledger", content)
         self.assertIn("Ogre give out 1 coin.", content)
         self.assertIn("<@123> asked who has most shiny.", content)
         self.assertIn("<@456>", content)
