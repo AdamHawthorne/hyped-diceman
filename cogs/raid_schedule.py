@@ -24,6 +24,7 @@ RAID_COLUMNS = {
     "panel_message_id": "INTEGER",
     "panel_channel_id": "INTEGER",
     "softres_url": "TEXT",
+    "custom_title": "TEXT",
 }
 
 
@@ -109,7 +110,8 @@ def set_softres_url(path, number, url):
 
 
 def save_raid(path, number, raid_date, instance_1, instance_2=None,
-              instance_3=None, roster_announce=None, softres_url=None):
+              instance_3=None, roster_announce=None, softres_url=None,
+              custom_title=None):
     softres = validate_softres_url(softres_url)
     if not 1 <= number <= 100000:
         raise ValueError("Raid number must be between 1 and 100000.")
@@ -122,21 +124,37 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         raise ValueError("Add instance #2 before instance #3.")
     if announce and announce > start:
         raise ValueError("Roster announcement must not be after the raid starts.")
+    # None preserves the title when older /raid setup workflows edit an event.
+    # An explicitly blank title from the poster removes the optional suffix.
     with database(path) as con:
+        if custom_title is None:
+            existing = con.execute(
+                "SELECT custom_title FROM raids WHERE raid_id=?", (number,)
+            ).fetchone()
+            custom_title = existing[0] if existing and existing[0] else ""
+        if not isinstance(custom_title, str):
+            raise ValueError("Optional title must be text.")
+        custom_title = " ".join(custom_title.split())
+        if len(custom_title) > 70:
+            raise ValueError("Optional raid title must be 70 characters or less.")
+        full_title = f"<Hyped> Raid #{number}"
+        if custom_title:
+            full_title += f" - {custom_title}"
         con.execute("""
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
-                              instance_3, roster_announce_at, softres_url, signup_open)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                              instance_3, roster_announce_at, softres_url,
+                              signup_open, custom_title)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             ON CONFLICT(raid_id) DO UPDATE SET
                 title=excluded.title, raid_at=excluded.raid_at,
                 instance_1=excluded.instance_1, instance_2=excluded.instance_2,
                 instance_3=excluded.instance_3,
                 roster_announce_at=excluded.roster_announce_at,
                 softres_url=COALESCE(excluded.softres_url, raids.softres_url),
-                signup_open=1
-        """, (number, f"<Hyped> Raid #{number}", start.isoformat(),
+                custom_title=excluded.custom_title, signup_open=1
+        """, (number, full_title, start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
-              announce.isoformat() if announce else None, softres))
+              announce.isoformat() if announce else None, softres, custom_title))
     return read_raid(path, number)
 
 
