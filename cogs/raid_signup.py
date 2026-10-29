@@ -1310,6 +1310,38 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await self.post_panel(interaction, event)
 
     @app_commands.command(
+        name="gear-review",
+        description="Owner: view a saved character-panel screenshot privately",
+    )
+    @app_commands.describe(
+        character_id="Character ID from RM - Characters or RM - Gear Checks",
+    )
+    async def gear_review(self, interaction: discord.Interaction, character_id: int):
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Only Ogre's owner can inspect screenshots in private #ogre.",
+                ephemeral=True,
+            )
+            return
+        try:
+            image = last_gear_image(character_id)
+        except sqlite3.Error:
+            await interaction.response.send_message(
+                "Ogre couldn't load that screenshot.", ephemeral=True
+            )
+            return
+        if not image:
+            await interaction.response.send_message(
+                "Ogre got no screenshot for that character yet.", ephemeral=True
+            )
+            return
+        filename, payload = image
+        await interaction.response.send_message(
+            file=discord.File(io.BytesIO(payload), filename=filename),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
         name="gear", description="Upload a long .txt/.simc character gear export"
     )
     @app_commands.describe(
