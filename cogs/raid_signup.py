@@ -413,6 +413,10 @@ class CharacterActionView(discord.ui.LayoutView):
                                    + "\n" + hint), accent_color=ACCENT,
         ))
         if not rows:
+            if purpose == "signup":
+                self.add_item(discord.ui.ActionRow(
+                    absence_button(owner_id, raid_id)
+                ))
             return
         selection = discord.ui.Select(
             placeholder="Choose your saved character",
