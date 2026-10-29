@@ -46,14 +46,28 @@ Leave it empty for the original title; reopen the option and submit blank
 to clear it. Existing title text persists when older `/raid setup` commands
 edit a saved raid. It does not change the raid ID or existing sign-ups.
 
-The Discord raid card displays the localised `<t:...:D> at <t:...:t>`
-on one line with no Date/Time labels. Use one blank line, not multiple,
-between the title/date, event details and roster. Roster headings display
-only **Hyjal**, **Barrows** and **Ony**, without player counts. Until a team
-is announced, every group uses `Not announced`: Hyjal shows
-`🔹🔸 - Not announced`, Barrows shows `🔸 - Not announced` and
-`🔹 - Not announced`, and Ony shows `- Not announced`.
-There are no voice-link buttons.
+The Discord raid card displays the full localised weekday/date/time
+as `<t:...:F>` with no Date/Time labels. Its accent matches the
+Leadership panel (`#8C5A3C`), but the private poster setup keeps its
+existing accent. Roster headings display **Hyjal**, **Barrows** and **Ony**
+without player counts. Until selected teams are announced, all groups use
+`TBD`: Hyjal shows `🔹🔸 - TBD`, Barrows shows `🔸 - TBD` and
+`🔹 - TBD`, and Ony shows `- TBD`. There are no voice-link buttons.
+
+The schedule's **Roster Announcement** remains visible *below* the Roster
+sections until the first nonempty, leadership-approved public roster is
+actually synced from Google Sheets. That first reveal is labelled
+**Roster posted:** with its real date/time. Later approved changes are
+labelled **Update:** with the latest change date/time. Identical repeated
+syncs do not change the timestamps; withdrawing the entire public roster
+reverts to the planned announcement. No automatic publishing takes place
+at the scheduled announcement time.
+
+In private `/raid poster`, **Bottom Banner** accepts an optional direct
+HTTPS image URL ending in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`.
+Submit an empty field to revert to the original `y6bCxy.png` image.
+The selected banner is saved per raid and appears below the Roster/status
+inside the gold-bordered container, above the four action buttons.
 
 ## Raid member controls
 
