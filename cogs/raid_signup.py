@@ -39,7 +39,7 @@ SHEET_TABS = {
         "Signed off at",
     ),
     "Gear Checks": (
-        "Character ID", "Discord ID", "Character", "SimC Submitted",
+        "Character ID", "Discord ID", "Character", "Latest Gear Upload",
         "Export Format", "Item Summary", "Gear Review", "Leadership Notes",
         "Raw Export Reference",
     ),
