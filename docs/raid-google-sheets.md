@@ -64,7 +64,6 @@ raid deletion; any mirrored record cleanup is manual for now.
 RAID_GOOGLE_SERVICE_ACCOUNT_B64: base64 of the downloaded JSON service-account
 key. RAID_SHEETS_ID is required: copy the spreadsheet ID from the existing
 <Hyped> Forever Google Sheet URL. This is set as a Fly secret, not hardcoded.
-The database path is
-RAID_DB_PATH (the existing separate SQLite database).
+RAID_DB_PATH is the existing separate SQLite database path.
 The loop remains disabled until credentials are configured.
 Never commit the service account JSON or paste it into Discord or chat.
