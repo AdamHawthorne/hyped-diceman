@@ -32,11 +32,30 @@ a separate Google service account. Keep its JSON key private and outside Git.
 ## Sheet ownership
 
 - Ogre SQLite writes: RM - Characters, RM - Sign-ups, RM - Gear Checks
-  (metadata only; not raw SimC), RM - Raid History.
+  (metadata only; not raw SimC or screenshots), RM - Raid History.
 - In RM - Roster Builder, Ogre writes ONLY A:H. I:O are manual leadership
   choices and are never overwritten by the bot.
 - RM - Attendance remains manual.
 - Original Roster, Attendance, Assignments and other guild tabs stay untouched.
+
+## Raid member controls
+
+The live Discord raid card has exactly four buttons:
+
+- **Sign** (green): sign up for the whole raid night. First-time users
+  register character name, class, spec and role in the same flow.
+  Returning users pick a saved character. An optional raid note is collected.
+- **Update**: choose an owned character and change class, spec or raid role.
+  The same character ID remains linked to sign-ups and saved gear.
+- **Gear**: choose an owned character and upload SimC text, a .txt/.simc
+  file, PNG/JPG/WEBP character-panel screenshot, or both in one private modal.
+- **Absent** (red): optional note; Ogre records server-side signed-off time.
+
+Screenshots are validated and compressed into the **raid-only SQLite database**.
+Only upload timestamps and formats (not image bytes or raw SimC) are mirrored
+to RM - Gear Checks. The owner can privately inspect the latest screenshot
+using /raid gear-review character_id:<number>. Gear is optional for sign-ups.
+Discord modal uploads require discord.py 2.7 or later.
 
 ## Partially reveal a roster
 
