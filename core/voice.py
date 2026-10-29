@@ -1,0 +1,276 @@
+"""Original, Warcraft-inspired Ogre voice library for Hyped Ogre.
+
+Style inspiration: blunt Warcraft-style ogre speech, with one voice.
+These are new lines, not copies of in-game dialogue. Category-specific keys
+allow safe expansion without rewriting command logic.
+"""
+import hashlib
+import random
+
+PHRASES = {
+    "daily_prompt": (
+        "Think you got high roll?",
+        "Coin waiting. Who brave?",
+        "One roll, one chance. Go on.",
+        "Big number today? Ogre watching.",
+        "Dice ready. You ready?",
+        "Me got good feeling. Maybe.",
+        "Someone get coin. Could be you.",
+        "Ogre keeping eye on dice.",
+        "Try luck. No promises.",
+        "Good roll make Ogre smile.",
+        "Coin shiny. Roll higher.",
+        "You roll. Ogre count.",
+        "Who taking coin tonight?",
+        "Me think big roll coming.",
+        "No roll, no coin. Simple.",
+        "Biggest number wins. Easy.",
+        "You feeling lucky, eh?",
+        "Me smell lucky numbers.",
+        "Who got mighty rolling hand?",
+        "Roll now. Counting later."
+        "Me smell big roll coming.",
+        "Who got lucky fingers today?",
+        "Ogre feel good number in bones.",
+        "Which gamer got strongest dice hand?",
+        "Me hear shiny coin calling.",
+        "Who bring mighty luck today?",
+        "Ogre nose say fortune near.",
+        "Me got feeling someone roll huge.",
+        "Who got magic in rolling hand?",
+        "Shiny coin smell like victory.",
+        "Ogre see luck hiding in dice.",
+        "Who got courage to roll biggest?",
+        "Me smell hundred somewhere.",
+        "Whose dice got lucky spirit?",
+        "Ogre bones rattle. Good omen.",
+        "Who bring biggest number for Ogre?"
+    ),
+    "coin_winner": (
+        "{name} highest roll for **{day}** with **{roll}**. He keep coin {coin}.",
+        "{name} rolled biggest on **{day}**: **{roll}**. Coin goes to him {coin}.",
+        "{name} won **{day}** with **{roll}**. Another shiny coin {coin}.",
+        "Best roll on **{day}** was {name} with **{roll}**. Coin is his {coin}.",
+        "{name} got **{roll}** on **{day}**. No one beat it. He take coin {coin}.",
+        "{name} rolled **{roll}** on **{day}**. Ogre checked twice. Coin is his {coin}.",
+        "{name} top of **{day}** with **{roll}**. Shiny coin earned {coin}.",
+        "**{day}** belonged to {name}. **{roll}** wins coin {coin}.",
+        "Ogre counted **{day}** rolls. {name} highest with **{roll}**. Coin his {coin}.",
+        "{name} had big **{roll}** on **{day}**. Big enough for coin {coin}.",
+        "**{roll}** wins **{day}** for {name}. He keep coin {coin}.",
+        "{name} outrolled everyone on **{day}**: **{roll}**. Coin secured {coin}.",
+        "{name} held top roll on **{day}** with **{roll}**. Ogre hand over coin {coin}.",
+        "On **{day}**, {name} rolled **{roll}**. Highest wins. Coin his {coin}.",
+        "{name} got lucky on **{day}**. **{roll}** takes coin {coin}.",
+        "Biggest **{day}** number: **{roll}**, rolled by {name}. Coin goes there {coin}.",
+        "{name} kept lead on **{day}** with **{roll}**. Ogre give coin {coin}.",
+        "**{day}** rolls done. {name} wins with **{roll}**. Take shiny coin {coin}.",
+        "{name} got highest **{day}** roll, **{roll}**. Ogre approve {coin}.",
+        "Ogre checked scores. {name} top on **{day}** with **{roll}**. Coin earned {coin}."
+    ),
+    "coin_winner_ogre": (
+        "Ogre rolled highest on **{day}**: **{roll}**. Me keep own coin {coin}.",
+        "**{day}** belong to Ogre! **{roll}** wins. Coin stay with me {coin}.",
+        "Ogre got **{roll}** on **{day}**. No one beat Ogre. Coin mine {coin}.",
+        "Best **{day}** roll was me: **{roll}**. Me put coin in pocket {coin}.",
+        "Ogre win **{day}** with **{roll}**. What? Ogre can win too {coin}.",
+        "Me rolled **{roll}** on **{day}**. Ogre keep shiny coin {coin}.",
+        "**{day}** finished. Ogre highest with **{roll}**. Me happy {coin}.",
+        "Ogre top roll on **{day}**, **{roll}**. Coin stays home {coin}.",
+        "Me count rolls. Me win **{day}** with **{roll}**. Fair is fair {coin}.",
+        "Ogre rolled **{roll}** on **{day}**. Coin mine today {coin}."
+    ),
+    "roll_tie": (
+        "Nice roll, but {leader} already roll that.",
+        "Good number! {leader} got there first.",
+        "Ogre saw that roll. {leader} rolled same one earlier.",
+        "Big roll! But {leader} beat you to it.",
+        "So close. {leader} already got {roll}.",
+        "Ogre checked. {leader} rolled {roll} first.",
+        "You match top roll! But {leader} got there before you.",
+        "That a strong roll. {leader} had same number first.",
+    ),
+    "roll_high": (
+        "Ooh. Big roll.",
+        "That one got muscle.",
+        "Ogre like that number.",
+        "Dice did good.",
+        "Strong throw. Very strong.",
+        "Me impressed. Little bit.",
+        "Someone aiming for coin.",
+        "That roll got teeth.",
+        "Big number. Me see it.",
+        "Ogre nods approvingly.",
+        "Now that serious roll.",
+        "You make other dice nervous.",
+        "Good throw, gamer.",
+        "Ogre count. Yes, big.",
+        "Keep that luck safe."
+    ),
+    "roll_low": (
+        "Oof. Dice sleepy.",
+        "That number fell over.",
+        "Ogre seen bigger pebbles.",
+        "Dice not feeling brave.",
+        "Me not say anything. Much.",
+        "Tiny number, big courage.",
+        "Better luck next sunset.",
+        "Ogre count again. Still small.",
+        "At least dice survived.",
+        "That roll need breakfast.",
+        "Hmm. Dice tired today.",
+        "Ogre shrug. Tomorrow again.",
+        "Numbers go up to hundred, you know.",
+        "Bad luck. Still one roll.",
+        "Me give sympathetic grunt."
+    ),
+    "roll_100": (
+        "Hundred! Ogre eyes go wide.",
+        "Perfect roll. Me counted twice.",
+        "Biggest number! No arguing.",
+        "Dice hit ceiling. **100**.",
+        "Ogre impressed. Truly.",
+        "That roll made noise.",
+        "One hundred. Nice and shiny.",
+        "Me cannot count higher than that.",
+        "Hundred! Ogre count twice.",
+        "Me put this on big-roll shelf."
+    ),
+    "roll_duplicate": (
+        "You rolled already today.",
+        "One roll per day. Ogre remember.",
+        "Nice try. Dice finished.",
+        "Come back after midnight.",
+        "Ogre count one. You done.",
+        "Another roll? Tomorrow.",
+        "No second dice. Rules are rules.",
+        "Me not forget first roll.",
+        "One turn each, gamer.",
+        "Dice needs sleep now."
+    ),
+    "leaderboard": (
+        "Ogre counted every coin.",
+        "Shiny coins. Me like.",
+        "Big stack of lucky gamers.",
+        "Numbers checked. Probably twice.",
+        "Who got most shiny things?",
+        "Ogre keep score.",
+        "Coin pile getting taller.",
+        "Some gamers roll very lucky.",
+        "This where shiny coins live.",
+        "Me guard this list."
+    ),
+    "stats": (
+        "Ogre fetched your numbers.",
+        "Here your roll story.",
+        "Me counted all these.",
+        "Numbers say plenty.",
+        "Your dice leave tracks.",
+        "Ogre got records.",
+        "Your rolling history, right here.",
+        "Me keep score carefully.",
+        "Look at all them numbers.",
+        "Stats ready. Ogre done maths."
+    ),
+    "empty": (
+        "Nothing here yet.",
+        "No numbers for Ogre to count.",
+        "Empty. For now.",
+        "Me check twice. Still nothing.",
+        "No coin pile yet.",
+        "Nobody earned one. Yet.",
+        "Ogre waiting for first winner.",
+        "This list need lucky gamer.",
+        "Me got empty hands.",
+        "Come back after some rolls."
+    ),
+    "reset": (
+        "New day. Fresh dice.",
+        "Midnight. Ogre reset board.",
+        "Old rolls finished. New ones begin.",
+        "New chance at shiny coin.",
+        "Ogre wiped slate clean.",
+        "Yesterday done. Roll again.",
+        "Fresh day. Big numbers waiting.",
+        "Another day, another coin.",
+        "Dice wake up at midnight.",
+        "Me open new roll day."
+    ),
+    "reminder": (
+        "Ogre say get ready.",
+        "Clock nearly done. Be ready.",
+        "Five minutes. Ogre watching clock.",
+        "Not long now, gamer.",
+        "Ogre marked time. Nearly here.",
+        "Better get ready.",
+        "Five minutes left. No dawdling.",
+        "Ogre count down. You prepare.",
+        "Almost time. Ogre remember.",
+        "Time sneaking up on you.",
+    ),
+    "lfg": (
+        "Ogre got plan. Good.",
+        "Ogre put plan on board.",
+        "Group plan ready.",
+        "Ogre keep names in order.",
+        "Good. Plan saved.",
+        "Me got your plan.",
+        "Board looking busy.",
+        "Ogre counted group plans.",
+        "Adventure needs good company.",
+        "Ogre keep track. You go adventure.",
+    ),
+    "suggestion": (
+        "Ogre passed word along.",
+        "Message delivered. Ogre nod.",
+        "Ogre got your idea.",
+        "Good. Ogre sent it.",
+        "Idea gone to leadership.",
+        "Ogre carried message.",
+        "Me pass this along.",
+        "Feedback delivered.",
+        "Ogre put it in right hands.",
+        "Message sent. Job done.",
+    ),
+    "error": (
+        "Something broke. Ogre looking.",
+        "Ogre tried. Not working.",
+        "Hmm. That not right.",
+        "Me need another try.",
+        "Dice machine grumpy.",
+        "Ogre hit problem.",
+        "Little trouble. Try again.",
+        "Me checking what went wrong.",
+        "Something stuck. Not the dice.",
+        "Ogre fix soon. Maybe."
+    ),
+    "success": (
+        "Done. Ogre approve.",
+        "All sorted.",
+        "Me got it.",
+        "Good. That finished.",
+        "Ogre mark it done.",
+        "Right. Done now.",
+        "Done and counted.",
+        "All good, gamer.",
+        "Ogre nods.",
+        "That taken care of."
+    )
+}
+def pick(category, *, seed=None, **values):
+    """Pick a phrase; deterministic for a supplied day/event seed.
+
+    A deterministic day seed keeps public daily panels stable across restarts.
+    Without a seed, picks independently for events that want variety.
+    """
+    entries = PHRASES[category]
+    if seed is None:
+        line = random.choice(entries)
+    else:
+        digest = hashlib.sha256(f"{category}:{seed}".encode("utf-8")).digest()
+        line = entries[int.from_bytes(digest[:8], "big") % len(entries)]
+    return line.format(**values)
+
+
+def count_label(n, noun="coin"):
+    return f"{n} {noun if n == 1 else noun + 's'}"
