@@ -1088,23 +1088,60 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def on_gear(self, interaction):
         if not is_test_member(interaction):
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
-            return
-        if not member_characters(interaction.user.id):
             await interaction.response.send_message(
-                "Register your character first with /raid register.", ephemeral=True
+                "Gear only available in private #ogre.", ephemeral=True
             )
             return
-        await interaction.response.send_message(
-            view=CharacterActionView(interaction.user.id, purpose="gear"), ephemeral=True
+        await interaction.response.defer(ephemeral=True)
+        if not member_characters(interaction.user.id):
+            await interaction.followup.send(
+                "Ogre need a character first. Press Sign Up to register.",
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            view=CharacterActionView(interaction.user.id, purpose="gear"),
+            ephemeral=True,
+        )
+
+    async def on_update(self, interaction):
+        if not is_test_member(interaction):
+            await interaction.response.send_message(
+                "Update only available in private #ogre.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        if not member_characters(interaction.user.id):
+            await interaction.followup.send(
+                "Ogre need a character first. Press Sign Up to register.",
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            view=CharacterActionView(interaction.user.id, purpose="update"),
+            ephemeral=True,
+        )
+
+    async def on_absent(self, interaction, raid_id):
+        if not is_test_member(interaction):
+            await interaction.response.send_message(
+                "Absence only available in private #ogre.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(
+            AbsenceNoteModal(interaction.user.id, raid_id)
         )
 
     def make_panel(self, event):
         async def signup(interaction):
             await self.on_signup(interaction, event["raid_id"])
+
+        async def absent(interaction):
+            await self.on_absent(interaction, event["raid_id"])
+
         return RaidEventPanel(
-            event, on_register=self.on_register, on_characters=self.on_characters,
-            on_signup=signup, on_gear=self.on_gear,
+            event, on_signup=signup, on_update=self.on_update,
+            on_gear=self.on_gear, on_absent=absent,
             public_roster=read_public_roster(RAID_DB, event["raid_id"]),
         )
 
