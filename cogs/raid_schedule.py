@@ -680,6 +680,6 @@ class RaidEventPanel(discord.ui.LayoutView):
         )
         if on_remind is not None:
             reminder.callback = on_remind
-        for control in (sign_up, update, gear, reminder):
+        for control in (sign_up, update, gear, reminder, absent):
             controls.add_item(control)
         self.add_item(controls)
