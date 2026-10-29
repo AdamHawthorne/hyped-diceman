@@ -367,9 +367,11 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
             con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
             con.executemany(
                 "INSERT INTO raid_confirmed_roster "
-                "(raid_id, position, discord_id, name, assignment) VALUES (?,?,?,?,?)",
-                [(number, index, str(member_id or ""), name, assignment)
-                 for index, (member_id, name, assignment) in enumerate(confirmed_entries)],
+                "(raid_id, position, discord_id, name, assignment, class_name, role, spec) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                [(number, index, str(entry[0] or ""), entry[1], entry[2],
+                  *tuple(entry[3:6]) + ("",) * (3 - len(entry[3:6])))
+                 for index, entry in enumerate(confirmed_entries)],
             )
             con.execute(
                 "UPDATE raids SET roster_published=1, signup_open=0, "
@@ -394,23 +396,27 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
     return read_raid(path, number)
 
 
-def confirmed_roster(path, number, unavailable=()):
+def confirmed_roster(path, number, unavailable=(), *, include_details=False):
     """Public snapshot is locked; only subsequent absences can remove members."""
     unavailable = {str(value) for value in unavailable}
     with database(path) as con:
         rows = con.execute(
-            "SELECT discord_id, name, assignment FROM raid_confirmed_roster "
-            "WHERE raid_id=? ORDER BY position", (number,)
+            "SELECT discord_id, name, assignment, class_name, role, spec "
+            "FROM raid_confirmed_roster WHERE raid_id=? ORDER BY position", (number,)
         ).fetchall()
-    return [(name, assignment) for member_id, name, assignment in rows
+    return [(name, assignment, klass or "", role or "", spec or "")
+            if include_details else (name, assignment)
+            for member_id, name, assignment, klass, role, spec in rows
             if not member_id or member_id not in unavailable]
 
 
-def read_public_roster(path, raid_id):
-    """Only manually revealed rows from the private sheet's approved roster."""
+def read_public_roster(path, raid_id, *, include_details=False):
+    """Only selected, visible names; optional class/role metadata for emojis."""
     with database(path) as con:
+        columns = ("name, assignment, class_name, role, spec"
+                   if include_details else "name, assignment")
         return con.execute(
-            "SELECT name, assignment FROM raid_public_roster "
+            f"SELECT {columns} FROM raid_public_roster "
             "WHERE raid_id=? ORDER BY position", (raid_id,)
         ).fetchall()
 
@@ -535,7 +541,7 @@ def raid_roster_status(event):
             event["archived_at"], style="F", with_relative=False
         )
     if not event.get("roster_published"):
-        return "**Full roster posted:** " + format_discord_date(
+        return "**Confirmation:** " + format_discord_date(
             event.get("roster_announce_at"), style="R", with_relative=False
         )
     stamp = event.get("roster_updated_at")
