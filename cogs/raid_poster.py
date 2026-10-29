@@ -228,7 +228,7 @@ class RaidPosterView(discord.ui.LayoutView):
         self.add_date_picker()
         self.add_time_picker()
         self.add_end_time_picker()
-         for i in (1, 2, 3):
+        for i in (1, 2, 3):
             self.add_instance_picker(i)
         self.add_announcement_picker()
         self.add_controls()
