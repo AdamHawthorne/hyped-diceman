@@ -251,8 +251,11 @@ def _sync_rows(session, kind, rows, desired):
     if additions:
         _json(session, "POST", f"{API}/{SPREADSHEET_ID}/values/"
               + quote(f"'{tab}'!A:{end_col}", safe="'!:") + ":append",
+              # Use existing preformatted rows and keep leadership dropdowns
+              # and formatting in columns outside the bot-owned write range.
+              # INSERT_ROWS shifts those prepared rows and loses validation.
               params={"valueInputOption": "RAW",
-                      "insertDataOption": "INSERT_ROWS"},
+                      "insertDataOption": "OVERWRITE"},
               json={"values": additions})
     return len(updates) + len(additions)
 
