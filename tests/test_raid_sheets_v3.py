@@ -111,6 +111,8 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(confirmed["roster_published"], 1)
             self.assertEqual(confirmed["signup_open"], 0)
             self.assertIn("Roster confirmed:", raid_schedule.raid_roster_status(confirmed))
+            with self.assertRaisesRegex(ValueError, "Reopen"):
+                raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
             with self.assertRaisesRegex(ValueError, "aren't open"):
                 raid.save_signup(1, 42, raid.member_characters(42, path)[0][0], path)
             self.assertEqual(len(raid_schedule.confirmed_roster(path, 1)), 2)
@@ -126,6 +128,8 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(archived["archive_notes"], "Zero wipes")
             self.assertEqual(archived["wcl_url"], "https://www.warcraftlogs.com/reports/abc123")
             self.assertIn("Archived:", raid_schedule.raid_roster_status(archived))
+            with self.assertRaisesRegex(ValueError, "read-only"):
+                raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
             with self.assertRaises(ValueError):
                 raid_schedule.raid_status(path, 1, "reopen")
             with self.assertRaises(ValueError):
