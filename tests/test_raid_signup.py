@@ -38,7 +38,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertRegex(output, r"^<t:\d+:F> - <t:\d+:R>\n")
                 self.assertRegex(output, r"<t:\d+:t> - <t:\d+:t>")
                 self.assertEqual(len(output.split("\n")), 2)
-                self.assertNotIn(":F>", output)
+                self.assertIn(":F>", output)
         # A customised end is a separate Discord timestamp (not a static clock).
         custom = raid_schedule.raid_panel_when(
             "2026-12-09T21:00:00+00:00", "2026-12-10T01:30:00+00:00"
