@@ -63,6 +63,14 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 ).fetchone()[0], "")
             with self.assertRaises(ValueError):
                 raid.save_signup(2, 42, char_id, path, note="X" * 501)
+            raid.save_signup(2, 42, char_id, path, note="Leaving early")
+            raid.save_absence(2, 42, "Not coming", path)
+            with raid.database(path) as con:
+                self.assertEqual(
+                    con.execute("SELECT note FROM signups WHERE raid_id=2"
+                    ).fetchone()[0], "Leaving early"
+                )
+            self.assertEqual(raid.my_absence(2, 42, path)[0], "Not coming")
 
     async def test_profile_edit_keeps_character_and_raid_refs(self):
         with tempfile.TemporaryDirectory() as tmp:
