@@ -183,9 +183,18 @@ def delete_raid(path, number):
             raise ValueError(f"Raid #{number} no longer exists.")
         con.execute("DELETE FROM signups WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_absences WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_public_roster WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True
+
+def read_public_roster(path, raid_id):
+    """Only manually revealed rows from the private sheet's approved roster."""
+    with database(path) as con:
+        return con.execute(
+            "SELECT name, assignment FROM raid_public_roster "
+            "WHERE raid_id=? ORDER BY position", (raid_id,)
+        ).fetchall()
 
 
 def record_panel(path, number, channel_id, message_id):
@@ -196,10 +205,9 @@ def record_panel(path, number, channel_id, message_id):
         )
 
 
-def raid_panel_text(event):
-    """Only include selected instances; NEVER disclose a provisional roster."""
-    # This title is generated from a validated integer, not player-supplied text.
-    title = event["title"]
+def raid_panel_text(event, public_roster=()):
+    """One roster section; only the explicitly revealed selected names appear."""
+    title = event["title"]  # Generated from a validated integer, not player input.
     instances = [
         discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))
         for key in ("instance_1", "instance_2", "instance_3")
@@ -208,31 +216,40 @@ def raid_panel_text(event):
     roster_date = format_discord_date(
         event.get("roster_announce_at"), style="R", with_relative=False
     )
-    roster_text = (
-        "Roster published — check the official raid announcement."
-        if event.get("roster_published") else "-# *Collecting gamers*"
-    )
+    people = []
+    for name, assignment in public_roster:
+        clean = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
+        info = discord.utils.escape_mentions(
+            discord.utils.escape_markdown(assignment or "")
+        )
+        item = f"• **{clean}**" + (f" — {info}" if info else "")
+        if sum(map(len, people)) + len(item) > 3100:
+            break
+        people.append(item)
+    roster_lines = ("\n".join(people) + "\n\n") if people else ""
     softres = event.get("softres_url")
-    softres_line = f"\n\n[SoftRes sign-up]({softres})" if softres else ""
+    softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
         f"**Date:** {format_discord_date(event['raid_at'], with_relative=False)}\n\n"
         + "**Raid:** " + ", ".join(instances)
         + "\n**Check:** <#1563663258047619123>"
-        + f"\n\n### Roster\n**Roster Announcement:** {roster_date}\n"
-        + roster_text
         + softres_line
+        + "\n\n### Roster\n"
+        + roster_lines
+        + f"**Roster Announcement:** {roster_date}"
     )
 
 
 class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
-    def __init__(self, event, *, on_register, on_characters, on_signup=None, on_gear=None):
+    def __init__(self, event, *, on_register, on_characters, on_signup=None,
+                 on_gear=None, public_roster=()):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
             discord.ui.Section(
-                discord.ui.TextDisplay(raid_panel_text(event)),
+                discord.ui.TextDisplay(raid_panel_text(event, public_roster)),
                 accessory=discord.ui.Thumbnail(
                     RAID_IMAGE, description="Hyped raid image"
                 ),
