@@ -12,7 +12,9 @@ from urllib.parse import urlsplit
 import discord
 
 UK = ZoneInfo("Europe/London")
-RAID_IMAGE = "https://i.vgy.me/XIszIH.png"
+RAID_IMAGE = "https://i.vgy.me/XIszIH.png"  # Poster thumbnail stays unchanged.
+RAID_PANEL_IMAGE = "https://i.vgy.me/asI88C.png"
+RAID_PANEL_BANNER = "https://i.vgy.me/y6bCxy.png"
 ACCENT = 0xA87535
 RAID_COLUMNS = {
     "instance_1": "TEXT",
@@ -52,7 +54,7 @@ def format_discord_date(value, *, style="F", with_relative=True):
     """Discord full date or relative countdown, not both unless requested."""
     if not value:
         return "To be confirmed"
-    if style not in ("F", "R"):
+    if style not in ("F", "R", "D", "t"):
         raise ValueError("Unsupported Discord date style.")
     instant = datetime.fromisoformat(value)
     if instant.tzinfo is None:
@@ -231,7 +233,8 @@ def raid_panel_text(event, public_roster=()):
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
-        f"**Date:** {format_discord_date(event['raid_at'], with_relative=False)}\n\n"
+        f"**Date:** {format_discord_date(event['raid_at'], style='D', with_relative=False)}\n"
+        f"**Time:** {format_discord_date(event['raid_at'], style='t', with_relative=False)}\n\n"
         + "**Raid:** " + ", ".join(instances)
         + "\n**Check:** <#1563663258047619123>"
         + softres_line
@@ -251,7 +254,13 @@ class RaidEventPanel(discord.ui.LayoutView):
             discord.ui.Section(
                 discord.ui.TextDisplay(raid_panel_text(event, public_roster)),
                 accessory=discord.ui.Thumbnail(
-                    RAID_IMAGE, description="Hyped raid image"
+                    RAID_PANEL_IMAGE, description="Hyped raid image"
+                ),
+            ),
+            discord.ui.MediaGallery(
+                discord.MediaGalleryItem(
+                    media=RAID_PANEL_BANNER,
+                    description="Hyped raid bottom banner",
                 ),
             ),
             accent_color=ACCENT,
