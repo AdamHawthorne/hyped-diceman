@@ -73,6 +73,13 @@ def init_db():
         )""")
         db.execute("""CREATE INDEX IF NOT EXISTS idx_countdown_reminder_channel
                       ON countdown_reminders(channel_id)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS raid_dm_reminders (
+            raid_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            target_ts INTEGER NOT NULL,
+            sent INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(raid_id, user_id)
+        )""")
         db.execute("""CREATE TABLE IF NOT EXISTS countdown_reminder_subscribers (
             reminder_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -80,6 +87,56 @@ def init_db():
             last_notified_target INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(reminder_id, user_id)
         )""")
+
+
+
+def toggle_raid_dm(raid_id, user_id, target_ts):
+    """Persistent, one-time reminder 30 minutes before a raid."""
+    now = int(time.time())
+    if target_ts <= now + 30 * 60:
+        return None
+    with connect() as db:
+        old = db.execute(
+            "SELECT 1 FROM raid_dm_reminders WHERE raid_id=? AND user_id=?",
+            (raid_id, user_id),
+        ).fetchone()
+        if old:
+            db.execute("DELETE FROM raid_dm_reminders WHERE raid_id=? AND user_id=?",
+                       (raid_id, user_id))
+            return False
+        db.execute(
+            "INSERT INTO raid_dm_reminders (raid_id,user_id,target_ts,sent) VALUES (?,?,?,0)",
+            (raid_id, user_id, target_ts),
+        )
+        return True
+
+
+async def send_raid_dm_reminders(bot, now):
+    """Use the existing Ogre countdown worker and persistent DB for raid DMs."""
+    with connect() as db:
+        rows = [dict(row) for row in db.execute(
+            "SELECT raid_id,user_id,target_ts FROM raid_dm_reminders "
+            "WHERE sent=0 AND target_ts-1800<=? AND target_ts>?",
+            (now, now),
+        )]
+    for row in rows:
+        try:
+            user = bot.get_user(row["user_id"]) or await bot.fetch_user(row["user_id"])
+            await user.send(
+                f"⏰ **<Hyped> Raid #{row['raid_id']} starts in 30 minutes!**\\n"
+                f"Start: <t:{row['target_ts']}:t>\\nGet ready, gamer.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(f"RAID REMINDER DM FAILED raid={row['raid_id']} user={row['user_id']}: {exc!r}")
+        finally:
+            with connect() as db:
+                db.execute(
+                    "UPDATE raid_dm_reminders SET sent=1 WHERE raid_id=? AND user_id=?",
+                    (row["raid_id"], row["user_id"]),
+                )
+    with connect() as db:
+        db.execute("DELETE FROM raid_dm_reminders WHERE target_ts<=?", (now,))
 
 
 def get_timer(reminder_id):
@@ -986,6 +1043,7 @@ class CountdownCog(
                     await self._tick_one(row, now)
                 except Exception as exc:
                     print(f"COUNTDOWN UPDATE FAILED reminder={row['id']}: {exc!r}")
+            await send_raid_dm_reminders(self.bot, now)
 
     async def _run(self):
         await self.bot.wait_until_ready()
