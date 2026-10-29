@@ -63,8 +63,9 @@ On an RM - Roster Builder row for a raid night:
 
 - I (Selection): set Selected.
 - K (Show on Discord): set Yes to reveal ONLY this player.
-- L (Ony), M (Hyjal), N (Barrows): set optional assignments to display
-  next to that player's name. Barrows accepts Group A or Group B.
+- L (Ony), M (Hyjal), N (Barrows): choose instance assignments.
+  N accepts 🔸 or 🔹 for the corresponding voice group. Existing Group A/B
+  values remain compatible until you edit those rows.
 - O (Player Source): Core or PUG.
 
 PUGs can be entered manually in A (Raid ID), E (Character), I (Selection),
@@ -72,12 +73,21 @@ K (Show on Discord), L:N (assignments) and O (PUG), with no Discord ID.
 Setting K back to No hides that player on the next successful sync.
 
 Names remain private unless BOTH I=Selected and K=Yes. Inside the
-single Roster section, approved names are grouped into Hyjal (20-player),
-Barrows 10-player A, Barrows 10-player B, and Ony (40-player) when those
-instances are scheduled. A player assigned to both Hyjal and Barrows is
-shown in both groups, so they can see their 10-player team. Approved players
-without a matching instance allocation appear under "Selected · group pending".
-Unannounced groups display a small "Not announced" placeholder.
+single Roster section, approved names are grouped by voice split 🔸/🔹:
+Hyjal (20-player) uses both voice channels, then Barrows (10-player) shows
+two distinct 🔸 and 🔹 rosters, and Ony (40-player) appears when scheduled.
+Hyjal players not assigned a split default to 🔸. A player selected for Hyjal
+and Barrows appears in both rosters. Each roster group shows an icon-only
+🔊 link button to its voice channel:
+- 🔸 1180717517577129984
+- 🔹 1560686612109856819
+
+The buttons navigate to the corresponding voice rooms in Discord. They
+cannot automatically connect a player to voice: players may still need to
+click Join in Discord. The old "Group A / Group B" labels aren't displayed.
+Approved players without a matching instance allocation appear under
+"Selected · group pending". Unannounced groups display a small
+"Not announced" placeholder.
 
 Roster Announcement sits above the Roster section, immediately below Check,
 and uses the relative Discord timestamp. Announcement timing is display-only;
