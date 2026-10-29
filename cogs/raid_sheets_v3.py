@@ -273,7 +273,8 @@ def _make_tab(session, title):
         json={"requests": [{"addSheet": {"properties": {
             "title": title, "gridProperties": {
                 "rowCount": 501, "columnCount": len(COLUMNS),
-                "frozenRowCount": 7, "hideGridlines": True
+                "frozenRowCount": 7, "frozenColumnCount": 2,
+                "hideGridlines": True
             }
         }}}]},
     )
@@ -300,6 +301,15 @@ def _make_tab(session, title):
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
+    for col, width in ((0, 150), (1, 160), (2, 120), (3, 130),
+                       (4, 90), (5, 90), (6, 240), (7, 190),
+                       (8, 90), (9, 125), (10, 145), (11, 95),
+                       (12, 95), (13, 95), (14, 250)):
+        requests.append({"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": col, "endIndex": col + 1},
+            "properties": {"pixelSize": width}, "fields": "pixelSize",
+        }})
     for col, options in VALUES.items():
         requests.append({"setDataValidation": {
             "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
