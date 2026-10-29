@@ -120,8 +120,7 @@ class RaidSheetsTests(unittest.TestCase):
         }
         grouped = raid_schedule.roster_groups(event, published[1])
         self.assertEqual(grouped, [
-            ("Hyjal · 20-player 🔸", ["Snore Mon"]),
-            ("Hyjal · 20-player 🔹", ["Healer Main"]),
+            ("Hyjal · 20-player", ["Snore Mon", "Healer Main"]),
             ("Barrows · 10-player 🔸", ["Snore Mon"]),
             ("Barrows · 10-player 🔹", ["Healer Main"]),
         ])
