@@ -1,143 +1,129 @@
-# Connecting Hyped Ogre to Google Sheets
+# Hyped Ogre: one Google Sheets tab per raid
 
-The ChatGPT Drive connector does not authorise the Fly.io bot. The bot needs
-a separate Google service account. Keep its JSON key private and outside Git.
+This replaces the old six-tab Raid Management setup. It does NOT touch the
+daily roll, gold coin, leaderboard or other bot SQLite tables.
 
-## Google Cloud setup
+## Workflow
 
-1. In Google Cloud Console, enable Google Sheets API for a project.
-2. Create a service account (IAM & Admin > Service Accounts), then create and
-   download a JSON key for that service account. No project-wide Editor role needed.
-3. Open the existing <Hyped> Forever spreadsheet, click Share and give the JSON
-   key's client_email address Editor access to that spreadsheet.
-4. In PowerShell, use the actual download location of the JSON key:
+1. In private `#ogre`, configure and post the panel with `/raid poster`.
+   The bot automatically creates a private tab named e.g.
+   **Raid #1 - Wed 09 Dec 2026** (and syncs every ~60 seconds).
+2. Players use **Sign**, optionally upload SimC/gear with **Gear**, and can
+   change character details with **Update**. One registered character per
+   player per raid night.
+3. In that raid's Google tab, use the leadership dropdowns to build the
+   proposed teams. The public panel can show partial previews but describes
+   them as **Roster: Forming, awaiting confirmation**.
+4. In private `#ogre`, run `/raid confirm number:1` when the roster is
+   genuinely ready. The bot takes a locked snapshot, changes its label to
+   **Roster confirmed:**, and closes new sign-ups.
+5. Use `/raid reopen number:1` if corrections are needed. It returns to
+   Forming and reopens sign-ups; confirm again when satisfied.
+6. After the raid, use
+   `/raid archive number:1 wcl_url:https://www.warcraftlogs.com/reports/... notes:...`.
+   The date, WCL link and notes are stored on the raid tab. The tab is hidden
+   to keep the active Sheet tidy, **not deleted**. Use Google Sheets' hidden
+   sheets menu to view it later.
 
-    $path = "$HOME\Downloads\hyped-ogre-sheets.json"
-    $json = Get-Content -Raw $path
-    $secret = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
-    fly secrets set -a hyped-diceman "RAID_GOOGLE_SERVICE_ACCOUNT_B64=$secret"
-    fly secrets set -a hyped-diceman "RAID_SHEETS_ID=<paste spreadsheet ID from its URL>"
-    Remove-Variable json, secret
+## Single raid tab layout
 
-5. Deploy updated code and dependencies:
+The top rows contain the raid title, date, status, instances, confirmation
+and archive timestamps, Warcraft Logs, review notes and Discord panel link.
 
-    git pull --ff-only origin feature/raid-signup-sheets-v2
-    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-    .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-    fly deploy -a hyped-diceman
+Below the fixed headings, registrations appear under five sections:
 
-6. Run /raid sync in private #ogre. The bot also polls approximately every
-   60 seconds while running. An API or permission error won't discard sign-ups.
+- **TANKS**, grouped by class
+- **HEALERS**, grouped by class
+- **MELEE**, grouped by class
+- **DPS** (ranged DPS), grouped by class
+- **ABSENT**, retained separately for audit, not selectable for public roster
 
-## Sheet ownership
+| Column | Value | Owner |
+| --- | --- | --- |
+| A | Discord name (guild nickname) | Ogre |
+| B | Character | Ogre |
+| C | Class | Ogre |
+| D | Spec | Ogre |
+| E | Role | Ogre |
+| F | Main / Alt | Ogre |
+| G | Sign-up notes (and absence note) | Ogre |
+| H | Original signed-at timestamp | Ogre |
+| I | Signed / Absent | Ogre |
+| J | Selection: Pending / Selected / Bench / Not selected | Leadership |
+| K | Show on Discord: No / Yes | Leadership |
+| L | Hyjal: No / Yes | Leadership |
+| M | Barrows: No / 🔸 / 🔹 | Leadership |
+| N | Ony: No / Yes | Leadership |
+| O | Leadership notes | Leadership |
+| P-Q | Internal Discord and character IDs, hidden for readability | Ogre |
 
-- Ogre SQLite writes: RM - Characters, RM - Sign-ups, RM - Gear Checks
-  (metadata only; not raw SimC or screenshots), RM - Raid History.
-- In RM - Roster Builder, Ogre writes ONLY A:H. I:O are manual leadership
-  choices and are never overwritten by the bot.
-- RM - Attendance remains manual.
-- Original Roster, Attendance, Assignments and other guild tabs stay untouched.
+Every new player is **Signed** by default. Selection begins **Pending**;
+Show on Discord begins **No**. This prevents accidental public disclosure.
 
-## Optional raid title and compact event layout
+For a player to appear in Hyjal, for example: choose **Selected** (J),
+**Yes** (K) and **Yes** (L). For Barrows, select the relevant team symbol in
+column M. Changes are noticed at the next successful ~60-second sync.
+Hyjal remains one roster headed by 🔹🔸 and Barrows has two rosters
+headed 🔸 and 🔹. The diamond headers stay visible after players appear.
 
-In private `/raid poster`, **Optional Raid Title** adds text after the
-fixed `<Hyped> Raid #N` prefix, e.g. `<Hyped> Raid #1 - First Clear`.
-Leave it empty for the original title; reopen the option and submit blank
-to clear it. Existing title text persists when older `/raid setup` commands
-edit a saved raid. It does not change the raid ID or existing sign-ups.
+When a player clicks **Absent**, Ogre moves the row to **ABSENT**, sets
+selection to Not selected, disables public display, and removes them from
+the public roster if necessary. The original sign-up information remains
+available for the raid record. A player signing up again is reset to
+Pending/No, requiring fresh leadership approval.
 
-The Discord raid card displays a plain, full UK weekday/date on one line,
-then hoverable Discord start/end timestamps using `<t:...:t> - <t:...:t>`
-on the next line. The times adjust for the viewer's Discord timezone.
-There are no Date/Time labels, and Check sits directly above Roster.
+When confirmed, subsequent manual changes to dropdowns are ignored for
+public roster purposes until `/raid reopen`. Absences can still remove a
+confirmed player; this shows as an **Update:**. Archived raids accept no
+further roster edits or absences.
 
-In private `/raid poster`, you can set the UK start and end times
-independently (preset dropdowns or exact HH:MM). By default, the raid
-ends three elapsed hours after it starts; selecting `Default: +3h` resets
-any custom end time. An end clock time earlier than the start is treated
-as the following day. Invalid or excessively long durations are rejected.
+Leadership-entered PUG rows in the old Roster Builder migrate to the new
+tab; PUGs can also be added manually, with a character, class/spec/role,
+Status=Signed and the leadership dropdowns. Do not overwrite the hidden
+internal ID columns for registered guild members.
 
-The `Choose Check channel` Discord channel dropdown lets leadership
-select the channel mentioned next to `Check:` on each raid card. Existing
-raids continue using `#resources` unless changed. The end time and
-Check channel are saved per raid in the raid-only SQLite database
-using safe additive migrations; older setup commands retain both values.
-Its accent matches the Leadership panel (`#8C5A3C`), but the private poster setup keeps its
-existing accent. Roster headings display **Hyjal**, **Barrows** and **Ony**
-without player counts. Until selected teams are announced, all groups use
-`TBD`: Hyjal shows `🔹🔸 - TBD`, Barrows shows `🔸 - TBD` and
-`🔹 - TBD`, and Ony shows `- TBD`. There are no voice-link buttons.
+## Previous RM tabs and data safety
 
-The schedule's **Roster Announcement** remains visible *below* the Roster
-sections until the first nonempty, leadership-approved public roster is
-actually synced from Google Sheets. That first reveal is labelled
-**Roster posted:** with its real date/time. Later approved changes are
-labelled **Update:** with the latest change date/time. Identical repeated
-syncs do not change the timestamps; withdrawing the entire public roster
-reverts to the planned announcement. No automatic publishing takes place
-at the scheduled announcement time.
+On the first successful per-raid tab sync, Ogre hides the six old
+`RM -` tabs. They are **never deleted** by the migration and are no longer
+used as live roster data. Existing leadership selections, notes and PUG
+rows for that raid are imported once. To inspect historical values, use
+Google Sheets' **View > Hidden sheets** menu.
 
-In private `/raid poster`, **Bottom Banner** accepts an optional direct
-HTTPS image URL ending in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`.
-Submit an empty field to revert to the original `y6bCxy.png` image.
-The selected banner is saved per raid and appears below the Roster/status
-inside the leadership-coloured raid container, above the four action buttons.
+SQLite at `/data/raid_signup.db` remains authoritative for registration,
+attendance and gear uploads. Only basic metadata, not raw SimC text or gear
+screenshots, is synced to the new tab. The existing roll/coin database and
+all other Sheet tabs are untouched.
 
-## Raid member controls
+For safety, run the Python regression suite before deploying. Do not merge
+the development branch directly into another branch without checking the
+full ancestry for unrelated commits.
 
-The live Discord raid card has exactly four buttons:
+## Google Sheets / Fly.io connection
 
-- **Sign** (green): sign up for the whole raid night. First-time users
-  register character name, class, spec and role in the same flow.
-  Returning users pick a saved character. An optional raid note is collected.
-- **Update**: choose an owned character and change class, spec or raid role.
-  The same character ID remains linked to sign-ups and saved gear.
-- **Gear**: choose an owned character and upload SimC text, a .txt/.simc
-  file, PNG/JPG/WEBP character-panel screenshot, or both in one private modal.
-- **Absent** (red): optional note; Ogre records server-side signed-off time.
+The ChatGPT Google Drive connection cannot authenticate a Fly.io bot. Ogre
+uses a Google service account with the Google Sheets API enabled. Share
+the restricted `<Hyped> Forever` workbook with its service account email
+as Editor, not a Google Cloud project-wide Editor role. Set these secrets
+in Fly.io, keeping the JSON key outside Git and Discord:
 
-Screenshots are validated and compressed into the **raid-only SQLite database**.
-Only upload timestamps and formats (not image bytes or raw SimC) are mirrored
-to RM - Gear Checks. The owner can privately inspect the latest screenshot
-using /raid gear-review character_id:<number>. Gear is optional for sign-ups.
-Discord modal uploads require discord.py 2.7 or later.
+- `RAID_SHEETS_ID` = the private Google workbook ID
+- `RAID_GOOGLE_SERVICE_ACCOUNT_B64` = Base64 UTF-8 encoding of the JSON key
 
-## Partially reveal a roster
+On Windows PowerShell, after validating the downloaded key:
 
-On an RM - Roster Builder row for a raid night:
+```powershell
+$path = "S:\\WoW\\Discord Bot\\hyped-ogre-47707d794b16.json"
+$json = Get-Content -Raw -LiteralPath $path
+$key = $json | ConvertFrom-Json
+if ($key.type -ne "service_account" -or !$key.private_key) {
+    throw "Invalid service account JSON"
+}
+$secret = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+fly secrets set -a hyped-diceman --stage "RAID_GOOGLE_SERVICE_ACCOUNT_B64=$secret"
+Remove-Variable json,key,secret
+```
 
-- I (Selection): set Selected.
-- K (Show on Discord): set Yes to reveal ONLY this player.
-- L (Ony), M (Hyjal), N (Barrows): choose instance assignments.
-  Hyjal remains one 20-player roster. N accepts 🔸 or 🔹 to distinguish
-  the two Barrows 10-player groups. Existing Group A/B values remain
-  compatible until you edit those rows.
-- O (Player Source): Core or PUG.
-
-PUGs can be entered manually in A (Raid ID), E (Character), I (Selection),
-K (Show on Discord), L:N (assignments) and O (PUG), with no Discord ID.
-Setting K back to No hides that player on the next successful sync.
-
-Names remain private unless BOTH I=Selected and K=Yes. Hyjal displays
-one unsplit 20-player roster, with 🔹🔸 - TBD until announced. Barrows
-has separate 🔸 and 🔹 rosters, both initially marked TBD; Ony has
-its own roster when scheduled. A player selected for both Hyjal and
-Barrows appears in both assigned sections. Approved players without
-a matching instance allocation appear under "Selected · group pending".
-
-The card has no clickable voice-channel or join links. Roster Announcement
-sits below the roster sections and is display-only: it does not publish
-anyone automatically. The banner remains below that status within the
-leadership-coloured container.
-
-The current synchroniser does NOT delete mirrored historic rows on
-raid deletion; any mirrored record cleanup is manual for now.
-
-## Configuration
-
-RAID_GOOGLE_SERVICE_ACCOUNT_B64: base64 of the downloaded JSON service-account
-key. RAID_SHEETS_ID is required: copy the spreadsheet ID from the existing
-<Hyped> Forever Google Sheet URL. This is set as a Fly secret, not hardcoded.
-RAID_DB_PATH is the existing separate SQLite database path.
-The loop remains disabled until credentials are configured.
-Never commit the service account JSON or paste it into Discord or chat.
+These Fly secrets have already been configured on the live app. No need to
+recreate or reapply them when deploying code changes. Run `/raid sync`
+in private `#ogre` to diagnose permissions or synchronisation problems.
