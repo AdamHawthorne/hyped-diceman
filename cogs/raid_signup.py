@@ -16,6 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from cogs import raid_sheets, raid_sheets_v3
 from cogs.emojis import markup as guild_emoji, option_emoji, combat_role, EMOJI_IDS
+from cogs.countdown import toggle_raid_dm
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
@@ -1189,8 +1190,21 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         async def absent(interaction):
             await self.on_absent(interaction, event["raid_id"])
 
+        async def remind(interaction):
+            start = datetime.fromisoformat(event["raid_at"])
+            target = int(start.timestamp())
+            enabled = toggle_raid_dm(event["raid_id"], interaction.user.id, target)
+            if enabled is None:
+                message = "The 30-minute reminder window has already passed."
+            elif enabled:
+                message = f"⏰ Ogre will DM you 30 minutes before Raid #{event['raid_id']}."
+            else:
+                message = "⏰ Raid reminder cancelled."
+            await interaction.response.send_message(message, ephemeral=True)
+
         return RaidEventPanel(
             event, on_signup=signup, on_update=self.on_update,
+            on_remind=remind,
             on_gear=self.on_gear, on_absent=absent,
             public_roster=read_public_roster(
                 RAID_DB, event["raid_id"], include_details=True
