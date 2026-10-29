@@ -27,6 +27,21 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(raid.ATTENDANCE_OPTIONS), {"Pending", "Attended", "Late", "AFK", "No-show", "Excused"})
         self.assertIn("Attendance", raid.SHEET_TABS)
 
+    async def test_raid_panel_three_hour_window_handles_midnight_and_dst(self):
+        self.assertEqual(
+            raid_schedule.raid_panel_when("2026-12-09T21:00:00+00:00"),
+            "Wednesday, 9 December 2026\n21:00 - 00:00",
+        )
+        self.assertEqual(
+            raid_schedule.raid_panel_when("2026-07-01T21:00:00+01:00"),
+            "Wednesday, 1 July 2026\n21:00 - 00:00",
+        )
+        # Exactly three elapsed hours when UK clocks go forward.
+        self.assertEqual(
+            raid_schedule.raid_panel_when("2027-03-28T00:30:00+00:00"),
+            "Sunday, 28 March 2027\n00:30 - 04:30",
+        )
+
     async def test_schedule_migration_and_v2_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
@@ -52,8 +67,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Roster Announcement:", text)
             self.assertIn("**Check:** <#1563663258047619123>", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
-            self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"<t:\d+:F>")
+            self.assertIn(
+                "Thursday, 5 November 2026\n20:00 - 23:00",
+                raid_schedule.raid_panel_text(event),
+            )
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
             self.assertRegex(raid_schedule.raid_panel_text(event),
@@ -62,6 +79,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("### Roster", text)
             self.assertIn("**Roster Announcement:**", text)
             panel_text = raid_schedule.raid_panel_text(event)
+            self.assertIn("**Check:** <#1563663258047619123>\n### Roster", panel_text)
+            self.assertNotIn("\n\n### Roster", panel_text)
             self.assertLess(panel_text.index("**Check:**"),
                             panel_text.index("### Roster"))
             self.assertLess(panel_text.index("### Roster"),
@@ -358,7 +377,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(" - @everyone **new**", intro)
             self.assertIn("@\u200beveryone", intro)
             self.assertNotIn("\n\n\n", intro)
-            self.assertRegex(intro, r"<t:\d+:F>")
+            self.assertIn("Wednesday, 9 December 2026\n21:00 - 00:00", intro)
             self.assertNotIn("**Date:**", intro)
             self.assertNotIn("**Time:**", intro)
 
