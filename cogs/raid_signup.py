@@ -12,7 +12,7 @@ from discord.ext import commands
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
-    read_raid, record_panel, save_raid, set_softres_url,
+    read_raid, record_panel, save_raid, set_softres_url, delete_raid,
 )
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -523,6 +523,72 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     def raid_db_path(self):
         return RAID_DB
+
+    async def delete_raid_from_poster(self, interaction, raid_number):
+        """Delete the raid card, then raid-scoped rows; never delete characters."""
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Only Ogre's owner can delete raids in private #ogre.",
+                ephemeral=True,
+            )
+            return
+        try:
+            event = read_raid(RAID_DB, raid_number)
+        except sqlite3.Error:
+            await interaction.response.send_message(
+                "Ogre couldn't read this raid; nothing was deleted.",
+                ephemeral=True,
+            )
+            return
+        if event is None:
+            await interaction.response.send_message(
+                "That raid no longer exists.", ephemeral=True
+            )
+            return
+        channel_id = event.get("panel_channel_id")
+        message_id = event.get("panel_message_id")
+        # Never delete a message outside the private test channel.
+        if message_id and channel_id != TEST_CHANNEL_ID:
+            await interaction.response.send_message(
+                "Ogre won't delete a raid card outside private #ogre.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        if message_id:
+            try:
+                message = await interaction.channel.fetch_message(message_id)
+                await message.delete()
+            except discord.NotFound:
+                # Already deleted from Discord; still allow database cleanup.
+                pass
+            except (discord.Forbidden, discord.HTTPException):
+                await interaction.followup.send(
+                    "Ogre couldn't remove the Discord raid card. "
+                    "Raid data was preserved; please retry.",
+                    ephemeral=True,
+                )
+                return
+        try:
+            delete_raid(RAID_DB, raid_number)
+        except (ValueError, sqlite3.Error):
+            await interaction.followup.send(
+                "Ogre couldn't delete the saved raid records. "
+                "No other raids or characters were touched.",
+                ephemeral=True,
+            )
+            return
+        try:
+            await interaction.message.edit(
+                view=RaidPosterView(self, interaction.user.id)
+            )
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        await interaction.followup.send(
+            f"Ogre deleted Raid #{raid_number}, including its sign-ups "
+            "and attendance. Characters and gear remain saved.",
+            ephemeral=True,
+        )
 
     async def cog_load(self):
         # Reattach real panel buttons after restarts so posted panels keep working.
