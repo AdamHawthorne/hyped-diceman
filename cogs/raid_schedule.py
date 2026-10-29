@@ -311,9 +311,9 @@ def raid_panel_intro(event):
 def _roster_group_text(title, players):
     """A voice icon identifies the section; a join button is its accessory."""
     if title.startswith("Hyjal · 20-player "):
-        heading = "**Hyjal · 20-player**\n" + title[-1]
+        heading = ("**Hyjal · 20-player**\n" if title.endswith("🔸") else "") + title[-1]
     elif title.startswith("Barrows · 10-player "):
-        heading = "**Barrows · 10-player**\n" + title[-1]
+        heading = ("**Barrows · 10-player**\n" if title.endswith("🔸") else "") + title[-1]
     else:
         heading = f"**{title}**"
     if not players:
