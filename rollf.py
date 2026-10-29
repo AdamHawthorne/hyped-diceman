@@ -26,6 +26,7 @@ from cogs.roll_coins import (
 )
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 from cogs.ogre_voice import pick as ogre_say
+from cogs.emojis import markup as guild_emoji
 import logging
 import json
 import hmac
@@ -1142,10 +1143,8 @@ class DailyRollView(discord.ui.View):
 
 
 def ogre_coin_emoji():
-    """Resolve the real guild emoji ID; plain text until :ogrecoin: is uploaded."""
-    guild = bot.get_guild(HYPED_GUILD_ID)
-    emoji = discord.utils.get(guild.emojis, name="ogrecoin") if guild else None
-    return str(emoji) if emoji else "gold coin"
+    """Use the fixed server emoji ID, independent of Discord's guild cache."""
+    return guild_emoji("ogrecoin")
 
 
 def daily_ogre_tagline(day=None):
