@@ -15,6 +15,7 @@ from discord.ext import commands
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from cogs import raid_sheets, raid_sheets_v3
+from cogs.emojis import markup as guild_emoji, option_emoji, EMOJI_IDS
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
@@ -660,6 +661,7 @@ class CharacterActionView(discord.ui.LayoutView):
                 discord.SelectOption(
                     label=name[:100], value=str(char_id),
                     description=f"{class_name} / {spec} · {role}"[:100],
+                    emoji=option_emoji(class_name),
                 ) for char_id, name, class_name, spec, role, _ in rows[:25]
             ],
         )
@@ -780,7 +782,7 @@ class ClassPickerView(discord.ui.LayoutView):
         ))
         select = discord.ui.Select(
             placeholder="Choose your class",
-            options=[discord.SelectOption(label=name, value=name)
+            options=[discord.SelectOption(label=name, value=name, emoji=option_emoji(name))
                      for name in CLASS_SPECS],
         )
 
@@ -866,7 +868,7 @@ class RolePickerView(discord.ui.LayoutView):
         ))
         select = discord.ui.Select(
             placeholder="Choose raid role",
-            options=[discord.SelectOption(label=role, value=role) for role in roles],
+            options=[discord.SelectOption(label=role, value=role, emoji=option_emoji(role if role != "DPS" else "Melee")) for role in roles],
         )
 
         async def select_role(interaction):
@@ -1177,14 +1179,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         )
 
     def raid_emoji_map(self):
-        """Convert server role/class emoji names into real Discord emoji markup."""
-        lookup = getattr(self.bot, "get_guild", None)
-        guild = lookup(GUILD_ID) if callable(lookup) else None
-        emojis = getattr(guild, "emojis", ()) if guild is not None else ()
-        if not isinstance(emojis, (tuple, list)):
-            return {}
-        return {emoji.name.casefold(): str(emoji)
-                for emoji in emojis if getattr(emoji, "name", None)}
+        """Stable custom markup without guild-cache lookup."""
+        return {name.casefold(): guild_emoji(name) for name in EMOJI_IDS}
 
     def make_panel(self, event):
         async def signup(interaction):
