@@ -503,7 +503,7 @@ def raid_roster_status(event):
         return "**Roster confirmed:** " + format_discord_date(
             stamp, style="F", with_relative=False
         )
-    return "**Roster:** Forming, awaiting confirmation
+    return "**Roster:** Forming, awaiting confirmation"
 
 
 def _roster_group_text(title, players):
