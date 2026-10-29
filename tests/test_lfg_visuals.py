@@ -13,10 +13,13 @@ NODES = [
     if isinstance(node, ast.FunctionDef) and node.name in HELPERS
 ]
 from cogs.lfg_sort import is_open_lfm
+from cogs.emojis import markup as guild_emoji, combat_role
 
 CONTEXT = {
     "ROLE_EMOJIS": {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"},
     "is_open_lfm": is_open_lfm,
+    "guild_emoji": guild_emoji,
+    "combat_role": combat_role,
 }
 exec(compile(ast.Module(body=NODES, type_ignores=[]), str(SOURCE), "exec"), CONTEXT)
 
@@ -49,9 +52,9 @@ class LFGVisualTests(unittest.TestCase):
     def test_role_emojis_are_only_used_when_requested(self):
         self.assertEqual(CONTEXT["format_roles"]("Tank, Healer, DPS"), "Tank / Healer / DPS")
         decorated = CONTEXT["format_roles"]("Tank, Healer, DPS", icons=True)
-        self.assertIn("Tank 🛡️", decorated)
-        self.assertIn("Healer ✚", decorated)
-        self.assertIn("DPS ⚔️", decorated)
+        self.assertIn("Tank <:Tank:1565477012322132099>", decorated)
+        self.assertIn("Healer <:Healer:1565477112951996456>", decorated)
+        self.assertIn("DPS <:Melee:1565477048305197207>", decorated)
 
     def test_open_marker_after_plan_not_starting_zone(self):
         source = SOURCE.read_text(encoding="utf-8")
