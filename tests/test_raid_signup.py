@@ -256,6 +256,115 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 interaction.response.send_message.await_args.kwargs
             ) if interaction.response.send_message.await_args else "")
 
+    async def test_poster_only_offers_forever_raid_instances(self):
+        self.assertEqual(
+            raid_poster.INSTANCES,
+            ("Hyjal (20m)", "Barrows (10m)", "Ony (40m)"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            cog = SimpleNamespace(raid_db_path=lambda: path, allowed=lambda i: True)
+            panel = raid_poster.RaidPosterView(cog, 42)
+            payload = json.dumps(panel.to_components())
+            for name in raid_poster.INSTANCES:
+                self.assertIn(name, payload)
+            self.assertNotIn("Molten Core", payload)
+            self.assertNotIn("Blackwing Lair", payload)
+            self.assertIn('"label": "Delete Raid"', payload)
+            delete_button = next(
+                item for item in panel.walk_children()
+                if isinstance(item, discord.ui.Button) and item.label == "Delete Raid"
+            )
+            self.assertTrue(delete_button.disabled)
+            raid_schedule.save_raid(path, 1, "2026-11-05 20:00", "Hyjal (20m)")
+            panel = raid_poster.RaidPosterView(
+                cog, 42, raid_poster.draft_from_event(
+                    raid_schedule.read_raid(path, 1)
+                )
+            )
+            delete_button = next(
+                item for item in panel.walk_children()
+                if isinstance(item, discord.ui.Button) and item.label == "Delete Raid"
+            )
+            self.assertFalse(delete_button.disabled)
+            self.assertIn("Post destination", json.dumps(panel.to_components()))
+
+    async def test_delete_raid_only_deletes_that_raids_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
+            char_id = raid.member_characters(42, path)[0][0]
+            raid.save_gear(42, char_id, "player=Snore Mon\nlevel=60\n" * 5, path)
+            for number in (1, 2):
+                raid_schedule.save_raid(
+                    path, number, "2026-11-05 20:00", "Hyjal (20m)"
+                )
+                raid.save_signup(number, 42, char_id, path)
+                with raid.database(path) as con:
+                    con.execute(
+                        "INSERT INTO attendance (raid_id, discord_id, character_id) "
+                        "VALUES (?, 42, ?)", (number, char_id)
+                    )
+            raid_schedule.delete_raid(path, 1)
+            self.assertIsNone(raid_schedule.read_raid(path, 1))
+            self.assertIsNotNone(raid_schedule.read_raid(path, 2))
+            self.assertIsNone(raid.my_signup(1, 42, path))
+            self.assertEqual(raid.my_signup(2, 42, path), ("Snore Mon", "Available"))
+            with raid.database(path) as con:
+                self.assertEqual(
+                    con.execute("SELECT COUNT(*) FROM attendance").fetchone()[0], 1
+                )
+                self.assertEqual(
+                    con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 1
+                )
+                self.assertEqual(
+                    con.execute("SELECT COUNT(*) FROM characters").fetchone()[0], 1
+                )
+            with self.assertRaises(ValueError):
+                raid_schedule.delete_raid(path, 1)
+
+    async def test_raid_deletion_removes_discord_card_and_requires_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
+             patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
+            raid.create_schema(raid.RAID_DB)
+            raid_schedule.ensure_raid_fields(raid.RAID_DB)
+            raid_schedule.save_raid(
+                raid.RAID_DB, 1, "2026-11-05 20:00", "Hyjal (20m)"
+            )
+            raid_schedule.record_panel(raid.RAID_DB, 1, raid.TEST_CHANNEL_ID, 7654)
+            cog = raid.RaidPrototype(SimpleNamespace())
+            posted = SimpleNamespace(delete=AsyncMock())
+            poster_message = SimpleNamespace(edit=AsyncMock())
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID,
+                channel=SimpleNamespace(fetch_message=AsyncMock(return_value=posted)),
+                message=poster_message,
+                response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
+                followup=SimpleNamespace(send=AsyncMock()),
+            )
+            confirm = raid_poster.RaidDeleteConfirmation(cog, 42, 1)
+            self.assertIn("This cannot be undone", json.dumps(confirm.to_components()))
+            self.assertIsNotNone(raid_schedule.read_raid(raid.RAID_DB, 1))
+            button = next(
+                item for item in confirm.walk_children()
+                if isinstance(item, discord.ui.Button)
+                and item.label == "Yes, delete Raid #1"
+            )
+            await button.callback(interaction)
+            posted.delete.assert_awaited_once()
+            self.assertIsNone(raid_schedule.read_raid(raid.RAID_DB, 1))
+            self.assertIsInstance(
+                poster_message.edit.await_args.kwargs["view"],
+                raid_poster.RaidPosterView,
+            )
+            self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
+
     async def test_poster_command_is_non_ephemeral_and_private_channel_only(self):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
