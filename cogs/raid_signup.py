@@ -960,8 +960,9 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         if not raid_sheets.configured():
             await interaction.response.send_message(
                 "Google Sheets not connected to Ogre yet. "
-                "Set RAID_GOOGLE_SERVICE_ACCOUNT_B64 on Fly and share "
-                "the <Hyped> Forever sheet with that service account.",
+                "Set RAID_GOOGLE_SERVICE_ACCOUNT_B64 and RAID_SHEETS_ID "
+                "as Fly secrets, then share the private sheet with "
+                "the service account email.",
                 ephemeral=True,
             )
             return
