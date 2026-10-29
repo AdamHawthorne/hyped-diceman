@@ -48,10 +48,12 @@ edit a saved raid. It does not change the raid ID or existing sign-ups.
 
 The Discord raid card displays the localised `<t:...:D> at <t:...:t>`
 on one line with no Date/Time labels. Use one blank line, not multiple,
-between the title/date, event details and roster. Until the Hyjal team is
-announced it shows `🔹🔸 - Forming, await announcement`. The two Barrows
-teams show `🔸 - Not announced` and `🔹 - Not announced` on their
-respective lines. There are no voice-link buttons.
+between the title/date, event details and roster. Roster headings display
+only **Hyjal**, **Barrows** and **Ony**, without player counts. Until a team
+is announced, every group uses `Not announced`: Hyjal shows
+`🔹🔸 - Not announced`, Barrows shows `🔸 - Not announced` and
+`🔹 - Not announced`, and Ony shows `- Not announced`.
+There are no voice-link buttons.
 
 ## Raid member controls
 
