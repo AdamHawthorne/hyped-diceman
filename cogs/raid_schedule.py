@@ -207,29 +207,18 @@ def record_panel(path, number, channel_id, message_id):
         )
 
 
-# Exact guild voice channels. An icon-only Discord link button beside each
-# diamond opens that channel; joining voice still requires a Discord action.
-VOICE_ORANGE = 1180717517577129984
-VOICE_BLUE = 1560686612109856819
-VOICE_SPLITS = {
-    "🔸": VOICE_ORANGE,
-    "🔹": VOICE_BLUE,
-}
-
-
 def _split_from_tokens(tokens):
-    """New diamond and historic Group A/B Sheet values refer to same rooms."""
+    """New diamonds and historic Group A/B Sheet values map to two Barrows teams."""
     if {"barrows 🔹", "group b", "🔹", "barrows b"} & tokens:
         return "🔹"
-    return "🔸"  # Default voice channel when split has not been assigned.
+    return "🔸"  # Default Barrows group when a specific split is not supplied.
 
 
 def roster_groups(event, public_roster):
-    """Only approved names, grouped by instance and actual voice split.
+    """Hyjal uses one 20-player roster; Barrows retains two diamond teams.
 
-    Every Hyjal player gets a default 🔸 or explicit 🔹 voice allocation.
-    Barrows shows *separate* 🔸 and 🔹 10-player rosters, with no A/B labels.
-    One person can be on both a Hyjal and Barrows roster.
+    Only leadership-approved names are passed in from the Sheet. One raider
+    may appear in the Hyjal roster and one Barrows team on the same raid night.
     """
     instances = [
         (event.get(key) or "").casefold()
@@ -241,7 +230,7 @@ def roster_groups(event, public_roster):
 
     group_titles = []
     if has_hyjal:
-        group_titles.extend(("Hyjal · 20-player 🔸", "Hyjal · 20-player 🔹"))
+        group_titles.append("Hyjal · 20-player")
     if has_barrows:
         group_titles.extend(("Barrows · 10-player 🔸", "Barrows · 10-player 🔹"))
     if has_ony:
@@ -261,7 +250,7 @@ def roster_groups(event, public_roster):
         split = _split_from_tokens(tokens)
         matched = False
         if has_hyjal and "hyjal" in tokens:
-            groups[f"Hyjal · 20-player {split}"].append(clean_name)
+            groups["Hyjal · 20-player"].append(clean_name)
             matched = True
         if has_barrows and (
             {"barrows 🔸", "barrows 🔹", "barrows a", "barrows b",
@@ -309,10 +298,8 @@ def raid_panel_intro(event):
 
 
 def _roster_group_text(title, players):
-    """A voice icon identifies the section; a join button is its accessory."""
-    if title.startswith("Hyjal · 20-player "):
-        heading = ("**Hyjal · 20-player**\n" if title.endswith("🔸") else "") + title[-1]
-    elif title.startswith("Barrows · 10-player "):
+    """Keep Barrows diamond labels but no voice-channel links or Hyjal split."""
+    if title.startswith("Barrows · 10-player "):
         heading = ("**Barrows · 10-player**\n" if title.endswith("🔸") else "") + title[-1]
     else:
         heading = f"**{title}**"
@@ -339,37 +326,19 @@ def raid_panel_text(event, public_roster=()):
     )
 
 
-def _voice_button(guild_id, title):
-    """Icon-only link opens a voice room; Discord cannot auto-join voice."""
-    split = title[-1]
-    if not guild_id or split not in VOICE_SPLITS:
-        return None
-    channel_id = VOICE_SPLITS[split]
-    return discord.ui.Button(
-        style=discord.ButtonStyle.link,
-        emoji="🔊",
-        url=f"https://discord.com/channels/{int(guild_id)}/{channel_id}",
-    )
-
-
-def roster_components(event, public_roster, *, guild_id=None):
-    """Voice join buttons directly beside the diamond-marked roster sections."""
-    components = []
-    for title, players in roster_groups(event, public_roster):
-        text = discord.ui.TextDisplay(_roster_group_text(title, players))
-        button = _voice_button(guild_id, title)
-        if button:
-            components.append(discord.ui.Section(text, accessory=button))
-        else:
-            components.append(text)
-    return components
+def roster_components(event, public_roster):
+    """Text-only roster groups, with no voice-link buttons."""
+    return [
+        discord.ui.TextDisplay(_roster_group_text(title, players))
+        for title, players in roster_groups(event, public_roster)
+    ]
 
 
 class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
     def __init__(self, event, *, on_register=None, on_characters=None, on_signup=None,
                  on_gear=None, on_update=None, on_absent=None,
-                 public_roster=(), guild_id=None):
+                 public_roster=()):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -379,7 +348,7 @@ class RaidEventPanel(discord.ui.LayoutView):
                     RAID_PANEL_IMAGE, description="Hyped raid image"
                 ),
             ),
-            *roster_components(event, public_roster, guild_id=guild_id),
+            *roster_components(event, public_roster),
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(
                     media=RAID_PANEL_BANNER,
