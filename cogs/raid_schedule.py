@@ -444,12 +444,10 @@ def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None):
         return ""
     klass = (klass or "").strip().title()
     role = combat_role((role or "").strip().title(), klass, spec)
-    return " ".join(part for part in (
-        guild_emoji(role), guild_emoji(klass), name
-    ) if part)
+    return " ".join(part for part in (guild_emoji(klass), name) if part)
 
 
-def roster_groups(event, public_roster, *, emoji_map=None):
+def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
     """Hyjal uses one 20-player roster; Barrows retains two diamond teams.
 
     Only leadership-approved names are passed in from the Sheet. One raider
@@ -483,6 +481,14 @@ def roster_groups(event, public_roster, *, emoji_map=None):
         )
         if not clean_name:
             continue
+        if by_role:
+            # All damage specs share the public DPS category. Missing historical
+            # metadata stays visible under DPS rather than being dropped.
+            role_group = (role or "").strip().casefold()
+            role_group = ("Tank" if role_group == "tank"
+                          else "Healer" if role_group in ("healer", "heal")
+                          else "DPS")
+            clean_name = (role_group, clean_name)
         tokens = {item.strip().casefold() for item in (assignment or "").split(",")}
         split = _split_from_tokens(tokens)
         matched = False
@@ -515,7 +521,7 @@ def raid_panel_when(value, end_at=None):
     end = (datetime.fromisoformat(end_at).astimezone(UK) if end_at else
            (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK))
     return (
-        f"{start:%A}, {start.day} {start:%B %Y}\n"
+        f"{format_discord_date(start.isoformat(), style='D', with_relative=False)}\n"
         f"{format_discord_date(start.isoformat(), style='t', with_relative=False)}"
         f" - {format_discord_date(end.isoformat(), style='t', with_relative=False)}"
     )
@@ -586,6 +592,18 @@ def _roster_group_text(title, players):
         if title.startswith("Barrows · 10-player "):
             return heading + " - TBD"
         return heading + "\n- TBD"
+    symbol = "🔹🔸" if title == "Hyjal · 20-player" else ""
+    # Discord renders -# lines in muted grey. A role heading is shown only
+    # when at least one player is assigned to that category.
+    categorized = any(isinstance(item, tuple) for item in players)
+    if categorized:
+        names = []
+        for category in ("Tank", "Healer", "DPS"):
+            members = [name for role, name in players if role == category]
+            if members:
+                names.append(f"-# **{category}**")
+                names.extend(members)
+        return heading + ("\n" + symbol if symbol else "") + "\n" + "\n".join(names)
     names = []
     length = len(heading)
     for name in players:
@@ -595,13 +613,12 @@ def _roster_group_text(title, players):
             break
         names.append(line)
         length += len(line) + 1
-    symbol = "🔹🔸" if title == "Hyjal · 20-player" else ""
     return heading + ("\n" + symbol if symbol else "") + "\n" + "\n".join(names)
 
 
 def raid_panel_text(event, public_roster=(), *, emoji_map=None):
     """Plain-text equivalent used for previews and roster layout tests."""
-    groups = roster_groups(event, public_roster, emoji_map=emoji_map)
+    groups = roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
     return raid_panel_intro(event) + "".join(
         "\n\n" + _roster_group_text(title, players)
         for title, players in groups
@@ -612,7 +629,7 @@ def roster_components(event, public_roster, *, emoji_map=None):
     """Text-only roster groups, with no voice-link buttons."""
     return [
         discord.ui.TextDisplay(_roster_group_text(title, players))
-        for title, players in roster_groups(event, public_roster, emoji_map=emoji_map)
+        for title, players in roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
     ]
 
 
