@@ -436,7 +436,41 @@ def _split_from_tokens(tokens):
     return "🔸"  # Default Barrows group when a specific split is not supplied.
 
 
-def roster_groups(event, public_roster):
+CLASS_EMOJI_FALLBACK = {
+    "Warrior": "🪓", "Paladin": "🛡️", "Hunter": "🏹",
+    "Rogue": "🗡️", "Priest": "✨", "Shaman": "⚡",
+    "Mage": "🔮", "Warlock": "🔥", "Druid": "🌿",
+}
+ROLE_EMOJI_FALLBACK = {
+    "Tank": "🛡️", "Healer": "💚", "DPS": "⚔️", "Ranged": "🏹",
+}
+RANGED_DPS = {"Hunter", "Mage", "Warlock"}
+RANGED_SPECS = {
+    ("Priest", "Shadow"), ("Shaman", "Elemental"), ("Druid", "Balance")
+}
+
+
+def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None):
+    """Show guild emoji markup when available; fall back to readable symbols."""
+    name = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
+    if not name:
+        return ""
+    emoji_map = emoji_map or {}
+    class_name = (klass or "").strip().title()
+    class_icon = (emoji_map.get(class_name.casefold())
+                  or CLASS_EMOJI_FALLBACK.get(class_name, ""))
+    role_key = (role or "").strip().title()
+    if role_key == "Dps":
+        role_key = "DPS"
+        if class_name in RANGED_DPS or (class_name, (spec or "").strip().title()) in RANGED_SPECS:
+            role_key = "Ranged"
+    role_icon = (emoji_map.get(role_key.casefold())
+                 or (emoji_map.get("dps") if role_key == "Ranged" else "")
+                 or ROLE_EMOJI_FALLBACK.get(role_key, ""))
+    return " ".join(part for part in (role_icon, class_icon, name) if part)
+
+
+def roster_groups(event, public_roster, *, emoji_map=None):
     """Hyjal uses one 20-player roster; Barrows retains two diamond teams.
 
     Only leadership-approved names are passed in from the Sheet. One raider
@@ -462,9 +496,11 @@ def roster_groups(event, public_roster):
 
     groups = {title: [] for title in group_titles}
     pending = []
-    for name, assignment in public_roster:
-        clean_name = discord.utils.escape_mentions(
-            discord.utils.escape_markdown(name)
+    for entry in public_roster:
+        name, assignment = entry[:2]
+        klass, role, spec = (tuple(entry[2:5]) + ("", "", ""))[:3]
+        clean_name = roster_name_with_emojis(
+            name, klass, role, spec, emoji_map=emoji_map
         )
         if not clean_name:
             continue
@@ -574,7 +610,7 @@ def _roster_group_text(title, players):
     names = []
     length = len(heading)
     for name in players:
-        line = f"• {name}"
+        line = name
         if length + len(line) + 2 > 3800:
             names.append("-# *More selected players not shown here*")
             break
@@ -584,20 +620,20 @@ def _roster_group_text(title, players):
     return heading + ("\n" + symbol if symbol else "") + "\n" + "\n".join(names)
 
 
-def raid_panel_text(event, public_roster=()):
+def raid_panel_text(event, public_roster=(), *, emoji_map=None):
     """Plain-text equivalent used for previews and roster layout tests."""
-    groups = roster_groups(event, public_roster)
+    groups = roster_groups(event, public_roster, emoji_map=emoji_map)
     return raid_panel_intro(event) + "".join(
         "\n\n" + _roster_group_text(title, players)
         for title, players in groups
     ) + "\n\n" + raid_roster_status(event)
 
 
-def roster_components(event, public_roster):
+def roster_components(event, public_roster, *, emoji_map=None):
     """Text-only roster groups, with no voice-link buttons."""
     return [
         discord.ui.TextDisplay(_roster_group_text(title, players))
-        for title, players in roster_groups(event, public_roster)
+        for title, players in roster_groups(event, public_roster, emoji_map=emoji_map)
     ]
 
 
@@ -605,7 +641,7 @@ class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
     def __init__(self, event, *, on_register=None, on_characters=None, on_signup=None,
                  on_gear=None, on_update=None, on_absent=None,
-                 public_roster=()):
+                 public_roster=(), emoji_map=None):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -615,7 +651,7 @@ class RaidEventPanel(discord.ui.LayoutView):
                     RAID_PANEL_IMAGE, description="Hyped raid image"
                 ),
             ),
-            *roster_components(event, public_roster),
+            *roster_components(event, public_roster, emoji_map=emoji_map),
             discord.ui.TextDisplay(raid_roster_status(event)),
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(
