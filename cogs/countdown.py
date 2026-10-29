@@ -123,8 +123,8 @@ async def send_raid_dm_reminders(bot, now):
         try:
             user = bot.get_user(row["user_id"]) or await bot.fetch_user(row["user_id"])
             await user.send(
-                f"⏰ **<Hyped> Raid #{row['raid_id']} starts in 30 minutes!**\\n"
-                f"Start: <t:{row['target_ts']}:t>\\nGet ready, gamer.",
+                f"⏰ **<Hyped> Raid #{row['raid_id']} starts in 30 minutes!**\n"
+                f"Start: <t:{row['target_ts']}:t>\nGet ready, gamer.",
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except (discord.Forbidden, discord.HTTPException) as exc:
