@@ -103,7 +103,7 @@ class RaidTabsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             event = self.setup_raid(path)
-            self.assertIn("Forming", raid_schedule.raid_roster_status(event))
+            self.assertIn("**Confirmation:**", raid_schedule.raid_roster_status(event))
             with self.assertRaises(ValueError):
                 raid_schedule.raid_status(path, 1, "confirm", confirmed_entries=[])
             confirmed = raid_schedule.raid_status(path, 1, "confirm",
@@ -135,6 +135,49 @@ class RaidTabsTests(unittest.TestCase):
                 raid_schedule.raid_status(path, 1, "reopen")
             with self.assertRaises(ValueError):
                 raid.save_absence(1, 43, "No", path)
+
+    def test_public_roster_keeps_role_and_class_for_discord_emojis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            body = sheet._rows(path, event, {42: "Snore"})
+            row = next(r for r in body if r[16] == "42")
+            row[9:14] = ["Selected", "Yes", "Yes", "No", "No"]
+            selected = sheet._approved(sheet._header(
+                event, body, sheet.tab_title(event)
+            ), event, include_details=True)
+            self.assertIn(("42", "Snore Mon", "Hyjal", "Warrior", "Tank",
+                           "Protection"), selected)
+            self.assertEqual(sheet._save_public_for_one(
+                path, 1, [tuple(entry[1:6]) for entry in selected]
+            ), {1})
+            self.assertIn(("Snore Mon", "Hyjal", "Warrior", "Tank", "Protection"),
+                          raid_schedule.read_public_roster(path, 1, include_details=True))
+            self.assertEqual(raid_schedule.read_public_roster(path, 1),
+                             [("Snore Mon", "Hyjal")])
+            # Writing same approved roster again must not produce spurious updates.
+            self.assertEqual(sheet._save_public_for_one(
+                path, 1, [tuple(entry[1:6]) for entry in selected]
+            ), set())
+
+    def test_class_and_role_emoji_from_guild_or_fallback(self):
+        emojis = {"tank": "<:Tank:123456789012345678>",
+                  "warrior": "<:Warrior:123456789012345679>",
+                  "ranged": "<:Ranged:123456789012345680>",
+                  "mage": "<:Mage:123456789012345681>"}
+        self.assertEqual(raid_schedule.roster_name_with_emojis(
+            "Snore Mon", "Warrior", "Tank", "Protection", emojis
+        ), "<:Tank:123456789012345678> <:Warrior:123456789012345679> Snore Mon")
+        self.assertEqual(raid_schedule.roster_name_with_emojis(
+            "Mage One", "Mage", "DPS", "Frost", emojis
+        ), "<:Ranged:123456789012345680> <:Mage:123456789012345681> Mage One")
+        text = raid_schedule.roster_name_with_emojis(
+            "Rogue One", "Rogue", "DPS", "Combat"
+        )
+        self.assertIn("Rogue One", text)
+        self.assertNotIn("• ", text)
+        self.assertNotIn(":Rogue:", text)
+        self.assertIn("🗡️", text)
 
     def test_public_changes_do_not_overwrite_other_raids(self):
         with tempfile.TemporaryDirectory() as tmp:
