@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit
 
 import discord
+from cogs.emojis import markup as guild_emoji, combat_role
 from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 UK = ZoneInfo("Europe/London")
@@ -436,38 +437,16 @@ def _split_from_tokens(tokens):
     return "🔸"  # Default Barrows group when a specific split is not supplied.
 
 
-CLASS_EMOJI_FALLBACK = {
-    "Warrior": "🪓", "Paladin": "🛡️", "Hunter": "🏹",
-    "Rogue": "🗡️", "Priest": "✨", "Shaman": "⚡",
-    "Mage": "🔮", "Warlock": "🔥", "Druid": "🌿",
-}
-ROLE_EMOJI_FALLBACK = {
-    "Tank": "🛡️", "Healer": "💚", "DPS": "⚔️", "Ranged": "🏹",
-}
-RANGED_DPS = {"Hunter", "Mage", "Warlock"}
-RANGED_SPECS = {
-    ("Priest", "Shadow"), ("Shaman", "Elemental"), ("Druid", "Balance")
-}
-
-
 def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None):
-    """Show guild emoji markup when available; fall back to readable symbols."""
+    """Show fixed custom Discord emoji markup; preserve existing API."""
     name = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
     if not name:
         return ""
-    emoji_map = emoji_map or {}
-    class_name = (klass or "").strip().title()
-    class_icon = (emoji_map.get(class_name.casefold())
-                  or CLASS_EMOJI_FALLBACK.get(class_name, ""))
-    role_key = (role or "").strip().title()
-    if role_key == "Dps":
-        role_key = "DPS"
-        if class_name in RANGED_DPS or (class_name, (spec or "").strip().title()) in RANGED_SPECS:
-            role_key = "Ranged"
-    role_icon = (emoji_map.get(role_key.casefold())
-                 or (emoji_map.get("dps") if role_key == "Ranged" else "")
-                 or ROLE_EMOJI_FALLBACK.get(role_key, ""))
-    return " ".join(part for part in (role_icon, class_icon, name) if part)
+    klass = (klass or "").strip().title()
+    role = combat_role((role or "").strip().title(), klass, spec)
+    return " ".join(part for part in (
+        guild_emoji(role), guild_emoji(klass), name
+    ) if part)
 
 
 def roster_groups(event, public_roster, *, emoji_map=None):
