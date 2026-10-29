@@ -1,7 +1,7 @@
 name: Hyped Ogre safety checks
 on:
   push:
-    branches: [refactor/hyped-cogs-foundation]
+    branches: [refactor/hyped-cogs-foundation, feature/raid-signup-sheets-v2]
   pull_request:
     branches: [hyped-customisation]
 jobs:
