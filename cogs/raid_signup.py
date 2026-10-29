@@ -1178,7 +1178,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     def raid_emoji_map(self):
         """Convert server role/class emoji names into real Discord emoji markup."""
-        guild = self.bot.get_guild(GUILD_ID)
+        lookup = getattr(self.bot, "get_guild", None)
+        guild = lookup(GUILD_ID) if callable(lookup) else None
         emojis = getattr(guild, "emojis", ()) if guild is not None else ()
         if not isinstance(emojis, (tuple, list)):
             return {}
