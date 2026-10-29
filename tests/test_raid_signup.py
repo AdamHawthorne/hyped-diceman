@@ -209,6 +209,90 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**Hyjal · 20-player**", barrows_text)
             self.assertNotIn("**Ony · 40-player**", barrows_text)
 
+    async def test_optional_raid_title_round_trip_edit_preserve_and_clear(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            event = raid_schedule.save_raid(
+                path, 7, "2026-12-09 21:00", "Hyjal (20m)",
+                custom_title="First Clear",
+            )
+            self.assertEqual(event["title"], "<Hyped> Raid #7 - First Clear")
+            self.assertEqual(event["custom_title"], "First Clear")
+            self.assertIn(
+                "## <Hyped> Raid #7 - First Clear",
+                raid_schedule.raid_panel_intro(event),
+            )
+            draft = raid_poster.draft_from_event(event)
+            self.assertEqual(draft["custom_title"], "First Clear")
+            self.assertEqual(
+                raid_poster.draft_from_event(None)["custom_title"], ""
+            )
+            mock_cog = SimpleNamespace(
+                raid_db_path=lambda: path, allowed=lambda interaction: True,
+            )
+            poster = raid_poster.RaidPosterView(mock_cog, 42, draft)
+            self.assertIn("Optional Raid Title", json.dumps(poster.to_components()))
+            self.assertIn("First Clear", poster.description())
+            controls = [
+                item.label for item in poster.walk_children()
+                if isinstance(item, discord.ui.Button)
+            ]
+            self.assertEqual(controls, [
+                "Optional Raid Title", "Optional SoftRes", "Remove SoftRes",
+                "Post / Update Raid", "Delete Raid",
+            ])
+            # Old /raid setup commands must preserve an existing subtitle.
+            updated = raid_schedule.save_raid(
+                path, 7, "2026-12-09 20:30", "Hyjal (20m)"
+            )
+            self.assertEqual(updated["custom_title"], "First Clear")
+            self.assertEqual(updated["title"], "<Hyped> Raid #7 - First Clear")
+            # Explicitly blank poster title clears the suffix.
+            cleared = raid_schedule.save_raid(
+                path, 7, "2026-12-09 20:30", "Hyjal (20m)",
+                custom_title="",
+            )
+            self.assertEqual(cleared["custom_title"], "")
+            self.assertEqual(cleared["title"], "<Hyped> Raid #7")
+            with self.assertRaises(ValueError):
+                raid_schedule.save_raid(
+                    path, 7, "2026-12-09 20:30", "Hyjal (20m)",
+                    custom_title="x" * 71,
+                )
+            self.assertEqual(
+                raid_schedule.read_raid(path, 7)["title"], "<Hyped> Raid #7"
+            )
+
+    async def test_optional_title_modal_is_non_required_and_plain_text_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            cog = SimpleNamespace(
+                raid_db_path=lambda: path, allowed=lambda interaction: True
+            )
+            poster = raid_poster.RaidPosterView(cog, 42)
+            modal = raid_poster.PosterTextModal(
+                poster, 42, 55, "custom_title", "Optional raid title",
+                "Text after Raid #", "First Clear", required=False,
+            )
+            self.assertFalse(modal.text_field.required)
+            self.assertEqual(modal.text_field.max_length, 70)
+            self.assertTrue(modal.title)
+            event = raid_schedule.save_raid(
+                path, 7, "2026-12-09 21:00", "Hyjal (20m)",
+                custom_title="@everyone **new**",
+            )
+            intro = raid_schedule.raid_panel_intro(event)
+            self.assertNotIn(" - @everyone **new**", intro)
+            self.assertIn("@\u200beveryone", intro)
+            self.assertNotIn("\n\n\n", intro)
+            self.assertRegex(intro, r"<t:\d+:D> at <t:\d+:t>")
+            self.assertNotIn("**Date:**", intro)
+            self.assertNotIn("**Time:**", intro)
+
     async def test_duplicate_characters_are_merged_without_losing_gear_or_raids(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
