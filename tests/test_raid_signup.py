@@ -169,6 +169,26 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 ).fetchone()
             self.assertEqual(row, (1, "2026-12-01T12:00:00+00:00"))
 
+    async def test_multiple_character_choices_still_only_one_signup_per_night(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+            raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
+            raid.save_character(42, "Second Character", "Warrior", "Fury", "DPS", path)
+            characters = raid.member_characters(42, path)
+            original = next(r[0] for r in characters if r[1] == "Snore Mon")
+            replacement = next(r[0] for r in characters if r[1] == "Second Character")
+            raid.save_signup(1, 42, original, path)
+            raid.save_signup(1, 42, replacement, path)
+            self.assertEqual(raid.my_signup(1, 42, path),
+                             ("Second Character", "Available"))
+            with raid.database(path) as con:
+                self.assertEqual(con.execute(
+                    "SELECT COUNT(*) FROM signups WHERE raid_id=1 AND discord_id=42"
+                ).fetchone()[0], 1)
+
     async def test_optional_inline_softres_link_and_separate_update(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
