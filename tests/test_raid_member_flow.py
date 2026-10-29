@@ -153,6 +153,30 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 raid.save_gear_image(42, char_id, "not-image.png", b"x" * 150, path)
 
+    async def test_character_delete_requires_no_raid_history_and_promotes_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid.save_character(42, "Main One", "Warrior", "Protection", "Tank", path)
+            raid.save_character(42, "Alt Two", "Mage", "Frost", "DPS", path)
+            rows = raid.member_characters(42, path)
+            main = next(row[0] for row in rows if row[1] == "Main One")
+            alt = next(row[0] for row in rows if row[1] == "Alt Two")
+            with self.assertRaises(ValueError):
+                raid.delete_character(99, alt, path)
+            raid.delete_character(42, main, path)
+            self.assertEqual(raid.main_character_ids(42, path), {alt})
+            raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+            with raid.database(path) as con:
+                con.execute(
+                    "INSERT INTO attendance (raid_id,discord_id,character_id) VALUES (?,?,?)",
+                    (1, 42, alt),
+                )
+            with self.assertRaisesRegex(ValueError, "history"):
+                raid.delete_character(42, alt, path)
+            self.assertEqual(len(raid.member_characters(42, path)), 1)
+
     async def test_gear_modal_accepts_text_and_optional_uploads(self):
         modal = raid.GearUploadModal(42, 15, "First Last")
         self.assertFalse(modal.simc.required)
