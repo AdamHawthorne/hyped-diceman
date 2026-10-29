@@ -21,7 +21,7 @@ a separate Google service account. Keep its JSON key private and outside Git.
 
 5. Deploy updated code and dependencies:
 
-    git pull --ff-only origin feature/daily-gold-coins-v2
+    git pull --ff-only origin feature/raid-signup-sheets-v2
     .\.venv\Scripts\python.exe -m pip install -r requirements.txt
     .\.venv\Scripts\python.exe -m unittest discover -s tests -v
     fly deploy -a hyped-diceman
@@ -46,10 +46,22 @@ Leave it empty for the original title; reopen the option and submit blank
 to clear it. Existing title text persists when older `/raid setup` commands
 edit a saved raid. It does not change the raid ID or existing sign-ups.
 
-The Discord raid card displays the UK weekday/date on one line,
-then the UK start and calculated end time (three elapsed hours later) on
-the line immediately below. There are no Date/Time labels. The single
-line break between Check and Roster keeps that section compact.
+The Discord raid card displays a plain, full UK weekday/date on one line,
+then hoverable Discord start/end timestamps using `<t:...:t> - <t:...:t>`
+on the next line. The times adjust for the viewer's Discord timezone.
+There are no Date/Time labels, and Check sits directly above Roster.
+
+In private `/raid poster`, you can set the UK start and end times
+independently (preset dropdowns or exact HH:MM). By default, the raid
+ends three elapsed hours after it starts; selecting `Default: +3h` resets
+any custom end time. An end clock time earlier than the start is treated
+as the following day. Invalid or excessively long durations are rejected.
+
+The `Choose Check channel` Discord channel dropdown lets leadership
+select the channel mentioned next to `Check:` on each raid card. Existing
+raids continue using `#resources` unless changed. The end time and
+Check channel are saved per raid in the raid-only SQLite database
+using safe additive migrations; older setup commands retain both values.
 Its accent matches the Leadership panel (`#8C5A3C`), but the private poster setup keeps its
 existing accent. Roster headings display **Hyjal**, **Barrows** and **Ony**
 without player counts. Until selected teams are announced, all groups use
