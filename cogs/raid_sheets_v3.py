@@ -225,7 +225,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
     return section_rows
 
 
-def _approved(rows, event):
+def _approved(rows, event, *, include_details=False):
     """Return only specifically selected and visible signed-on players."""
     entries = []
     instance_names = " ".join(
@@ -253,7 +253,10 @@ def _approved(rows, event):
             continue
         if not assignment:
             assignment.append("Selected players")
-        entries.append((row[16].strip(), row[1].strip()[:80], ", ".join(assignment)))
+        entry = (row[16].strip(), row[1].strip()[:80], ", ".join(assignment))
+        if include_details:
+            entry += (row[2].strip(), row[4].strip(), row[3].strip())
+        entries.append(entry)
     return entries[:60]
 
 
@@ -449,7 +452,7 @@ def read_selected(db_path, raid_id):
         absent = {str(item["discord_id"]) for item in
                   raid_sheets._raid_snapshot(db_path)[3]
                   if item["raid_id"] == raid_id}
-        return [entry for entry in _approved(rows, event)
+        return [entry for entry in _approved(rows, event, include_details=True)
                 if not entry[0] or entry[0] not in absent]
     finally:
         session.close()
@@ -496,12 +499,14 @@ def sync_once(db_path, discord_names=None):
             counts["raid_tabs"] += changes
             if event.get("roster_published"):
                 published[raid_id] = confirmed_roster(
-                    db_path, raid_id, unavailable.get(raid_id, ())
+                    db_path, raid_id, unavailable.get(raid_id, ()),
+                    include_details=True
                 )
             else:
                 published[raid_id] = [
-                    (name, assignment) for _, name, assignment in _approved(rows, event)
-                    if not _ or _ not in unavailable.get(raid_id, ())
+                    (entry[1], entry[2], *entry[3:6])
+                    for entry in _approved(rows, event, include_details=True)
+                    if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
                 ]
         # Archived raids retain their most recent public roster and history.
         # Once an active raid tab exists, hide (never delete) old management tabs.
@@ -516,13 +521,18 @@ def sync_once(db_path, discord_names=None):
 
 
 def _save_public_for_one(db_path, raid_id, selected):
-    """Preserve all other raid caches, including any archived rosters."""
+    """Retain class, role and spec for Discord emoji rendering."""
+    desired = [
+        tuple(row[:5]) + ("",) * (5 - len(row[:5]))
+        for row in selected
+    ]
     with database(db_path) as con:
         current = con.execute(
-            "SELECT name, assignment FROM raid_public_roster "
+            "SELECT name, assignment, COALESCE(class_name,''), COALESCE(role,''), "
+            "COALESCE(spec,'') FROM raid_public_roster "
             "WHERE raid_id=? ORDER BY position", (raid_id,)
         ).fetchall()
-        if current == selected:
+        if current == desired:
             return set()
         from datetime import datetime, timezone
         instant = datetime.now(timezone.utc).isoformat()
@@ -534,8 +544,8 @@ def _save_public_for_one(db_path, raid_id, selected):
         con.execute("DELETE FROM raid_public_roster WHERE raid_id=?", (raid_id,))
         con.executemany(
             "INSERT INTO raid_public_roster "
-            "(raid_id, position, name, assignment) VALUES (?, ?, ?, ?)",
-            [(raid_id, i, name, assignment)
-             for i, (name, assignment) in enumerate(selected)],
+            "(raid_id, position, name, assignment, class_name, role, spec) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(raid_id, i, *entry) for i, entry in enumerate(desired)],
         )
     return {raid_id}
