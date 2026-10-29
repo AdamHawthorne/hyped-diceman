@@ -332,7 +332,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             components = json.dumps(panel.to_components())
             self.assertNotIn("Collecting gamers", components)
-            self.assertIn('"label": "Sign up"', components)
+            self.assertIn('"label": "Sign"', components)
             self.assertIn('"style": 3', components)
             self.assertIn('"label": "Update"', components)
             self.assertIn('"label": "Gear"', components)
@@ -343,9 +343,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             # Existing panels get active signup buttons when an on_signup is bound.
             buttons = [item for item in panel.walk_children()
                        if isinstance(item, discord.ui.Button)]
-            self.assertFalse(next(b for b in buttons if b.label == "Sign up").disabled)
+            self.assertFalse(next(b for b in buttons if b.label == "Sign").disabled)
             self.assertEqual([b.label for b in buttons],
-                             ["Sign up", "Update", "Gear", "Absent"])
+                             ["Sign", "Update", "Gear", "Absent"])
             self.assertFalse(all(b.disabled for b in buttons))
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
