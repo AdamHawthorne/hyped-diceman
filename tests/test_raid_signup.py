@@ -54,7 +54,23 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                              r"\*\*Date:\*\* <t:\d+:F>")
             self.assertRegex(raid_schedule.raid_panel_text(event),
                              r"\*\*Roster Announcement:\*\* <t:\d+:R>")
-            self.assertIn("-# *Collecting gamers*", text)
+            self.assertNotIn("Collecting gamers", text)
+            self.assertIn("### Roster", text)
+            self.assertIn("**Roster Announcement:**", text)
+            self.assertTrue(
+                raid_schedule.raid_panel_text(event).strip().endswith(
+                    raid_schedule.format_discord_date(
+                        event["roster_announce_at"], style="R", with_relative=False
+                    )
+                )
+            )
+            visible = raid_schedule.raid_panel_text(
+                event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
+            )
+            self.assertIn("**Snore Mon** — Ony, Hyjal", visible)
+            self.assertIn("**Healer Main** — Barrows A", visible)
+            self.assertLess(visible.index("Snore Mon"), visible.index("Roster Announcement"))
+            self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
             self.assertNotIn("SoftRes sign-up", text)
@@ -314,7 +330,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 on_signup=AsyncMock(), on_gear=AsyncMock(),
             )
             components = json.dumps(panel.to_components())
-            self.assertIn("Collecting gamers", components)
+            self.assertNotIn("Collecting gamers", components)
             self.assertIn('"label": "Sign up"', components)
             self.assertIn('"style": 3', components)
             self.assertIn('"label": "Update gear"', components)
