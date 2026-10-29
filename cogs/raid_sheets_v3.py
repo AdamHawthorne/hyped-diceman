@@ -108,7 +108,7 @@ def _legacy_choices(session, event):
                 row[1] != event["raid_at"][:10]):
             continue
         if not row[2].isdigit():
-            if row[4] and row[14] == "PUG":
+            if row[4]:
                 migrated.setdefault("_guests", []).append([
                     "PUG", row[4], row[5], row[6], row[7], "Guest",
                     "", "", "Signed", row[8] or "Pending",
@@ -160,8 +160,11 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
                 return "Not selected" if index == 9 and absent else default
             return previous[index] or migrated.get(key) or default
         sign_note = signup.get("note") or ""
-        if absence and absence.get("note"):
-            sign_note += (" | " if sign_note else "") + "Absent: " + absence["note"]
+        if absence:
+            if absence.get("note"):
+                sign_note += (" | " if sign_note else "") + "Absent: " + absence["note"]
+            if absence.get("signed_off_at"):
+                sign_note += (" | " if sign_note else "") + "Signed off: " + absence["signed_off_at"]
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
         row = [
             name, signup["character"], signup["class_name"], signup["spec"],
@@ -184,7 +187,8 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
         groups["ABSENT"].append([
             name, previous[1], previous[2], previous[3], previous[4],
-            previous[5], "Absent: " + (absence.get("note") or ""),
+            previous[5], ("Absent: " + (absence.get("note") or "")
+                          + " | Signed off: " + absence["signed_off_at"]),
             previous[7], "Absent", "Not selected", "No", "No", "No", "No",
             previous[14], member_id, previous[16]
         ])
@@ -405,7 +409,8 @@ def _one(session, db_path, event, names, titles):
             titles[title] = titles.pop(original)
             titles[title]["title"] = title
     existing = [] if new else _read(session, title)
-    legacy = _legacy_choices(session, event) if new else None
+    # Also recover a sheet created just before an interrupted first write.
+    legacy = _legacy_choices(session, event) if new or not existing else None
     body = _rows(db_path, event, names, old_rows=existing, legacy=legacy)
     full = _header(event, body, title)
     changed = _write(session, title, sid, existing, full)
