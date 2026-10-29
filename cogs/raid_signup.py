@@ -925,6 +925,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     def __init__(self, bot):
         self.bot = bot
         self._sheet_task = None
+        self._discord_name_cache = {}
         self._last_sheet_error = None
         self._last_sheet_sync = None
         self._sync_lock = asyncio.Lock()
@@ -1025,10 +1026,38 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 LOGGER.warning("Raid Sheets sync failed: %s", exc)
             await asyncio.sleep(60)
 
+    async def raid_discord_names(self):
+        """Resolve guild nicknames on the Discord event loop, not in the Sheets thread."""
+        member_ids = await asyncio.to_thread(
+            raid_sheets.character_discord_ids, RAID_DB
+        )
+        guild = self.bot.get_guild(GUILD_ID)
+        names = {}
+        for member_id in member_ids:
+            member = guild.get_member(member_id) if guild is not None else None
+            # fetch_member works even with an empty member cache. Only fetch
+            # names not resolved in a previous sync, to avoid hourly API churn.
+            if member is None and guild is not None and member_id not in self._discord_name_cache:
+                try:
+                    member = await guild.fetch_member(member_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass
+            if member is not None:
+                names[member_id] = member.display_name
+            elif member_id in self._discord_name_cache:
+                names[member_id] = self._discord_name_cache[member_id]
+            else:
+                user = self.bot.get_user(member_id)
+                if user is not None:
+                    names[member_id] = user.name
+        self._discord_name_cache.update(names)
+        return names
+
     async def sync_raid_sheets(self):
         async with self._sync_lock:
+            names = await self.raid_discord_names()
             counts, changed = await asyncio.to_thread(
-                raid_sheets.sync_once, RAID_DB
+                raid_sheets.sync_once, RAID_DB, names
             )
             self._last_sheet_error = None
             self._last_sheet_sync = datetime.now(timezone.utc)
