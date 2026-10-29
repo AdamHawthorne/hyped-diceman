@@ -585,7 +585,8 @@ class RaidEventPanel(discord.ui.LayoutView):
         update = discord.ui.Button(
             label="Update", custom_id=f"hyped_raid_{event_id}_update",
             style=discord.ButtonStyle.secondary,
-            disabled=on_update is None or bool(event.get("archived_at")),
+            disabled=(on_update is None or bool(event.get("roster_published"))
+                      or bool(event.get("archived_at"))),
         )
         gear = discord.ui.Button(
             label="Gear", custom_id=f"hyped_raid_{event_id}_gear",
