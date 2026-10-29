@@ -108,6 +108,65 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
             self.assertEqual(raid_schedule.active_panels(path)[0]["panel_message_id"], 12345)
 
+    async def test_forever_roster_groups_show_separate_20_and_two_10_man_teams(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            event = raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)",
+                "Barrows (10m)", "Ony (40m)",
+                roster_announce="2026-12-08 21:00",
+            )
+            empty = raid_schedule.raid_panel_text(event)
+            for header in ("Hyjal · 20-player", "Barrows · 10-player A",
+                           "Barrows · 10-player B", "Ony · 40-player"):
+                self.assertIn("**" + header + "**", empty)
+            self.assertEqual(empty.count("*Not announced*"), 4)
+            self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
+            self.assertNotIn("**Raid:**", empty)
+            self.assertLess(empty.index("**Roster Announcement:**"),
+                            empty.index("### Roster"))
+
+            # A character doing both Hyjal and Barrows appears on BOTH rosters.
+            # Sheets only passes leadership-approved names to this method.
+            members = [
+                ("Snore Mon", "Hyjal, Barrows A, Ony"),
+                ("Healer One", "Hyjal, Barrows B"),
+                ("Healer Two", "Barrows B"),
+                ("Pug Main", "Ony"),
+                ("Gamer TBC", ""),
+            ]
+            grouped = raid_schedule.roster_groups(event, members)
+            self.assertEqual(grouped, [
+                ("Hyjal · 20-player", ["Snore Mon", "Healer One"]),
+                ("Barrows · 10-player A", ["Snore Mon"]),
+                ("Barrows · 10-player B", ["Healer One", "Healer Two"]),
+                ("Ony · 40-player", ["Snore Mon", "Pug Main"]),
+                ("Selected · group pending", ["Gamer TBC"]),
+            ])
+            text = raid_schedule.raid_panel_text(event, members)
+            self.assertLess(text.index("**Hyjal · 20-player**"),
+                            text.index("**Barrows · 10-player A**"))
+            self.assertLess(text.index("**Barrows · 10-player A**"),
+                            text.index("**Barrows · 10-player B**"))
+            self.assertIn("**Selected · group pending**", text)
+            self.assertEqual(text.count("• Snore Mon"), 3)
+            self.assertNotIn("Signup", text)
+            self.assertNotIn("Collecting gamers", text)
+
+            # Barrows-only nights still display two distinct ten-player rosters.
+            barrows_only = raid_schedule.save_raid(
+                path, 2, "2026-12-10 20:00", "Barrows (10m)"
+            )
+            text = raid_schedule.raid_panel_text(
+                barrows_only, [("Split Two", "Barrows B")]
+            )
+            self.assertIn("**Barrows · 10-player A**", text)
+            self.assertIn("**Barrows · 10-player B**", text)
+            self.assertNotIn("**Hyjal · 20-player**", text)
+            self.assertNotIn("**Ony · 40-player**", text)
+
     async def test_duplicate_characters_are_merged_without_losing_gear_or_raids(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
