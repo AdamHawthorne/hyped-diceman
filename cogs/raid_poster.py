@@ -3,11 +3,12 @@ from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 import discord
+import sqlite3
 
 from cogs.raid_schedule import (
     RAID_IMAGE, ACCENT, format_discord_date,
     list_raids, parse_uk_datetime, read_raid, save_raid,
-    validate_softres_url,
+    validate_softres_url, set_softres_url,
 )
 
 UK = ZoneInfo("Europe/London")
@@ -336,7 +337,11 @@ class RaidPosterView(discord.ui.LayoutView):
                     self.draft["instance_1"], self.draft["instance_2"],
                     self.draft["instance_3"], announce, self.draft["softres_url"],
                 )
-            except (ValueError, Exception) as exc:
+                if self.draft["softres_url"] is None:
+                    event = set_softres_url(
+                        self.cog.raid_db_path(), self.draft["number"], None
+                    )
+            except (ValueError, sqlite3.Error) as exc:
                 # Configuration errors should never publish a partial raid.
                 await interaction.response.send_message(
                     f"Check raid details before posting: {exc}", ephemeral=True
