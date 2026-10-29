@@ -177,8 +177,8 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             name, signup["character"], signup["class_name"], signup["spec"],
             signup["role"], "Main" if profile.get("is_main", 1) else "Alt",
             sign_note, signup["submitted_at"], "Absent" if absent else "Signed",
-            choice(9, "selection", "Pending"),
-            choice(10, "show", "No"),
+            choice(9, "selection", "Selected"),
+            choice(10, "show", "Yes"),
             choice(11, "hyjal", "No"),
             choice(12, "barrows", "No"),
             choice(13, "ony", "No"),
@@ -285,9 +285,9 @@ def _header(event, body, tab):
          event.get("confirmed_at") or "", "Archived", event.get("archived_at") or ""],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
          event.get("archive_notes") or ""],
-        ["Discord Panel", panel_url],
+        ["", ""],
         [f"{signed} signed · {absent} absent",
-         "Select player + Show on Discord: Yes to preview. /raid confirm locks roster."],
+         ""],
         list(COLUMNS),
     ]
     return [(r + [""] * (len(COLUMNS) - len(r)))[:len(COLUMNS)]
