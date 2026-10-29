@@ -25,6 +25,9 @@ RAID_COLUMNS = {
     "panel_channel_id": "INTEGER",
     "softres_url": "TEXT",
     "custom_title": "TEXT",
+    "banner_url": "TEXT",
+    "roster_posted_at": "TEXT",
+    "roster_updated_at": "TEXT",
 }
 
 
@@ -97,6 +100,25 @@ def validate_softres_url(value):
     return url
 
 
+def validate_banner_url(value):
+    """Allow an optional public HTTPS direct image link; blank uses default art."""
+    if not value or not value.strip():
+        return None
+    url = value.strip()
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        _ = parts.port
+    except ValueError as exc:
+        raise ValueError("Enter a valid HTTPS image URL.") from exc
+    if (len(url) > 512 or parts.scheme != "https" or not host
+            or host in {"localhost", "127.0.0.1", "::1"}
+            or parts.username is not None or parts.password is not None
+            or not parts.path.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))):
+        raise ValueError("Use a direct HTTPS image URL ending in .png, .jpg, .webp or .gif.")
+    return url
+
+
 def set_softres_url(path, number, url):
     """Change just the SoftRes link; leave the raid event/roster untouched."""
     value = validate_softres_url(url)
@@ -111,7 +133,7 @@ def set_softres_url(path, number, url):
 
 def save_raid(path, number, raid_date, instance_1, instance_2=None,
               instance_3=None, roster_announce=None, softres_url=None,
-              custom_title=None):
+              custom_title=None, banner_url=None):
     softres = validate_softres_url(softres_url)
     if not 1 <= number <= 100000:
         raise ValueError("Raid number must be between 1 and 100000.")
@@ -132,6 +154,12 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 "SELECT custom_title FROM raids WHERE raid_id=?", (number,)
             ).fetchone()
             custom_title = existing[0] if existing and existing[0] else ""
+        if banner_url is None:
+            existing_banner = con.execute(
+                "SELECT banner_url FROM raids WHERE raid_id=?", (number,)
+            ).fetchone()
+            banner_url = existing_banner[0] if existing_banner else None
+        banner_url = validate_banner_url(banner_url)
         if not isinstance(custom_title, str):
             raise ValueError("Optional title must be text.")
         custom_title = " ".join(custom_title.split())
@@ -143,18 +171,20 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         con.execute("""
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
                               instance_3, roster_announce_at, softres_url,
-                              signup_open, custom_title)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                              signup_open, custom_title, banner_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             ON CONFLICT(raid_id) DO UPDATE SET
                 title=excluded.title, raid_at=excluded.raid_at,
                 instance_1=excluded.instance_1, instance_2=excluded.instance_2,
                 instance_3=excluded.instance_3,
                 roster_announce_at=excluded.roster_announce_at,
                 softres_url=COALESCE(excluded.softres_url, raids.softres_url),
-                custom_title=excluded.custom_title, signup_open=1
+                custom_title=excluded.custom_title,
+                banner_url=excluded.banner_url, signup_open=1
         """, (number, full_title, start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
-              announce.isoformat() if announce else None, softres, custom_title))
+              announce.isoformat() if announce else None,
+              softres, custom_title, banner_url))
     return read_raid(path, number)
 
 
@@ -305,20 +335,30 @@ def raid_panel_intro(event):
         for key in ("instance_1", "instance_2", "instance_3")
         if event.get(key)
     ]
-    roster_date = format_discord_date(
-        event.get("roster_announce_at"), style="R", with_relative=False
-    )
     softres = event.get("softres_url")
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
-        f"{format_discord_date(event['raid_at'], style='D', with_relative=False)}"
-        f" at {format_discord_date(event['raid_at'], style='t', with_relative=False)}\n\n"
+        f"{format_discord_date(event['raid_at'], style='F', with_relative=False)}\n\n"
         + "**Instances:** " + ", ".join(instances)
         + "\n**Check:** <#1563663258047619123>"
         + softres_line
-        + f"\n**Roster Announcement:** {roster_date}"
         + "\n\n### Roster"
+    )
+
+
+def raid_roster_status(event):
+    """Use real publication/change times, never infer publication from a plan."""
+    stamp = event.get("roster_updated_at")
+    if stamp:
+        return "**Update:** " + format_discord_date(stamp, style="F", with_relative=False)
+    stamp = event.get("roster_posted_at")
+    if stamp:
+        return "**Roster posted:** " + format_discord_date(
+            stamp, style="F", with_relative=False
+        )
+    return "**Roster Announcement:** " + format_discord_date(
+        event.get("roster_announce_at"), style="R", with_relative=False
     )
 
 
@@ -356,7 +396,7 @@ def raid_panel_text(event, public_roster=()):
     return raid_panel_intro(event) + "".join(
         "\n\n" + _roster_group_text(title, players)
         for title, players in groups
-    )
+    ) + "\n\n" + raid_roster_status(event)
 
 
 def roster_components(event, public_roster):
@@ -382,9 +422,10 @@ class RaidEventPanel(discord.ui.LayoutView):
                 ),
             ),
             *roster_components(event, public_roster),
+            discord.ui.TextDisplay(raid_roster_status(event)),
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(
-                    media=RAID_PANEL_BANNER,
+                    media=event.get("banner_url") or RAID_PANEL_BANNER,
                     description="Hyped raid bottom banner",
                 ),
             ),
