@@ -15,7 +15,7 @@ UK = ZoneInfo("Europe/London")
 COLUMNS = (
     "Discord Name", "Character", "Class", "Spec", "Role", "Main / Alt",
     "Sign-up Notes", "Signed At", "Status", "Selection", "Show on Discord",
-    "Hyjal", "Barrows", "Ony", "Leadership Notes",
+    "Hyjal", "Barrows", "Ony", "Leadership Notes", "Gear / SimC",
     "Discord ID (internal)", "Character ID (internal)"
 )
 SECTIONS = ("TANKS", "HEALERS", "MELEE", "DPS", "ABSENT")
@@ -39,7 +39,7 @@ def tab_title(event):
 
 
 def _q(tab):
-    return quote(f"'{tab}'!A1:Q500", safe="'!:")
+    return quote(f"'{tab}'!A1:R500", safe="'!:")
 
 
 def _read(session, tab):
@@ -82,7 +82,7 @@ def _leadership(rows):
         row = (source + [""] * len(COLUMNS))[:len(COLUMNS)]
         if not row[1].strip() or row[1].strip() == "Character":
             continue
-        member_id = row[15].strip()
+        member_id = row[16].strip()
         if member_id.isdecimal():
             manual[member_id] = row
         elif row[0].strip() and row[8].strip() not in ("", "Status"):
@@ -116,7 +116,7 @@ def _legacy_choices(session, event):
                     {"Group A": "🔸", "Group B": "🔹",
                      "🔸": "🔸", "🔹": "🔹"}.get(row[13], "No"),
                     "Yes" if row[11] == "Selected" else "No",
-                    row[9], "", "",
+                    row[9], "Guest", "", "",
                 ])
             continue
         migrated[row[2]] = {
@@ -132,8 +132,9 @@ def _legacy_choices(session, event):
 
 def _rows(db_path, event, names, old_rows=(), legacy=None):
     """Build sorted role sections and preserve leadership choices by member ID."""
-    characters, _, signups, absences, _ = raid_sheets._raid_snapshot(db_path)
+    characters, _, signups, absences, gear = raid_sheets._raid_snapshot(db_path)
     chars = {str(item["character_id"]): item for item in characters}
+    gear_by_char = {str(item["character_id"]): item for item in gear}
     absent_by_member = {
         str(r["discord_id"]): r for r in absences
         if r["raid_id"] == event["raid_id"]
@@ -166,6 +167,12 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             if absence.get("signed_off_at"):
                 sign_note += (" | " if sign_note else "") + "Signed off: " + absence["signed_off_at"]
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
+        uploaded = gear_by_char.get(char_id, {})
+        gear_status = ("SimC + screenshot" if uploaded.get("simc_latest")
+                       and uploaded.get("image_latest") else
+                       "SimC received" if uploaded.get("simc_latest") else
+                       "Screenshot received" if uploaded.get("image_latest")
+                       else "Not submitted")
         row = [
             name, signup["character"], signup["class_name"], signup["spec"],
             signup["role"], "Main" if profile.get("is_main", 1) else "Alt",
@@ -176,7 +183,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             choice(12, "barrows", "No"),
             choice(13, "ony", "No"),
             previous[14] or migrated.get("notes") or "",
-            member_id, char_id,
+            gear_status, member_id, char_id,
         ]
         groups[_group(signup, absent)].append(row)
 
@@ -190,7 +197,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             previous[5], ("Absent: " + (absence.get("note") or "")
                           + " | Signed off: " + absence["signed_off_at"]),
             previous[7], "Absent", "Not selected", "No", "No", "No", "No",
-            previous[14], member_id, previous[16]
+            previous[14], previous[15], member_id, previous[17]
         ])
 
     for guest in guests:
@@ -246,7 +253,7 @@ def _approved(rows, event):
             continue
         if not assignment:
             assignment.append("Selected players")
-        entries.append((row[15].strip(), row[1].strip()[:80], ", ".join(assignment)))
+        entries.append((row[16].strip(), row[1].strip()[:80], ", ".join(assignment)))
     return entries[:60]
 
 
@@ -299,7 +306,7 @@ def _make_tab(session, title):
     requests = [
         {"repeatCell": {"range": {
             "sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
-            "startColumnIndex": 0, "endColumnIndex": 15},
+            "startColumnIndex": 0, "endColumnIndex": 16},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 0.55, "green": 0.35, "blue": 0.24},
                 "textFormat": {"bold": True, "foregroundColor": {
@@ -307,21 +314,21 @@ def _make_tab(session, title):
             }}, "fields": "userEnteredFormat"}},
         {"repeatCell": {"range": {
             "sheetId": sid, "startRowIndex": 6, "endRowIndex": 7,
-            "startColumnIndex": 0, "endColumnIndex": 15},
+            "startColumnIndex": 0, "endColumnIndex": 16},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 0.87, "green": 0.88, "blue": 0.90},
                 "textFormat": {"bold": True}
             }}, "fields": "userEnteredFormat"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
-                      "startIndex": 15, "endIndex": 17},
+                      "startIndex": 16, "endIndex": 18},
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
     for col, width in ((0, 150), (1, 160), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 240), (7, 190),
                        (8, 90), (9, 125), (10, 145), (11, 95),
-                       (12, 95), (13, 95), (14, 250)):
+                       (12, 95), (13, 95), (14, 250), (15, 145)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": col, "endIndex": col + 1},
@@ -346,7 +353,7 @@ def _paint_sections(session, sid, rows):
     accent = {"red": 0.93, "green": 0.90, "blue": 0.85}
     requests = [{"repeatCell": {
         "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
-                  "startColumnIndex": 0, "endColumnIndex": 15},
+                  "startColumnIndex": 0, "endColumnIndex": 16},
         "cell": {"userEnteredFormat": {
             "backgroundColor": pale, "textFormat": {"bold": False}}},
         "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
@@ -359,7 +366,7 @@ def _paint_sections(session, sid, rows):
         bg = accent if is_section else {"red": 0.96, "green": 0.96, "blue": 0.97}
         requests.append({"repeatCell": {
             "range": {"sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
-                      "startColumnIndex": 0, "endColumnIndex": 15},
+                      "startColumnIndex": 0, "endColumnIndex": 16},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": bg, "textFormat": {"bold": True}}},
             "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
@@ -379,7 +386,7 @@ def _write(session, title, sid, existing, rows):
         raise RuntimeError("Raid tab has too many populated rows to rewrite safely.")
     raid_sheets._json(
         session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-        + quote(f"'{title}'!A1:Q{len(needed)}", safe="'!:"),
+        + quote(f"'{title}'!A1:R{len(needed)}", safe="'!:"),
         params={"valueInputOption": "RAW"},
         json={"values": needed},
     )
