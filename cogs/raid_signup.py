@@ -5,6 +5,7 @@ import io
 import logging
 import sqlite3
 import time
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from contextlib import contextmanager
 
@@ -13,11 +14,12 @@ from discord import app_commands
 from discord.ext import commands
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from cogs import raid_sheets
+from cogs import raid_sheets, raid_sheets_v3
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
     read_raid, read_public_roster, record_panel, save_raid, set_softres_url, delete_raid,
+    raid_status,
 )
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -448,10 +450,12 @@ def save_absence(raid_id, discord_id, note="", path=RAID_DB):
     timestamp = datetime.now(timezone.utc).isoformat()
     with database(path) as con:
         event = con.execute(
-            "SELECT raid_id FROM raids WHERE raid_id=?", (raid_id,),
+            "SELECT raid_id, archived_at FROM raids WHERE raid_id=?", (raid_id,),
         ).fetchone()
         if not event:
             raise ValueError("Raid no longer exists.")
+        if event[1]:
+            raise ValueError("Archived raids are read-only.")
         con.execute("""
             INSERT INTO raid_absences(raid_id, discord_id, note, signed_off_at)
             VALUES (?, ?, ?, ?)
@@ -1057,7 +1061,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         async with self._sync_lock:
             names = await self.raid_discord_names()
             counts, changed = await asyncio.to_thread(
-                raid_sheets.sync_once, RAID_DB, names
+                raid_sheets_v3.sync_once, RAID_DB, names
             )
             self._last_sheet_error = None
             self._last_sheet_sync = datetime.now(timezone.utc)
@@ -1195,6 +1199,11 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 await interaction.response.send_message(
                     f"Ogre updated raid panel: {message.jump_url}", ephemeral=True
                 )
+                if raid_sheets.configured():
+                    try:
+                        await self.sync_raid_sheets()
+                    except Exception as exc:
+                        LOGGER.warning("Raid tab sync delayed: %s", exc)
                 return
             except discord.NotFound:
                 pass
@@ -1220,6 +1229,110 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         record_panel(RAID_DB, event["raid_id"], interaction.channel_id, message.id)
         await interaction.followup.send(
             f"Ogre posted raid panel: {message.jump_url}", ephemeral=True
+        )
+        if raid_sheets.configured():
+            try:
+                await self.sync_raid_sheets()
+            except Exception as exc:
+                LOGGER.warning("Raid tab sync delayed: %s", exc)
+
+    async def refresh_saved_panel(self, number):
+        event = read_raid(RAID_DB, number)
+        if not event or event.get("panel_channel_id") != TEST_CHANNEL_ID:
+            return
+        channel = self.bot.get_channel(TEST_CHANNEL_ID)
+        if channel is None:
+            return
+        message = await channel.fetch_message(event["panel_message_id"])
+        await message.edit(view=self.make_panel(event))
+
+    @app_commands.command(
+        name="confirm", description="Lock the raid selection and confirm the Discord roster"
+    )
+    @app_commands.describe(number="Raid number to confirm")
+    async def confirm(self, interaction: discord.Interaction, number: int):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Owner-only in private #ogre.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.sync_raid_sheets()
+            approved = await asyncio.to_thread(raid_sheets_v3.read_selected, RAID_DB, number)
+            raid_status(RAID_DB, number, "confirm", confirmed_entries=approved)
+            await self.sync_raid_sheets()
+            await self.refresh_saved_panel(number)
+        except (ValueError, RuntimeError, sqlite3.Error,
+                discord.HTTPException) as exc:
+            await interaction.followup.send(f"Raid confirm: {exc}", ephemeral=True)
+            return
+        await interaction.followup.send(
+            f"Raid #{number} roster confirmed and locked. "
+            "Sign-ups are closed. Use /raid reopen to make changes.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="reopen", description="Reopen a confirmed raid roster for corrections"
+    )
+    @app_commands.describe(number="Confirmed raid number")
+    async def reopen(self, interaction: discord.Interaction, number: int):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Owner-only in private #ogre.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            raid_status(RAID_DB, number, "reopen")
+            await self.sync_raid_sheets()
+            await self.refresh_saved_panel(number)
+        except (ValueError, RuntimeError, sqlite3.Error,
+                discord.HTTPException) as exc:
+            await interaction.followup.send(f"Raid reopen: {exc}", ephemeral=True)
+            return
+        await interaction.followup.send(
+            f"Raid #{number} reopened. Update the raid Sheet, then /raid confirm.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="archive", description="Archive completed raid with notes and Warcraft Logs"
+    )
+    @app_commands.describe(number="Completed raid number",
+                           wcl_url="Optional Warcraft Logs report URL",
+                           notes="Optional raid review notes")
+    async def archive(self, interaction: discord.Interaction, number: int,
+                      wcl_url: str | None = None, notes: str | None = None):
+        if not self.allowed(interaction):
+            await interaction.response.send_message("Owner-only in private #ogre.", ephemeral=True)
+            return
+        notes = (notes or "").strip()
+        if len(notes) > 1500:
+            await interaction.response.send_message("Keep raid notes under 1500 characters.",
+                                                    ephemeral=True)
+            return
+        url = (wcl_url or "").strip()
+        if url:
+            parts = urlsplit(url)
+            if (len(url) > 500 or parts.scheme != "https"
+                    or parts.hostname not in ("www.warcraftlogs.com", "warcraftlogs.com")
+                    or parts.username or parts.password
+                    or not parts.path.startswith("/reports/")):
+                await interaction.response.send_message(
+                    "Use a secure https://www.warcraftlogs.com/reports/... link.",
+                    ephemeral=True)
+                return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            raid_status(RAID_DB, number, "archive", notes=notes, wcl_url=url)
+            await self.sync_raid_sheets()
+            await self.refresh_saved_panel(number)
+        except (ValueError, RuntimeError, sqlite3.Error,
+                discord.HTTPException) as exc:
+            await interaction.followup.send(f"Raid archive: {exc}", ephemeral=True)
+            return
+        await interaction.followup.send(
+            f"Raid #{number} archived with review notes and Warcraft Logs. "
+            "Its private tab is hidden, not deleted.",
+            ephemeral=True,
         )
 
     @app_commands.command(name="sync", description="Synchronise raid SQLite data and visible roster with Google Sheets")
