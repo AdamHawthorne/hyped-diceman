@@ -70,8 +70,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("asI88C.png", text)
             self.assertIn("y6bCxy.png", text)
             self.assertNotIn("XIszIH.png", text)
-            self.assertIn("Roster:", text)
-            self.assertIn("**Check:** <#1563663258047619123>", text)
+            self.assertIn("Confirmation:", text)
+            self.assertNotIn("**Check:**", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(
                 raid_schedule.raid_panel_text(event),
@@ -80,25 +80,26 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"\*\*Roster:\*\* Forming, awaiting confirmation")
+                             r"\*\*Confirmation:\*\* <t:\d+:R>")
             self.assertNotIn("Collecting gamers", text)
             self.assertIn("### Roster", text)
-            self.assertIn("**Roster:**", text)
+            self.assertIn("**Confirmation:**", text)
             panel_text = raid_schedule.raid_panel_text(event)
-            self.assertIn("**Check:** <#1563663258047619123>\n### Roster", panel_text)
+            self.assertIn("**Instances:** Molten Core\n### Roster", panel_text)
             self.assertNotIn("\n\n### Roster", panel_text)
-            self.assertLess(panel_text.index("**Check:**"),
+            self.assertLess(panel_text.index("**Instances:**"),
                             panel_text.index("### Roster"))
             self.assertLess(panel_text.index("### Roster"),
-                            panel_text.index("**Roster:**"))
+                            panel_text.index("**Confirmation:**"))
             self.assertIn("**Selected players**", panel_text)
             self.assertIn("- TBD", panel_text)
             visible = raid_schedule.raid_panel_text(
                 event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
             )
-            self.assertIn("• Snore Mon", visible)
-            self.assertIn("• Healer Main", visible)
-            self.assertGreater(visible.index("**Roster:**"), visible.index("Snore Mon"))
+            self.assertIn("Snore Mon", visible)
+            self.assertIn("Healer Main", visible)
+            self.assertNotIn("• ", visible)
+            self.assertGreater(visible.index("**Confirmation:**"), visible.index("Snore Mon"))
             self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
@@ -114,7 +115,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(components[0]["components"][0]["type"], 9)  # Section
             self.assertEqual(components[0]["components"][-1]["type"], 12) # Media gallery
             self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][-1]))
-            self.assertLess(text.index("Roster:"), text.index("y6bCxy.png"))
+            self.assertLess(text.index("Confirmation:"), text.index("y6bCxy.png"))
             self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Sign"'))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
@@ -152,7 +153,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Barrows**", empty)
             self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
-            self.assertGreater(empty.index("**Roster:**"),
+            self.assertGreater(empty.index("**Confirmation:**"),
                                empty.index("### Roster"))
             self.assertNotIn("20-player", empty)
             self.assertNotIn("10-player", empty)
@@ -189,8 +190,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("40-player", text)
             self.assertNotIn("**Hyjal · 20-player 🔸**", text)
             self.assertNotIn("**Hyjal · 20-player 🔹**", text)
-            self.assertEqual(text.count("• Snore Mon"), 3)
-            self.assertEqual(text.count("• Healer One"), 2)
+            self.assertEqual(text.count("Snore Mon"), 3)
+            self.assertEqual(text.count("Healer One"), 2)
+            self.assertNotIn("• ", text)
             self.assertNotIn("Group A", text)
             self.assertNotIn("Group B", text)
             self.assertNotIn("Collecting gamers", text)
@@ -220,7 +222,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 ["Sign", "Update", "Gear", "Absent"],
             )
             self.assertLess(
-                json.dumps(rendered).index("Roster:"),
+                json.dumps(rendered).index("Confirmation:"),
                 json.dumps(rendered).index("y6bCxy.png"),
             )
 
@@ -243,7 +245,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 barrows_only, [("Split Two", "Barrows 🔹")]
             )
             self.assertIn("🔸 - TBD", barrows_text)
-            self.assertIn("🔹\n• Split Two", barrows_text)
+            self.assertIn("🔹\nSplit Two", barrows_text)
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
 
@@ -596,8 +598,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Other start time (HH:MM)", components)
             self.assertIn("Choose end time", components)
             self.assertIn("Other time (HH:MM)", components)
-            self.assertIn("Choose Check channel", components)
-            self.assertIn("**Check channel:** <#1563663258047619123>", poster.description())
+            self.assertIn("Check Message Link", components)
+            self.assertIn("Remove Check Link", components)
+            self.assertNotIn("Choose Check channel", components)
+            self.assertIn("**Check message:** Not set (optional)", poster.description())
             self.assertIn("Raid instance #1", components)
             self.assertIn("Raid instance #2", components)
             self.assertIn("Raid instance #3", components)
@@ -622,13 +626,12 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(draft2["day"], "2026-11-05")
             self.assertEqual(draft2["instance_1"], "Molten Core")
             self.assertIsNone(draft2["end_time"])
-            self.assertEqual(draft2["check_channel_id"],
-                             raid_schedule.DEFAULT_CHECK_CHANNEL_ID)
+            self.assertIsNone(draft2["check_message_url"])
             self.assertIn("Edit Raid #1", json.dumps(
                 raid_poster.RaidPosterView(dummy_cog, 42).to_components()
             ))
 
-    async def test_custom_end_time_and_check_channel_roundtrip_and_migration(self):
+    async def test_custom_end_time_and_check_message_roundtrip_and_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             raid.create_schema(path)
@@ -637,44 +640,49 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             draft = raid_poster.draft_from_event(None)
             draft.update(
                 day="2026-12-09", time="21:00", end_time="01:30",
-                instance_1="Hyjal (20m)", check_channel_id=1564075966895231059,
+                instance_1="Hyjal (20m)",
+                check_message_url="https://discord.com/channels/1564000000000000001/1564000000000000002/1564000000000000003",
             )
             end_at = raid_poster.poster_end_at(draft)
             self.assertTrue(end_at.startswith("2026-12-10T01:30:00"))
             event = raid_schedule.save_raid(
                 path, 1, "2026-12-09 21:00", "Hyjal (20m)",
-                end_at=end_at, check_channel_id=draft["check_channel_id"]
+                end_at=end_at, check_message_url=draft["check_message_url"]
             )
             self.assertEqual(event["end_at"], end_at)
-            self.assertEqual(event["check_channel_id"], 1564075966895231059)
-            self.assertIn("**Check:** <#1564075966895231059>",
-                          raid_schedule.raid_panel_intro(event))
+            self.assertEqual(event["check_message_url"], draft["check_message_url"])
+            self.assertIn("**Check:** [View message](", raid_schedule.raid_panel_intro(event))
             self.assertIn(" - " + raid_schedule.format_discord_date(
                 end_at, style="t", with_relative=False
             ), raid_schedule.raid_panel_intro(event))
             recovered = raid_poster.draft_from_event(event)
             self.assertEqual(recovered["end_time"], "01:30")
-            self.assertEqual(recovered["check_channel_id"], 1564075966895231059)
+            self.assertEqual(recovered["check_message_url"], draft["check_message_url"])
             # Old setup callers must not erase either new setting.
             legacy = raid_schedule.save_raid(
                 path, 1, "2026-12-09 21:00", "Hyjal (20m)"
             )
             self.assertEqual(legacy["end_at"], end_at)
-            self.assertEqual(legacy["check_channel_id"], 1564075966895231059)
+            self.assertEqual(legacy["check_message_url"], draft["check_message_url"])
             moved = raid_schedule.save_raid(
                 path, 1, "2026-12-11 20:00", "Hyjal (20m)"
             )
             self.assertTrue(moved["end_at"].startswith("2026-12-12T00:30"))
-            self.assertEqual(moved["check_channel_id"], 1564075966895231059)
-            # Explicit default selection clears custom end, but not the Check channel.
+            self.assertEqual(moved["check_message_url"], draft["check_message_url"])
+            # Explicit default selection clears custom end, but keeps Check permalink.
             reset = raid_schedule.save_raid(
                 path, 1, "2026-12-09 21:00", "Hyjal (20m)", end_at=None
             )
             self.assertIsNone(reset["end_at"])
-            self.assertEqual(reset["check_channel_id"], 1564075966895231059)
+            self.assertEqual(reset["check_message_url"], draft["check_message_url"])
+            cleared = raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)", check_message_url=None
+            )
+            self.assertIsNone(cleared["check_message_url"])
+            self.assertNotIn("**Check:**", raid_schedule.raid_panel_intro(cleared))
             with raid.database(path) as con:
                 cols = {r[1] for r in con.execute("PRAGMA table_info(raids)")}
-                self.assertTrue({"end_at", "check_channel_id"} <= cols)
+                self.assertTrue({"end_at", "check_message_url"} <= cols)
 
     async def test_poster_rejects_invalid_end_times_and_accepts_after_midnight(self):
         draft = raid_poster.draft_from_event(None)
@@ -756,7 +764,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             draft = raid_poster.draft_from_event(raid_schedule.read_raid(path, 1))
             draft.update(day="2026-11-06", instance_1="Onyxia's Lair",
                          instance_2=None, instance_3=None, softres_url=None,
-                         end_time="00:30", check_channel_id=1564075966895231059)
+                         end_time="00:30",
+                          check_message_url="https://discord.com/channels/1564000000000000001/1564000000000000002/1564000000000000003")
             poster = raid_poster.RaidPosterView(cog, 42, draft)
             button = next(
                 item for item in poster.walk_children()
@@ -773,7 +782,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(saved["instance_1"], "Onyxia's Lair")
             self.assertEqual(saved["raid_at"][:10], "2026-11-06")
             self.assertEqual(saved["end_at"][:16], "2026-11-07T00:30")
-            self.assertEqual(saved["check_channel_id"], 1564075966895231059)
+            self.assertEqual(saved["check_message_url"], draft["check_message_url"])
             self.assertIsNone(saved["softres_url"])
             self.assertEqual(saved["signup_open"], 1)
             cog.post_panel.assert_awaited_once()
