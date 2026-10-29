@@ -32,7 +32,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual([b.label for b in buttons],
-                             ["Sign up", "Update", "Gear", "Absent"])
+                             ["Sign", "Update", "Gear", "Absent"])
             self.assertTrue(all(not b.disabled for b in buttons))
             self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
