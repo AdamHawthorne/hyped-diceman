@@ -1150,6 +1150,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             event, on_signup=signup, on_update=self.on_update,
             on_gear=self.on_gear, on_absent=absent,
             public_roster=read_public_roster(RAID_DB, event["raid_id"]),
+            guild_id=GUILD_ID,
         )
 
     async def post_panel(self, interaction, event):
