@@ -67,7 +67,7 @@ In private `/raid poster`, **Bottom Banner** accepts an optional direct
 HTTPS image URL ending in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`.
 Submit an empty field to revert to the original `y6bCxy.png` image.
 The selected banner is saved per raid and appears below the Roster/status
-inside the gold-bordered container, above the four action buttons.
+inside the leadership-coloured raid container, above the four action buttons.
 
 ## Raid member controls
 
