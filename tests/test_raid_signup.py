@@ -552,6 +552,33 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                                        ("Tank", "DPS"), signup_raid_id=9)
             self.assertEqual(role.signup_raid_id, 9)
 
+    async def test_guild_member_can_signup_in_private_channel_but_not_post(self):
+        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "read_raid", return_value={
+                 "raid_id": 9, "signup_open": 1, "roster_published": 0,
+             }), patch.object(raid, "member_characters", return_value=[]):
+            cog = raid.RaidPrototype(SimpleNamespace())
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=99), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID,
+                response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+                followup=SimpleNamespace(send=AsyncMock()),
+            )
+            self.assertFalse(cog.allowed(interaction))
+            self.assertTrue(raid.is_test_member(interaction))
+            await cog.on_signup(interaction, 9)
+            self.assertIsInstance(
+                interaction.followup.send.await_args.kwargs["view"],
+                raid.ClassPickerView,
+            )
+            interaction.channel_id = raid.RAID_CHANNEL_ID
+            self.assertFalse(raid.is_test_member(interaction))
+            interaction.response.defer.reset_mock()
+            interaction.response.send_message.reset_mock()
+            await cog.on_signup(interaction, 9)
+            interaction.response.send_message.assert_awaited_once()
+            interaction.response.defer.assert_not_awaited()
+
     async def test_registration_modal_auto_signs_up_first_time(self):
         with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
              patch.object(raid, "save_character") as save_character_mock, \
