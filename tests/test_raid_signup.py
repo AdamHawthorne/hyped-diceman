@@ -92,7 +92,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertLess(panel_text.index("### Roster"),
                             panel_text.index("**Confirmation:**"))
             self.assertIn("**Selected players**", panel_text)
-            self.assertIn("- TBD", panel_text)
+            self.assertIn("-# **Tanks**", panel_text)
             visible = raid_schedule.raid_panel_text(
                 event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
             )
@@ -147,9 +147,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             empty = raid_schedule.raid_panel_text(event)
             self.assertIn("**Hyjal**", empty)
             self.assertEqual(empty.count("**Hyjal**"), 1)
-            self.assertEqual(empty.count("🔹🔸 - TBD"), 1)
-            self.assertIn("🔸 - TBD", empty)
-            self.assertIn("🔹 - TBD", empty)
+            self.assertEqual(empty.count("🔹🔸"), 1)
+            self.assertIn("🔸\n-# **Tanks**", empty)
+            self.assertIn("🔹\n-# **Tanks**", empty)
             self.assertIn("**Barrows**", empty)
             self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
@@ -158,7 +158,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("20-player", empty)
             self.assertNotIn("10-player", empty)
             self.assertNotIn("40-player", empty)
-            self.assertIn("**Ony**\n- TBD", empty)
+            self.assertIn("**Ony**\n-# **Tanks**", empty)
             self.assertNotIn("Forming, await announcement", empty)
             self.assertNotIn("Group A", empty)
             self.assertNotIn("Group B", empty)
@@ -234,7 +234,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 2, "2026-12-10 20:00", "Hyjal (20m)"
             )
             hyjal_text = raid_schedule.raid_panel_text(hyjal_only)
-            self.assertEqual(hyjal_text.count("🔹🔸 - TBD"), 1)
+            self.assertEqual(hyjal_text.count("🔹🔸"), 1)
             self.assertIn("**Hyjal**", hyjal_text)
             self.assertNotIn("\n\n\n", hyjal_text)
 
@@ -244,8 +244,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             barrows_text = raid_schedule.raid_panel_text(
                 barrows_only, [("Split Two", "Barrows 🔹")]
             )
-            self.assertIn("🔸 - TBD", barrows_text)
-            self.assertIn("🔹\n-# **DPS**\nSplit Two", barrows_text)
+            self.assertIn("🔸\n-# **Tanks**", barrows_text)
+            self.assertIn("-# **DPS**\nSplit Two", barrows_text)
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
 
