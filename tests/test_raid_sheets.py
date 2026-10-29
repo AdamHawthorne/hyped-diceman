@@ -180,6 +180,39 @@ class RaidSheetsTests(unittest.TestCase):
             self.assertEqual(raid_schedule.read_public_roster(path, 1), [])
             self.assertEqual(raid.my_signup(1, 42, path)[1], "Available")
 
+    def test_roster_publication_and_update_timestamps_follow_real_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            self.setup_db(path)
+            event = raid_schedule.read_raid(path, 1)
+            self.assertIsNone(event.get("roster_posted_at"))
+            self.assertIsNone(event.get("roster_updated_at"))
+            self.assertIn("**Roster Announcement:**", raid_schedule.raid_roster_status(event))
+            approved = {1: [("Snore Mon", "Hyjal")]}
+            self.assertEqual(raid_sheets._save_public(path, approved), {1})
+            posted = raid_schedule.read_raid(path, 1)
+            self.assertTrue(posted["roster_posted_at"])
+            self.assertIsNone(posted["roster_updated_at"])
+            self.assertRegex(raid_schedule.raid_roster_status(posted),
+                             r"\*\*Roster posted:\*\* <t:\d+:F>")
+            self.assertEqual(raid_sheets._save_public(path, approved), set())
+            same = raid_schedule.read_raid(path, 1)
+            self.assertEqual(posted["roster_posted_at"], same["roster_posted_at"])
+            self.assertIsNone(same["roster_updated_at"])
+            changed = {1: [("Snore Mon", "Hyjal"), ("Pug Hero", "Hyjal")]}
+            self.assertEqual(raid_sheets._save_public(path, changed), {1})
+            updated = raid_schedule.read_raid(path, 1)
+            self.assertEqual(updated["roster_posted_at"], posted["roster_posted_at"])
+            self.assertTrue(updated["roster_updated_at"])
+            self.assertRegex(raid_schedule.raid_roster_status(updated),
+                             r"\*\*Update:\*\* <t:\d+:F>")
+            self.assertEqual(raid_sheets._save_public(path, {}), {1})
+            withdrawn = raid_schedule.read_raid(path, 1)
+            self.assertIsNone(withdrawn["roster_posted_at"])
+            self.assertIsNone(withdrawn["roster_updated_at"])
+            self.assertIn("**Roster Announcement:**",
+                          raid_schedule.raid_roster_status(withdrawn))
+
     def test_missing_credentials_do_not_initiate_connection(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertFalse(raid_sheets.configured())
