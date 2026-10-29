@@ -4,6 +4,7 @@ The board is live in the chosen test channel and stored in its own SQLite file.
 Existing dice, Flameboard and Forever-role systems are untouched.
 """
 from cogs.ogre_voice import pick as ogre_say
+from cogs.emojis import markup as guild_emoji, option_emoji, combat_role
 import asyncio
 import os
 from pathlib import Path
@@ -98,7 +99,7 @@ HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
 BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
 # Native Unicode emoji stays sharp and requires no guild emoji permissions.
 OPEN_LFM_MARKER = "🟢"
-ROLE_EMOJIS = {"Tank": "🛡️", "Healer": "✚", "DPS": "⚔️"}
+ROLE_EMOJIS = {role: guild_emoji(role) for role in ("Tank", "Healer", "Melee", "Ranged", "Caster")}
 ACCENT = 0x8C5A3C
 
 
@@ -211,7 +212,7 @@ def format_roles(value, *, icons=False):
     roles = [part.strip() for part in value.split(",") if part.strip()]
     if icons:
         return " / ".join(
-            f"{role} {ROLE_EMOJIS[role]}" if role in ROLE_EMOJIS else role
+            f"{role} {guild_emoji(combat_role(role))}" if guild_emoji(combat_role(role)) else role
             for role in roles
         )
     return " / ".join(roles)
@@ -493,6 +494,7 @@ class StageSelect(discord.ui.Select):
                     label=value,
                     value=value,
                     description=descriptions.get(value),
+                    emoji=option_emoji(value if stage == "class" else combat_role(value)) if stage in ("class", "roles") else None,
                     default=value in selected,
                 ) for value in options
             ],
@@ -855,6 +857,7 @@ class CharacterEditSelect(discord.ui.Select):
             min_values=1,
             max_values=len(values) if stage == "roles" else 1,
             options=[discord.SelectOption(label=value, value=value,
+                                          emoji=option_emoji(value if stage == "class" else combat_role(value)) if stage in ("class", "roles") else None,
                                           default=value in selected)
                      for value in values],
         )
@@ -1117,7 +1120,10 @@ class BoardLayout(discord.ui.LayoutView):
         for row in visible:
             race = row["race"] or "Race not set"
             zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
-            roles = format_roles(row["role"], icons=True) or "Role not set"
+            roles = " / ".join(
+                f"{part.strip()} {guild_emoji(combat_role(part.strip(), row['class_name']))}"
+                for part in row["role"].split(",") if part.strip()
+            ) or "Role not set"
             days = row["days_off"] or "Not set"
             character = safe(row["character"]) if row["character"] else "Name TBD"
             notes = safe(row["notes"]) if row["notes"] else ""
@@ -1126,7 +1132,7 @@ class BoardLayout(discord.ui.LayoutView):
             )
 
             lines = [
-                f"**{character} · {display_race(race)} {row['class_name']} · {roles}**",
+                f"**{character} · {display_race(race)} {guild_emoji(row['class_name'])} {row['class_name']} · {roles}**",
             ]
             if not is_solo_or_sorted(row["activity"]):
                 lines.append(
