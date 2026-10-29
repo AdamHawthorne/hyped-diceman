@@ -1176,6 +1176,15 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             AbsenceNoteModal(interaction.user.id, raid_id)
         )
 
+    def raid_emoji_map(self):
+        """Convert server role/class emoji names into real Discord emoji markup."""
+        guild = self.bot.get_guild(GUILD_ID)
+        emojis = getattr(guild, "emojis", ()) if guild is not None else ()
+        if not isinstance(emojis, (tuple, list)):
+            return {}
+        return {emoji.name.casefold(): str(emoji)
+                for emoji in emojis if getattr(emoji, "name", None)}
+
     def make_panel(self, event):
         async def signup(interaction):
             await self.on_signup(interaction, event["raid_id"])
@@ -1186,7 +1195,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         return RaidEventPanel(
             event, on_signup=signup, on_update=self.on_update,
             on_gear=self.on_gear, on_absent=absent,
-            public_roster=read_public_roster(RAID_DB, event["raid_id"]),
+            public_roster=read_public_roster(
+                RAID_DB, event["raid_id"], include_details=True
+            ),
+            emoji_map=self.raid_emoji_map(),
         )
 
     async def post_panel(self, interaction, event):
