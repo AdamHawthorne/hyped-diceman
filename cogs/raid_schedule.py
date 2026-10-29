@@ -578,7 +578,7 @@ def raid_roster_status(event):
 
 
 def _roster_group_text(title, players):
-    """Short roster headings with consistent empty-state wording."""
+    """Always show muted Tanks / Healers / DPS placeholders per raid roster."""
     if title.startswith("Barrows · 10-player "):
         heading = ("**Barrows**\n" if title.endswith("🔸") else "") + title[-1]
     elif title == "Hyjal · 20-player":
@@ -587,34 +587,21 @@ def _roster_group_text(title, players):
         heading = "**Ony**"
     else:
         heading = f"**{title}**"
-    if not players:
-        if title == "Hyjal · 20-player":
-            return heading + "\n🔹🔸 - TBD"
-        if title.startswith("Barrows · 10-player "):
-            return heading + " - TBD"
-        return heading + "\n- TBD"
+
+    # Preserve the diamond indicators while providing three stable role sections.
     symbol = "🔹🔸" if title == "Hyjal · 20-player" else ""
-    # Discord renders -# lines in muted grey. A role heading is shown only
-    # when at least one player is assigned to that category.
-    categorized = any(isinstance(item, tuple) for item in players)
-    if categorized:
-        names = []
-        for category in ("Tank", "Healer", "DPS"):
-            members = [name for role, name in players if role == category]
-            if members:
-                names.append(f"-# **{category}**")
-                names.extend(members)
-        return heading + ("\n" + symbol if symbol else "") + "\n" + "\n".join(names)
-    names = []
-    length = len(heading)
-    for name in players:
-        line = name
-        if length + len(line) + 2 > 3800:
-            names.append("-# *More selected players not shown here*")
-            break
-        names.append(line)
-        length += len(line) + 1
-    return heading + ("\n" + symbol if symbol else "") + "\n" + "\n".join(names)
+    lines = [heading] + ([symbol] if symbol else [])
+    for label, category in (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS")):
+        lines.append(f"-# **{label}**")
+        if players:
+            matching = [
+                name for player_role, name in players
+                if player_role == category
+            ] if all(isinstance(item, tuple) for item in players) else (
+                players if category == "DPS" else []
+            )
+            lines.extend(matching)
+    return "\n".join(lines)
 
 
 def raid_panel_text(event, public_roster=(), *, emoji_map=None):
