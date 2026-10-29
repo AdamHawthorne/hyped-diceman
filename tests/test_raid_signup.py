@@ -53,7 +53,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Check:** <#1563663258047619123>", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"<t:\d+:D> at <t:\d+:t>")
+                             r"<t:\d+:F>")
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
             self.assertRegex(raid_schedule.raid_panel_text(event),
@@ -63,9 +63,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Roster Announcement:**", text)
             panel_text = raid_schedule.raid_panel_text(event)
             self.assertLess(panel_text.index("**Check:**"),
-                            panel_text.index("**Roster Announcement:**"))
-            self.assertLess(panel_text.index("**Roster Announcement:**"),
                             panel_text.index("### Roster"))
+            self.assertLess(panel_text.index("### Roster"),
+                            panel_text.index("**Roster Announcement:**"))
             self.assertIn("**Selected players**", panel_text)
             self.assertIn("- Not announced", panel_text)
             visible = raid_schedule.raid_panel_text(
@@ -73,7 +73,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("• Snore Mon", visible)
             self.assertIn("• Healer Main", visible)
-            self.assertLess(visible.index("Roster Announcement"), visible.index("Snore Mon"))
+            self.assertGreater(visible.index("Roster Announcement"), visible.index("Snore Mon"))
             self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
@@ -127,8 +127,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Barrows**", empty)
             self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
-            self.assertLess(empty.index("**Roster Announcement:**"),
-                            empty.index("### Roster"))
+            self.assertGreater(empty.index("**Roster Announcement:**"),
+                               empty.index("### Roster"))
             self.assertNotIn("20-player", empty)
             self.assertNotIn("10-player", empty)
             self.assertNotIn("40-player", empty)
@@ -250,8 +250,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual(controls, [
-                "Optional Raid Title", "Optional SoftRes", "Remove SoftRes",
-                "Post / Update Raid", "Delete Raid",
+                "Optional Raid Title", "Bottom Banner", "Optional SoftRes",
+                "Remove SoftRes", "Post / Update Raid", "Delete Raid",
             ])
             # Old /raid setup commands must preserve an existing subtitle.
             updated = raid_schedule.save_raid(
@@ -299,7 +299,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(" - @everyone **new**", intro)
             self.assertIn("@\u200beveryone", intro)
             self.assertNotIn("\n\n\n", intro)
-            self.assertRegex(intro, r"<t:\d+:D> at <t:\d+:t>")
+            self.assertRegex(intro, r"<t:\d+:F>")
             self.assertNotIn("**Date:**", intro)
             self.assertNotIn("**Time:**", intro)
 
@@ -510,6 +510,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Raid instance #2", components)
             self.assertIn("Raid instance #3", components)
             self.assertIn("Optional Raid Title", components)
+            self.assertIn("Bottom Banner", components)
             self.assertIn("Optional SoftRes", components)
             self.assertIn("Post / Update Raid", components)
             self.assertIn("Choose exact announcement date & time", components)
