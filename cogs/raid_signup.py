@@ -878,7 +878,7 @@ class ConfirmCharacterDeleteView(discord.ui.LayoutView):
         super().__init__(timeout=180)
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                f"## Delete {discord.utils.escape_markdown(character_name)}?\\n"
+                f"## Delete {discord.utils.escape_markdown(character_name)}?\n"
                 "This permanently removes the character and saved SimC exports. "
                 "Characters with raid sign-up or attendance history cannot be deleted."
             ), accent_color=ACCENT,
