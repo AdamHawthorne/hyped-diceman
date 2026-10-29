@@ -657,54 +657,55 @@ class GearUploadModal(discord.ui.Modal):
 
 
 class CharacterActionView(discord.ui.LayoutView):
-    """Private player choice before sign-up, edit or gear upload."""
+    """One dropdown for signup, character management and SimC uploads."""
 
     def __init__(self, owner_id, *, raid_id=None, purpose="signup", current_signup=None):
         super().__init__(timeout=300)
-        self.owner_id = owner_id
-        self.raid_id = raid_id
-        self.purpose = purpose
+        self.owner_id, self.raid_id, self.purpose = owner_id, raid_id, purpose
         rows = member_characters(owner_id)
-        titles = {"signup": "Sign up", "gear": "Gear", "update": "Update"}
+        main_ids = main_character_ids(owner_id)
+        title = {"signup": "Attend", "gear": "SimC", "update": "Characters"}[purpose]
         hint = {
-            "signup": "Pick character. Ogre save your raid-night note.",
-            "gear": "Pick character. Add SimC, panel screenshot, or both.",
-            "update": "Pick character. Ogre change class, spec or role.",
+            "signup": "Choose the character you will raid on. Add an optional note next.",
+            "gear": "Choose a character to upload a SimulationCraft export.",
+            "update": "Choose a character to manage, or add an alt.",
         }[purpose]
-        if purpose == "signup" and current_signup:
-            hint = (
-                f"**Now:** {discord.utils.escape_markdown(current_signup[0])}"
-                f" · {current_signup[1]}\n" + hint
-            )
         self.add_item(discord.ui.Container(
-            discord.ui.TextDisplay(f"## {titles[purpose]}\n{hint}"),
+            discord.ui.TextDisplay(f"## {title}\\n{hint}"),
             accent_color=ACCENT,
         ))
-        if not rows:
+        options = [
+            discord.SelectOption(
+                label=name[:100], value=str(char_id),
+                description=f"{'Main' if char_id in main_ids else 'Alt'} · {class_name} / {spec} · {role}"[:100],
+                emoji=option_emoji(class_name),
+            )
+            for char_id, name, class_name, spec, role, _ in rows[:24]
+        ]
+        if purpose == "update" and len(rows) < 25:
+            options.append(discord.SelectOption(
+                label="Add character", value="add", emoji="➕",
+                description="Register a new main or alt",
+            ))
+        if not options:
             return
         selection = discord.ui.Select(
-            placeholder="Choose your saved character",
-            options=[
-                discord.SelectOption(
-                    label=name[:100], value=str(char_id),
-                    description=f"{class_name} / {spec} · {role}"[:100],
-                    emoji=option_emoji(class_name),
-                ) for char_id, name, class_name, spec, role, _ in rows[:25]
-            ],
+            placeholder="Choose character or add an alt" if purpose == "update" else "Choose your character",
+            options=options,
         )
 
         async def select_character(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message(
-                    "That character isn't yours.", ephemeral=True
-                )
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            if selection.values[0] == "add":
+                await interaction.response.edit_message(view=ClassPickerView(self.owner_id))
                 return
             char_id = int(selection.values[0])
             match = next((r for r in rows if r[0] == char_id), None)
             if not match:
                 await interaction.response.send_message(
-                    "Character list expired. Reopen from the raid panel.",
-                    ephemeral=True,
+                    "Character list expired. Reopen from the raid panel.", ephemeral=True,
                 )
                 return
             if self.purpose == "gear":
@@ -713,9 +714,7 @@ class CharacterActionView(discord.ui.LayoutView):
                 )
             elif self.purpose == "update":
                 await interaction.response.edit_message(
-                    view=ClassPickerView(
-                        self.owner_id, editing_character_id=char_id,
-                    )
+                    view=CharacterManageView(self.owner_id, char_id, match)
                 )
             else:
                 await interaction.response.send_modal(
@@ -724,6 +723,52 @@ class CharacterActionView(discord.ui.LayoutView):
 
         selection.callback = select_character
         self.add_item(discord.ui.ActionRow(selection))
+
+
+class CharacterManageView(discord.ui.LayoutView):
+    """Edit class/spec or select the one Main, without changing raid records."""
+
+    def __init__(self, owner_id, character_id, character):
+        super().__init__(timeout=300)
+        self.owner_id, self.character_id = owner_id, character_id
+        _, name, class_name, spec, role, _ = character
+        is_main = character_id in main_character_ids(owner_id)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## {guild_emoji(class_name)} {discord.utils.escape_markdown(name)}\\n"
+                f"{class_name} / {spec} · {guild_emoji(combat_role(role, class_name, spec))} {role}\\n"
+                f"**{'Main' if is_main else 'Alt'}**"
+            ), accent_color=ACCENT,
+        ))
+        buttons = discord.ui.ActionRow()
+        edit = discord.ui.Button(label="Edit class / spec", style=discord.ButtonStyle.secondary)
+        main = discord.ui.Button(label="Set Main", style=discord.ButtonStyle.success, disabled=is_main)
+
+        async def edit_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=ClassPickerView(self.owner_id, editing_character_id=self.character_id)
+            )
+
+        async def main_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            try:
+                set_main_character(self.owner_id, self.character_id)
+            except (ValueError, sqlite3.Error) as exc:
+                await interaction.response.send_message(f"Ogre couldn't set Main: {exc}", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterManageView(self.owner_id, self.character_id, character)
+            )
+
+        edit.callback, main.callback = edit_callback, main_callback
+        buttons.add_item(edit)
+        buttons.add_item(main)
+        self.add_item(buttons)
 
 
 class CharacterNameModal(discord.ui.Modal):
