@@ -13,12 +13,13 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    player per raid night.
 3. In that raid's Google tab, use the leadership dropdowns to build the
    proposed teams. The public panel can show partial previews but describes
-   them as **Roster: Forming, awaiting confirmation**.
+   them with **Confirmation:** and the scheduled Discord relative
+   timestamp (e.g. "in a week"), which shows the precise date on hover.
 4. In private `#ogre`, run `/raid confirm number:1` when the roster is
    genuinely ready. The bot takes a locked snapshot, changes its label to
    **Roster confirmed:**, and closes new sign-ups.
-5. Use `/raid reopen number:1` if corrections are needed. It returns to
-   Forming and reopens sign-ups; confirm again when satisfied.
+5. Use `/raid reopen number:1` if corrections are needed. The confirmation
+   countdown returns and sign-ups reopen; confirm again when satisfied.
 6. After the raid, use
    `/raid archive number:1 wcl_url:https://www.warcraftlogs.com/reports/... notes:...`.
    The date, WCL link and notes are stored on the raid tab. The tab is hidden
@@ -66,6 +67,18 @@ For a player to appear in Hyjal, for example: choose **Selected** (J),
 column M. Changes are noticed at the next successful ~60-second sync.
 Hyjal remains one roster headed by 🔹🔸 and Barrows has two rosters
 headed 🔸 and 🔹. The diamond headers stay visible after players appear.
+Names have no bullet prefixes. The bot uses server custom emoji named
+`Tank`, `Healer`, `DPS`, `Ranged` and class names such as `Warrior` and
+`Mage`, when present; readable Unicode icons are the fallback.
+Class/spec/role data travels with the private selected roster, including PUGs.
+
+In `/raid poster`, **Check Message Link** optionally accepts a copied
+Discord message URL. When supplied, the raid panel shows a short
+**Check: View message** hyperlink; when omitted, the Check line disappears.
+There is no Check channel picker. The existing roster-announcement date
+picker controls **Confirmation: <Discord relative timestamp>** on the panel
+until the roster is actually confirmed. Players can hover to inspect the
+full scheduled date and time.
 
 When a player clicks **Absent**, Ogre moves the row to **ABSENT**, sets
 selection to Not selected, disables public display, and removes them from
