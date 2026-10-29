@@ -265,8 +265,11 @@ def _public_rows(rows, *, raid_dates=None, unavailable=()):
             assignments.append("Ony")
         if hyjal.casefold() == "selected":
             assignments.append("Hyjal")
-        if barrows.casefold() in ("group a", "group b"):
-            assignments.append(f"Barrows {barrows[-1:].upper()}")
+        split = barrows.strip().casefold()
+        if split in ("group a", "barrows a", "🔸"):
+            assignments.append("Barrows 🔸")
+        elif split in ("group b", "barrows b", "🔹"):
+            assignments.append("Barrows 🔹")
         key = int(raid_id)
         roster = result.setdefault(key, [])
         if len(roster) < 60:
