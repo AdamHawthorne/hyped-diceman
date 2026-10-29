@@ -694,6 +694,13 @@ class CharacterNameModal(discord.ui.Modal):
             label="Character name", placeholder="Firstname Lastname", max_length=40
         )
         self.add_item(self.name)
+        if signup_raid_id is not None:
+            self.note = discord.ui.TextInput(
+                label="Raid note (optional)", required=False,
+                style=discord.TextStyle.paragraph, max_length=500,
+                placeholder="Any plans Ogre should know?",
+            )
+            self.add_item(self.note)
 
     async def on_submit(self, interaction: discord.Interaction):
         if not is_test_member(interaction) or interaction.user.id != self.owner_id:
@@ -714,7 +721,10 @@ class CharacterNameModal(discord.ui.Modal):
                     row for row in member_characters(interaction.user.id)
                     if row[1].casefold() == self.name.value.strip().casefold()
                 )
-                save_signup(self.signup_raid_id, interaction.user.id, character[0])
+                save_signup(
+                    self.signup_raid_id, interaction.user.id, character[0],
+                    note=self.note.value,
+                )
             except (StopIteration, ValueError, sqlite3.Error) as exc:
                 await interaction.response.send_message(
                     f"Saved **{name}**, but couldn't sign up for Raid "
@@ -739,18 +749,18 @@ class CharacterNameModal(discord.ui.Modal):
 
 
 class ClassPickerView(discord.ui.LayoutView):
-    def __init__(self, owner_id, signup_raid_id=None):
+    def __init__(self, owner_id, signup_raid_id=None, editing_character_id=None):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.signup_raid_id = signup_raid_id
+        self.editing_character_id = editing_character_id
         title = (f"## Sign up · Raid #{signup_raid_id}\n"
-                 if signup_raid_id is not None else "## Register character\n")
+                 if signup_raid_id is not None else
+                 "## Update character\n" if editing_character_id is not None
+                 else "## Register character\n")
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                title
-                + ("First time? Ogre register your character as part of sign-up.\n"
-                   if signup_raid_id is not None else "Ogre need your class first.\n")
-                + "Choose your class to begin."
+                title + "Choose class, then spec and role."
             ), accent_color=ACCENT,
         ))
         select = discord.ui.Select(
@@ -764,24 +774,25 @@ class ClassPickerView(discord.ui.LayoutView):
                 await interaction.response.send_message("Private owner test only.", ephemeral=True)
                 return
             await interaction.response.edit_message(
-                view=SpecPickerView(self.owner_id, select.values[0],
-                                    signup_raid_id=self.signup_raid_id)
+                view=SpecPickerView(
+                    self.owner_id, select.values[0],
+                    signup_raid_id=self.signup_raid_id,
+                    editing_character_id=self.editing_character_id,
+                )
             )
 
         select.callback = select_class
         self.add_item(discord.ui.ActionRow(select))
-        if self.signup_raid_id is not None:
-            self.add_item(discord.ui.ActionRow(
-                absence_button(self.owner_id, self.signup_raid_id)
-            ))
 
 
 class SpecPickerView(discord.ui.LayoutView):
-    def __init__(self, owner_id, class_name, signup_raid_id=None):
+    def __init__(self, owner_id, class_name, signup_raid_id=None,
+                 editing_character_id=None):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.class_name = class_name
         self.signup_raid_id = signup_raid_id
+        self.editing_character_id = editing_character_id
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 f"## {class_name}\n"
@@ -802,8 +813,16 @@ class SpecPickerView(discord.ui.LayoutView):
             roles = CLASS_SPECS[self.class_name][spec]
             if len(roles) > 1:
                 await interaction.response.edit_message(
-                    view=RolePickerView(self.owner_id, self.class_name, spec, roles,
-                                        signup_raid_id=self.signup_raid_id)
+                    view=RolePickerView(
+                        self.owner_id, self.class_name, spec, roles,
+                        signup_raid_id=self.signup_raid_id,
+                        editing_character_id=self.editing_character_id,
+                    )
+                )
+            elif self.editing_character_id is not None:
+                await apply_profile_update(
+                    interaction, self.owner_id, self.editing_character_id,
+                    self.class_name, spec, roles[0],
                 )
             else:
                 await interaction.response.send_modal(
@@ -816,12 +835,14 @@ class SpecPickerView(discord.ui.LayoutView):
 
 
 class RolePickerView(discord.ui.LayoutView):
-    def __init__(self, owner_id, class_name, spec, roles, signup_raid_id=None):
+    def __init__(self, owner_id, class_name, spec, roles, signup_raid_id=None,
+                 editing_character_id=None):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.class_name = class_name
         self.spec = spec
         self.signup_raid_id = signup_raid_id
+        self.editing_character_id = editing_character_id
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 f"## {class_name} · {spec}\n"
@@ -837,13 +858,53 @@ class RolePickerView(discord.ui.LayoutView):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
                 await interaction.response.send_message("Private owner test only.", ephemeral=True)
                 return
-            await interaction.response.send_modal(
-                CharacterNameModal(self.owner_id, self.class_name, self.spec, select.values[0],
-                                   signup_raid_id=self.signup_raid_id)
-            )
+            if self.editing_character_id is not None:
+                await apply_profile_update(
+                    interaction, self.owner_id, self.editing_character_id,
+                    self.class_name, self.spec, select.values[0],
+                )
+            else:
+                await interaction.response.send_modal(
+                    CharacterNameModal(
+                        self.owner_id, self.class_name, self.spec, select.values[0],
+                        signup_raid_id=self.signup_raid_id,
+                    )
+                )
 
         select.callback = select_role
         self.add_item(discord.ui.ActionRow(select))
+
+
+class ProfileUpdatedView(discord.ui.LayoutView):
+    def __init__(self, name, class_name, spec, role):
+        super().__init__(timeout=120)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## Ogre updated {discord.utils.escape_markdown(name)}\n"
+                f"{class_name} / {spec} · **{role}**"
+            ), accent_color=ACCENT,
+        ))
+
+
+async def apply_profile_update(interaction, owner_id, character_id,
+                               class_name, spec, role):
+    if not is_test_member(interaction) or interaction.user.id != owner_id:
+        await interaction.response.send_message(
+            "This character isn't yours.", ephemeral=True
+        )
+        return
+    try:
+        name = update_character_profile(
+            owner_id, character_id, class_name, spec, role
+        )
+    except (ValueError, sqlite3.Error) as exc:
+        await interaction.response.send_message(
+            f"Ogre couldn't update character: {exc}", ephemeral=True
+        )
+        return
+    await interaction.response.edit_message(
+        view=ProfileUpdatedView(name, class_name, spec, role)
+    )
 
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
