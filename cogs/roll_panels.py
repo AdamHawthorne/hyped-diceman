@@ -60,7 +60,7 @@ class CoinLeaderboard(discord.ui.LayoutView):
         lines = [f"**{r['rank']}.** <@{ogre_id if r['user_id'] == 0 and ogre_id else r['user_id']}> · **{r['coins']}** {coin_emoji}" for r in visible]
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                "## Ledger\n"
+                "## Ogre\' Ledger\n"
                 + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
                 + f"\n\n-# Ogre give out {sum(r['coins'] for r in rows)} "
                   f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'}.\n"
