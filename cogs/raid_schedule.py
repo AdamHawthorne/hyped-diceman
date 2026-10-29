@@ -243,8 +243,8 @@ def raid_panel_text(event, public_roster=()):
 
 class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
-    def __init__(self, event, *, on_register, on_characters, on_signup=None,
-                 on_gear=None, public_roster=()):
+    def __init__(self, event, *, on_register=None, on_characters=None, on_signup=None,
+                 on_gear=None, on_update=None, on_absent=None, public_roster=()):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -262,26 +262,28 @@ class RaidEventPanel(discord.ui.LayoutView):
             style=discord.ButtonStyle.success,
             disabled=not bool(event.get("signup_open")) or bool(event.get("roster_published")),
         )
-        register = discord.ui.Button(
-            label="Register character", custom_id=f"hyped_raid_{event_id}_register",
-            style=discord.ButtonStyle.secondary,
-        )
-        characters = discord.ui.Button(
-            label="My characters", custom_id=f"hyped_raid_{event_id}_characters",
-            style=discord.ButtonStyle.secondary,
+        update = discord.ui.Button(
+            label="Update", custom_id=f"hyped_raid_{event_id}_update",
+            style=discord.ButtonStyle.secondary, disabled=on_update is None,
         )
         gear = discord.ui.Button(
-            label="Update gear", custom_id=f"hyped_raid_{event_id}_gear",
+            label="Gear", custom_id=f"hyped_raid_{event_id}_gear",
             style=discord.ButtonStyle.secondary, disabled=on_gear is None,
         )
-        if on_gear is not None:
-            gear.callback = on_gear
+        absent = discord.ui.Button(
+            label="Absent", custom_id=f"hyped_raid_{event_id}_absent",
+            style=discord.ButtonStyle.danger, disabled=on_absent is None,
+        )
         if on_signup is not None:
             sign_up.callback = on_signup
         else:
             sign_up.disabled = True
-        register.callback = on_register
-        characters.callback = on_characters
-        for control in (sign_up, register, characters, gear):
+        if on_update is not None:
+            update.callback = on_update
+        if on_gear is not None:
+            gear.callback = on_gear
+        if on_absent is not None:
+            absent.callback = on_absent
+        for control in (sign_up, update, gear, absent):
             controls.add_item(control)
         self.add_item(controls)
