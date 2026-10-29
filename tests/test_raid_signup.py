@@ -278,6 +278,62 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 raid_schedule.read_raid(path, 7)["title"], "<Hyped> Raid #7"
             )
 
+    async def test_custom_bottom_banner_uses_gallery_and_preserves_posted_raid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            event = raid_schedule.save_raid(
+                path, 8, "2026-12-09 21:00", "Hyjal (20m)",
+            )
+            self.assertIsNone(event["banner_url"])
+            self.assertIn("y6bCxy.png", json.dumps(
+                raid_schedule.RaidEventPanel(event).to_components()
+            ))
+            selected = "https://i.vgy.me/example.png"
+            event = raid_schedule.save_raid(
+                path, 8, "2026-12-09 21:00", "Hyjal (20m)",
+                banner_url=selected,
+            )
+            self.assertEqual(event["banner_url"], selected)
+            self.assertIn(selected, json.dumps(
+                raid_schedule.RaidEventPanel(event).to_components()
+            ))
+            self.assertNotIn("y6bCxy.png", json.dumps(
+                raid_schedule.RaidEventPanel(event).to_components()
+            ))
+            draft = raid_poster.draft_from_event(event)
+            self.assertEqual(draft["banner_url"], selected)
+            poster = raid_poster.RaidPosterView(
+                SimpleNamespace(raid_db_path=lambda: path,
+                                allowed=lambda interaction: True), 42, draft,
+            )
+            self.assertIn("**Bottom banner:** Custom image", poster.description())
+            modal = raid_poster.PosterTextModal(
+                poster, 42, 55, "banner_url", "Bottom banner image",
+                "HTTPS image URL", "https://i.vgy.me/test.png", required=False,
+            )
+            self.assertEqual(modal.text_field.max_length, 512)
+            self.assertFalse(modal.text_field.required)
+            event = raid_schedule.save_raid(
+                path, 8, "2026-12-09 21:00", "Hyjal (20m)",
+            )
+            self.assertEqual(event["banner_url"], selected)
+            event = raid_schedule.save_raid(
+                path, 8, "2026-12-09 21:00", "Hyjal (20m)",
+                banner_url="",
+            )
+            self.assertIsNone(event["banner_url"])
+            self.assertIn("y6bCxy.png", json.dumps(
+                raid_schedule.RaidEventPanel(event).to_components()
+            ))
+            for unsafe in ("http://example.com/art.png",
+                           "https://localhost/art.png",
+                           "https://example.com/art.txt"):
+                with self.subTest(unsafe=unsafe):
+                    with self.assertRaises(ValueError):
+                        raid_schedule.validate_banner_url(unsafe)
+
     async def test_optional_title_modal_is_non_required_and_plain_text_safe(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
