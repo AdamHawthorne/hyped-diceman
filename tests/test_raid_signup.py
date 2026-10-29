@@ -70,7 +70,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("asI88C.png", text)
             self.assertIn("y6bCxy.png", text)
             self.assertNotIn("XIszIH.png", text)
-            self.assertIn("Confirmation:", text)
+            self.assertIn("Roster confirmation:", text)
             self.assertNotIn("**Check:**", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(
@@ -80,26 +80,18 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"\*\*Confirmation:\*\* <t:\d+:R>")
+                             r"\*\*Roster confirmation:\*\* <t:\d+:R>")
             self.assertNotIn("Collecting gamers", text)
-            self.assertIn("### Roster", text)
-            self.assertIn("**Confirmation:**", text)
-            panel_text = raid_schedule.raid_panel_text(event)
-            self.assertIn("**Instances:** Molten Core\n### Roster", panel_text)
-            self.assertNotIn("\n\n### Roster", panel_text)
-            self.assertLess(panel_text.index("**Instances:**"),
-                            panel_text.index("### Roster"))
-            self.assertLess(panel_text.index("### Roster"),
-                            panel_text.index("**Confirmation:**"))
-            self.assertIn("**Selected players**", panel_text)
-            self.assertIn("-# **Tanks**", panel_text)
+            self.assertNotIn("### Roster", text)
+            self.assertNotIn("### Roster", raid_schedule.raid_panel_text(event))
+            self.assertIn("**Roster confirmation:**", text)
             visible = raid_schedule.raid_panel_text(
                 event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
             )
             self.assertIn("Snore Mon", visible)
             self.assertIn("Healer Main", visible)
             self.assertNotIn("• ", visible)
-            self.assertGreater(visible.index("**Confirmation:**"), visible.index("Snore Mon"))
+            self.assertGreater(visible.index("**Roster confirmation:**"), visible.index("Snore Mon"))
             self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
@@ -115,8 +107,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(components[0]["components"][0]["type"], 9)  # Section
             self.assertEqual(components[0]["components"][-1]["type"], 12) # Media gallery
             self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][-1]))
-            self.assertLess(text.index("Confirmation:"), text.index("y6bCxy.png"))
-            self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Sign"'))
+            self.assertLess(text.index("Roster confirmation:"), text.index("y6bCxy.png"))
+            self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Attend"'))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
             self.assertTrue(panel.is_persistent())
@@ -145,24 +137,11 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 roster_announce="2026-12-08 21:00",
             )
             empty = raid_schedule.raid_panel_text(event)
-            self.assertIn("**Hyjal**", empty)
-            self.assertEqual(empty.count("**Hyjal**"), 1)
-            self.assertEqual(empty.count("🔹🔸"), 1)
-            self.assertIn("**Barrows** 🔸\n-# **Tanks**", empty)
-            self.assertIn("**Barrows** 🔹\n-# **Tanks**", empty)
-            self.assertIn("**Barrows**", empty)
-            self.assertIn("**Ony**", empty)
-            self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
-            self.assertGreater(empty.index("**Confirmation:**"),
-                               empty.index("### Roster"))
-            self.assertNotIn("20-player", empty)
-            self.assertNotIn("10-player", empty)
-            self.assertNotIn("40-player", empty)
-            self.assertIn("**Ony**\n-# **Tanks**", empty)
-            self.assertNotIn("Forming, await announcement", empty)
-            self.assertNotIn("Group A", empty)
-            self.assertNotIn("Group B", empty)
-
+            self.assertNotIn("### Roster", empty)
+            self.assertNotIn("**Hyjal**", empty)
+            self.assertNotIn("**Barrows**", empty)
+            self.assertNotIn("**Ony**", empty)
+            self.assertIn("**Roster confirmation:**", empty)
             members = [
                 ("Snore Mon", "Hyjal, Barrows 🔸, Ony"),
                 ("Healer One", "Hyjal, Barrows 🔹"),
@@ -219,10 +198,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [button.label for button in panel.walk_children()
                  if isinstance(button, discord.ui.Button)],
-                ["Sign", "Update", "Gear", "Absent"],
+                ["Attend", "Characters", "SimC"],
             )
             self.assertLess(
-                json.dumps(rendered).index("Confirmation:"),
+                json.dumps(rendered).index("Roster confirmation:"),
                 json.dumps(rendered).index("y6bCxy.png"),
             )
 
@@ -234,8 +213,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 2, "2026-12-10 20:00", "Hyjal (20m)"
             )
             hyjal_text = raid_schedule.raid_panel_text(hyjal_only)
-            self.assertEqual(hyjal_text.count("🔹🔸"), 1)
-            self.assertIn("**Hyjal**", hyjal_text)
+            self.assertNotIn("### Roster", hyjal_text)
+            self.assertNotIn("**Hyjal**", hyjal_text)
             self.assertNotIn("\n\n\n", hyjal_text)
 
             barrows_only = raid_schedule.save_raid(
@@ -714,10 +693,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             components = json.dumps(panel.to_components())
             self.assertNotIn("Collecting gamers", components)
-            self.assertIn('"label": "Sign"', components)
+            self.assertIn('"label": "Attend"', components)
             self.assertIn('"style": 3', components)
-            self.assertIn('"label": "Update"', components)
-            self.assertIn('"label": "Gear"', components)
+            self.assertIn('"label": "Characters"', components)
+            self.assertIn('"label": "SimC"', components)
             self.assertIn('"label": "Absent"', components)
             self.assertNotIn('"label": "Register character"', components)
             self.assertNotIn('"label": "My characters"', components)
@@ -725,9 +704,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             # Existing panels get active signup buttons when an on_signup is bound.
             buttons = [item for item in panel.walk_children()
                        if isinstance(item, discord.ui.Button)]
-            self.assertFalse(next(b for b in buttons if b.label == "Sign").disabled)
+            self.assertFalse(next(b for b in buttons if b.label == "Attend").disabled)
             self.assertEqual([b.label for b in buttons],
-                             ["Sign", "Update", "Gear", "Absent"])
+                             ["Attend", "Characters", "SimC"])
             self.assertFalse(all(b.disabled for b in buttons))
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
