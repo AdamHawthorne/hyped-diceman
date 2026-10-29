@@ -67,7 +67,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertLess(panel_text.index("### Roster"),
                             panel_text.index("**Roster Announcement:**"))
             self.assertIn("**Selected players**", panel_text)
-            self.assertIn("- Not announced", panel_text)
+            self.assertIn("- TBD", panel_text)
             visible = raid_schedule.raid_panel_text(
                 event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
             )
@@ -121,9 +121,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             empty = raid_schedule.raid_panel_text(event)
             self.assertIn("**Hyjal**", empty)
             self.assertEqual(empty.count("**Hyjal**"), 1)
-            self.assertEqual(empty.count("🔹🔸 - Not announced"), 1)
-            self.assertIn("🔸 - Not announced", empty)
-            self.assertIn("🔹 - Not announced", empty)
+            self.assertEqual(empty.count("🔹🔸 - TBD"), 1)
+            self.assertIn("🔸 - TBD", empty)
+            self.assertIn("🔹 - TBD", empty)
             self.assertIn("**Barrows**", empty)
             self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
@@ -132,7 +132,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("20-player", empty)
             self.assertNotIn("10-player", empty)
             self.assertNotIn("40-player", empty)
-            self.assertIn("**Ony**\n- Not announced", empty)
+            self.assertIn("**Ony**\n- TBD", empty)
             self.assertNotIn("Forming, await announcement", empty)
             self.assertNotIn("Group A", empty)
             self.assertNotIn("Group B", empty)
@@ -178,6 +178,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             rendered = panel.to_components()
             main = rendered[0]["components"]
             self.assertEqual(main[0]["type"], 9)   # Intro + thumbnail
+            self.assertEqual(rendered[0]["accent_color"], raid_schedule.RAID_PANEL_ACCENT)
+            self.assertEqual(raid_schedule.RAID_PANEL_ACCENT, 0x8C5A3C)
+            self.assertNotEqual(raid_schedule.ACCENT, raid_schedule.RAID_PANEL_ACCENT)
             self.assertEqual(main[-1]["type"], 12) # Bottom banner
             self.assertLess(len(main), 11) # Discord container component budget
             self.assertNotIn("discord.com/channels/", json.dumps(rendered))
@@ -204,7 +207,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 2, "2026-12-10 20:00", "Hyjal (20m)"
             )
             hyjal_text = raid_schedule.raid_panel_text(hyjal_only)
-            self.assertEqual(hyjal_text.count("🔹🔸 - Not announced"), 1)
+            self.assertEqual(hyjal_text.count("🔹🔸 - TBD"), 1)
             self.assertIn("**Hyjal**", hyjal_text)
             self.assertNotIn("\n\n\n", hyjal_text)
 
@@ -214,7 +217,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             barrows_text = raid_schedule.raid_panel_text(
                 barrows_only, [("Split Two", "Barrows 🔹")]
             )
-            self.assertIn("🔸 - Not announced", barrows_text)
+            self.assertIn("🔸 - TBD", barrows_text)
             self.assertIn("🔹\n• Split Two", barrows_text)
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
@@ -502,6 +505,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             components = json.dumps(poster.to_components())
             self.assertIn("Raid Poster", components)
             self.assertIn("XIszIH.png", components)
+            self.assertEqual(poster.to_components()[0]["accent_color"], raid_schedule.ACCENT)
             self.assertNotIn("asI88C.png", components)
             self.assertNotIn("y6bCxy.png", components)
             self.assertIn("Choose raid date", components)
