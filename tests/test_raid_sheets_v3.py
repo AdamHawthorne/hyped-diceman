@@ -68,6 +68,7 @@ class RaidTabsTests(unittest.TestCase):
             absent = sheet._rows(path, event, {}, old_rows=old)
             row = next(row for row in absent if row[15] == "42")
             self.assertEqual(row[8], "Absent")
+            self.assertIn("Signed off:", row[6])
             self.assertEqual(row[9:14], ["Not selected", "No", "No", "No", "No"])
             self.assertNotIn("Snore Mon", [r[1] for r in sheet._header(
                 event, absent, sheet.tab_title(event)) if r[8] == "Signed" and r[9] == "Selected"])
