@@ -77,7 +77,7 @@ class RaidSheetsTests(unittest.TestCase):
             revealed[1],
             [
                 ("Snore Mon", "Ony, Hyjal, Barrows A"),
-                ("Pug Hero", "Ony, Hyjal")
+                ("Pug Hero", "Ony")
             ]
         )
         self.assertNotIn("Secret Gamer", str(revealed))
@@ -94,7 +94,7 @@ class RaidSheetsTests(unittest.TestCase):
                 [header, approved, pug],
                 raid_dates={1: "2026-12-09"},
                 unavailable={"1:42"},
-            ), {1: [("Pug Hero", "Ony, Hyjal")]}
+            ), {1: [("Pug Hero", "Ony")]}
         )
 
     def test_roster_sync_does_not_change_manual_selection_or_guest_rows(self):
