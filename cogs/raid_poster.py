@@ -33,6 +33,7 @@ def draft_from_event(event):
             "number": None, "day": None, "time": "20:00",
             "instance_1": None, "instance_2": None, "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
+            "custom_title": "",
         }
     start = datetime.fromisoformat(event["raid_at"]).astimezone(UK)
     return {
@@ -45,6 +46,7 @@ def draft_from_event(event):
         "announce": "custom" if event.get("roster_announce_at") else "none",
         "custom_announce": event.get("roster_announce_at"),
         "softres_url": event.get("softres_url"),
+        "custom_title": event.get("custom_title") or "",
     }
 
 
@@ -81,7 +83,8 @@ class PosterTextModal(discord.ui.Modal):
         self.field = field
         self.text_field = discord.ui.TextInput(
             label=label, placeholder=placeholder,
-            max_length=1500 if field == "softres_url" else 80,
+            max_length=(1500 if field == "softres_url"
+                        else 70 if field == "custom_title" else 80),
             required=required,
         )
         self.add_item(self.text_field)
@@ -98,6 +101,8 @@ class PosterTextModal(discord.ui.Modal):
                 date.fromisoformat(value)
             elif self.field == "custom_announce":
                 value = parse_uk_datetime(value).isoformat()
+            elif self.field == "custom_title":
+                value = " ".join(value.split())
             elif self.field.startswith("instance_"):
                 if not value:
                     raise ValueError("First raid instance cannot be blank.")
@@ -208,8 +213,14 @@ class RaidPosterView(discord.ui.LayoutView):
             raid_date = f'{d["day"] or "Choose date"} · {d["time"]} UK'
             announce_date = ANNOUNCEMENTS[d["announce"]]
         softres = "Set" if d["softres_url"] else "Not set (optional)"
+        custom_title = " ".join((d.get("custom_title") or "").split())
+        display_title = f"<Hyped> Raid #{d['number']}"
+        if custom_title:
+            display_title += " - " + discord.utils.escape_mentions(
+                discord.utils.escape_markdown(custom_title)
+            )
         return (
-            f"## Raid Poster · <Hyped> Raid #{d['number']}\n"
+            f"## Raid Poster · {display_title}\n"
             "-# Leadership setup only. Choose options, then publish the real raid panel.\n\n"
             f"**Raid date:** {raid_date}\n"
             f"{instances}\n"
@@ -351,12 +362,24 @@ class RaidPosterView(discord.ui.LayoutView):
 
     def add_controls(self):
         row = discord.ui.ActionRow()
+        title = discord.ui.Button(label="Optional Raid Title",
+                                  style=discord.ButtonStyle.secondary)
         softres = discord.ui.Button(label="Optional SoftRes", style=discord.ButtonStyle.secondary)
         clear = discord.ui.Button(label="Remove SoftRes", style=discord.ButtonStyle.secondary,
                                   disabled=not bool(self.draft["softres_url"]))
         publish = discord.ui.Button(label="Post / Update Raid", style=discord.ButtonStyle.success)
         delete = discord.ui.Button(label="Delete Raid", style=discord.ButtonStyle.danger,
                                   disabled=self.draft["number"] not in self.saved_raid_ids)
+
+        async def set_title(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            await interaction.response.send_modal(PosterTextModal(
+                self, self.owner_id, interaction.message.id,
+                "custom_title", "Optional raid title", "Text after Raid #",
+                "e.g. First clear / Progression", required=False,
+            ))
 
         async def set_link(interaction):
             if not self.authorised(interaction):
@@ -381,6 +404,7 @@ class RaidPosterView(discord.ui.LayoutView):
                     self.cog.raid_db_path(), self.draft["number"], raid_at,
                     self.draft["instance_1"], self.draft["instance_2"],
                     self.draft["instance_3"], announce, self.draft["softres_url"],
+                    custom_title=self.draft.get("custom_title") or "",
                 )
                 if self.draft["softres_url"] is None:
                     event = set_softres_url(
@@ -407,10 +431,12 @@ class RaidPosterView(discord.ui.LayoutView):
                 self.cog, self.owner_id, self.draft["number"]
             ))
 
+        title.callback = set_title
         softres.callback = set_link
         clear.callback = remove_link
         publish.callback = post
         delete.callback = ask_delete
+        row.add_item(title)
         row.add_item(softres)
         row.add_item(clear)
         row.add_item(publish)
