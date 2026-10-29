@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 from unittest.mock import patch
 
 from cogs import raid_sheets, raid_schedule, raid_signup as raid
@@ -234,7 +235,7 @@ class RaidSheetsTests(unittest.TestCase):
                 method, endpoint, options = calls[0]
                 self.assertEqual(method, "POST")
                 self.assertTrue(endpoint.endswith(":append"))
-                self.assertIn(f"'{tab}'!A:{expected_end}", endpoint)
+                self.assertIn(f"'{tab}'!A:{expected_end}", unquote(endpoint))
                 self.assertEqual(options["params"]["insertDataOption"], "OVERWRITE")
                 self.assertEqual(options["params"]["valueInputOption"], "RAW")
                 self.assertEqual(options["json"]["values"], [values])
