@@ -4,6 +4,7 @@ An event is configured in the private testing channel for now. Sheets-to-bot
 synchronisation is separate: the Google Sheet does not authorise a Fly bot.
 """
 import sqlite3
+import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -31,7 +32,8 @@ RAID_COLUMNS = {
     "custom_title": "TEXT",
     "banner_url": "TEXT",
     "end_at": "TEXT",
-    "check_channel_id": "INTEGER",
+    "check_channel_id": "INTEGER",  # Old setting retained for migration.
+    "check_message_url": "TEXT",
     "roster_posted_at": "TEXT",
     "roster_updated_at": "TEXT",
     "confirmed_at": "TEXT",
@@ -80,6 +82,19 @@ def format_discord_date(value, *, style="F", with_relative=True):
     return display
 
 
+def validate_check_message_url(value):
+    """A shortened Check link must point to a Discord message."""
+    if not value or not value.strip():
+        return None
+    url = value.strip()
+    parts = urlsplit(url)
+    if (parts.scheme != "https" or parts.hostname != "discord.com"
+            or parts.username or parts.password or parts.port
+            or not re.fullmatch(r"/channels/\\d{16,20}/\\d{16,20}/\\d{16,20}/?", parts.path)):
+        raise ValueError("Use a Discord message permalink, not a channel link.")
+    return "https://discord.com" + parts.path.rstrip("/")
+
+
 def ensure_raid_fields(path):
     """Add new columns without clearing any existing sign-ups or characters."""
     with database(path) as con:
@@ -99,6 +114,13 @@ def ensure_raid_fields(path):
                 PRIMARY KEY (raid_id, position)
             )
         """)
+        for table in ("raid_confirmed_roster", "raid_public_roster"):
+            existing_columns = {
+                row[1] for row in con.execute(f"PRAGMA table_info({table})")
+            }
+            for column in ("class_name", "role", "spec"):
+                if column not in existing_columns:
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
 
 def validate_softres_url(value):
@@ -154,7 +176,8 @@ def set_softres_url(path, number, url):
 def save_raid(path, number, raid_date, instance_1, instance_2=None,
               instance_3=None, roster_announce=None, softres_url=None,
               custom_title=None, banner_url=None,
-              end_at=_UNCHANGED, check_channel_id=_UNCHANGED):
+              end_at=_UNCHANGED, check_channel_id=_UNCHANGED,
+              check_message_url=_UNCHANGED):
     softres = validate_softres_url(softres_url)
     if not 1 <= number <= 100000:
         raise ValueError("Raid number must be between 1 and 100000.")
@@ -178,6 +201,8 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         check_channel_id = int(check_channel_id)
         if not 0 < check_channel_id < 2**64:
             raise ValueError("Choose a valid Discord text channel for Check.")
+    if check_message_url is not _UNCHANGED:
+        check_message_url = validate_check_message_url(check_message_url)
     announce = parse_uk_datetime(roster_announce) if roster_announce else None
     instances = [(part or "").strip() for part in (instance_1, instance_2, instance_3)]
     if not instances[0] or any(len(part) > 80 for part in instances):
@@ -227,6 +252,11 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 "SELECT check_channel_id FROM raids WHERE raid_id=?", (number,)
             ).fetchone()
             check_channel_id = current[0] if current else None
+        if check_message_url is _UNCHANGED:
+            previous_check = con.execute(
+                "SELECT check_message_url FROM raids WHERE raid_id=?", (number,)
+            ).fetchone()
+            check_message_url = previous_check[0] if previous_check else None
         if not isinstance(custom_title, str):
             raise ValueError("Optional title must be text.")
         custom_title = " ".join(custom_title.split())
@@ -239,8 +269,8 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
                               instance_3, roster_announce_at, softres_url,
                               signup_open, custom_title, banner_url,
-                              end_at, check_channel_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                              end_at, check_channel_id, check_message_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
             ON CONFLICT(raid_id) DO UPDATE SET
                 title=excluded.title, raid_at=excluded.raid_at,
                 instance_1=excluded.instance_1, instance_2=excluded.instance_2,
@@ -251,13 +281,15 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 banner_url=excluded.banner_url,
                 end_at=excluded.end_at,
                 check_channel_id=excluded.check_channel_id,
+                check_message_url=excluded.check_message_url,
                 signup_open=CASE WHEN raids.roster_published=1
                        OR raids.archived_at IS NOT NULL
                        THEN 0 ELSE 1 END
         """, (number, full_title, start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
               announce.isoformat() if announce else None,
-              softres, custom_title, banner_url, end_at, check_channel_id))
+              softres, custom_title, banner_url, end_at,
+              check_channel_id, check_message_url))
     return read_raid(path, number)
 
 
@@ -489,7 +521,8 @@ def raid_panel_intro(event):
         f"## {title}\n"
         f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n\n"
         + "**Instances:** " + ", ".join(instances)
-        + f"\n**Check:** <#{event.get('check_channel_id') or DEFAULT_CHECK_CHANNEL_ID}>"
+        + (f"\n**Check:** [View message]({event['check_message_url']})"
+           if event.get("check_message_url") else "")
         + softres_line
         + "\n### Roster"
     )
@@ -502,7 +535,9 @@ def raid_roster_status(event):
             event["archived_at"], style="F", with_relative=False
         )
     if not event.get("roster_published"):
-        return "**Roster:** Forming, awaiting confirmation"
+        return "**Full roster posted:** " + format_discord_date(
+            event.get("roster_announce_at"), style="R", with_relative=False
+        )
     stamp = event.get("roster_updated_at")
     if stamp:
         return "**Update:** " + format_discord_date(stamp, style="F", with_relative=False)
@@ -511,7 +546,7 @@ def raid_roster_status(event):
         return "**Roster confirmed:** " + format_discord_date(
             stamp, style="F", with_relative=False
         )
-    return "**Roster:** Forming, awaiting confirmation"
+    return "**Roster confirmed:** To be confirmed"
 
 
 def _roster_group_text(title, players):
