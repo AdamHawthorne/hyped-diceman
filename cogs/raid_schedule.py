@@ -323,17 +323,21 @@ def raid_panel_intro(event):
 
 
 def _roster_group_text(title, players):
-    """Keep Barrows diamond labels but no voice-channel links or Hyjal split."""
+    """Short roster headings with consistent empty-state wording."""
     if title.startswith("Barrows · 10-player "):
-        heading = ("**Barrows · 10-player**\n" if title.endswith("🔸") else "") + title[-1]
+        heading = ("**Barrows**\n" if title.endswith("🔸") else "") + title[-1]
+    elif title == "Hyjal · 20-player":
+        heading = "**Hyjal**"
+    elif title == "Ony · 40-player":
+        heading = "**Ony**"
     else:
         heading = f"**{title}**"
     if not players:
         if title == "Hyjal · 20-player":
-            return heading + "\n🔹🔸 - Forming, await announcement"
+            return heading + "\n🔹🔸 - Not announced"
         if title.startswith("Barrows · 10-player "):
             return heading + " - Not announced"
-        return heading + "\n-# *Not announced*"
+        return heading + "\n- Not announced"
     names = []
     length = len(heading)
     for name in players:
