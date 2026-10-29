@@ -634,7 +634,7 @@ class SignupNoteModal(discord.ui.Modal):
         already = existing and existing[0].casefold() == self.name.casefold() \
             and existing[1] == "Available"
         await interaction.response.send_message(
-            f"✅ **Attendance {'updated' if already else 'registered'}** for Raid #{self.raid_id}.\n"
+            f"{guild_emoji('MoveTo')} **Attendance {'updated' if already else 'registered'}** for Raid #{self.raid_id}.\n"
             f"**{discord.utils.escape_markdown(self.name)}** is marked Available.\n"
             "Ogre says: If plans change, hit **Absent** as soon as you know.",
             ephemeral=True,
@@ -650,7 +650,7 @@ class ExistingAttendanceView(discord.ui.LayoutView):
         name, _, note = existing
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                f"## ✅ Already attending Raid #{raid_id}\n"
+                f"## {guild_emoji('MoveTo')} Already attending Raid #{raid_id}\n"
                 f"**{discord.utils.escape_markdown(name)}** · Available\n"
                 + (f"**Note:** {discord.utils.escape_markdown(note)}\n" if note else "")
                 + "Ogre has you down. If plans change, press **Absent** ASAP."
@@ -868,6 +868,16 @@ class CharacterManageView(discord.ui.LayoutView):
         buttons.add_item(main)
         buttons.add_item(delete)
         self.add_item(buttons)
+        back = discord.ui.Button(label="Back", style=discord.ButtonStyle.secondary)
+        async def back_callback(interaction):
+            if interaction.user.id != self.owner_id:
+                await interaction.response.send_message("Not your characters.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterActionView(self.owner_id, purpose="update")
+            )
+        back.callback = back_callback
+        self.add_item(discord.ui.ActionRow(back))
 
 
 
@@ -968,18 +978,25 @@ class CharacterNameModal(discord.ui.Modal):
                 return
             await interaction.response.send_message(
                 f"**{name}** registered and signed up for Raid "
-                f"#{self.signup_raid_id}! ✅\n"
+                f"#{self.signup_raid_id}! {guild_emoji('MoveTo')}\n"
                 "Nobody else can see your sign-up. "
                 "Ogre says: If plans change, hit **Absent** as soon as you know.",
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(
-            f"Ogre {'updated' if outcome == 'updated' else 'saved'} "
-            f"**{name}** · {self.class_name} / {self.spec} · "
-            f"**{self.role}**.\nUse **/raid characters** to see saved profiles.",
-            ephemeral=True,
+        character = next(
+            (row for row in member_characters(interaction.user.id)
+             if row[1].casefold() == self.name.value.strip().casefold()), None
         )
+        if character:
+            await interaction.response.send_message(
+                view=CharacterManageView(interaction.user.id, character[0], character),
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                f"Ogre saved **{name}**. Open Characters to edit.", ephemeral=True
+            )
 
 
 class ClassPickerView(discord.ui.LayoutView):
@@ -1415,9 +1432,9 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             if enabled is None:
                 message = "The 30-minute reminder window has already passed."
             elif enabled:
-                message = f"⏰ Ogre will DM you 30 minutes before Raid #{event['raid_id']}."
+                message = f"Ogre shout you 30 minutes before Raid #{event['raid_id']}."
             else:
-                message = "⏰ Raid reminder cancelled."
+                message = "Ogre stop raid reminder."
             await interaction.response.send_message(message, ephemeral=True)
 
         return RaidEventPanel(
