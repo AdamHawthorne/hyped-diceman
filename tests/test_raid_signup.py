@@ -35,7 +35,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(start=start):
                 output = raid_schedule.raid_panel_when(start)
-                self.assertRegex(output, r"^.+ - <t:\d+:R>\n")
+                self.assertRegex(output, r"^<t:\d+:F> - <t:\d+:R>\n")
                 self.assertRegex(output, r"<t:\d+:t> - <t:\d+:t>")
                 self.assertEqual(len(output.split("\n")), 2)
                 self.assertNotIn(":F>", output)
@@ -75,7 +75,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(
                 raid_schedule.raid_panel_text(event),
-                r"Thursday 5th Nov - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>",
+                r"<t:\d+:F> - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>",
             )
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
@@ -148,8 +148,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Hyjal**", empty)
             self.assertEqual(empty.count("**Hyjal**"), 1)
             self.assertEqual(empty.count("🔹🔸"), 1)
-            self.assertIn("🔸\n-# **Tanks**", empty)
-            self.assertIn("🔹\n-# **Tanks**", empty)
+            self.assertIn("**Barrows** 🔸\n-# **Tanks**", empty)
+            self.assertIn("**Barrows** 🔹\n-# **Tanks**", empty)
             self.assertIn("**Barrows**", empty)
             self.assertIn("**Ony**", empty)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
@@ -244,7 +244,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             barrows_text = raid_schedule.raid_panel_text(
                 barrows_only, [("Split Two", "Barrows 🔹")]
             )
-            self.assertIn("🔸\n-# **Tanks**", barrows_text)
+            self.assertIn("**Barrows** 🔸\n-# **Tanks**", barrows_text)
             self.assertIn("-# **DPS**\nSplit Two", barrows_text)
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
@@ -387,7 +387,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("@\u200beveryone", intro)
             self.assertNotIn("\n\n\n", intro)
             self.assertRegex(
-                intro, r"Wednesday 9th Dec - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>"
+                intro, r"<t:\d+:F> - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>"
             )
             self.assertNotIn("**Date:**", intro)
             self.assertNotIn("**Time:**", intro)
