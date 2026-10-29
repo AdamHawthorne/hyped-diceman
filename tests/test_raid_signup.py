@@ -87,8 +87,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(components[0]["type"], 17)  # Container
             self.assertEqual(components[1]["type"], 1)   # Action row of buttons
             self.assertEqual(components[0]["components"][0]["type"], 9)  # Section
-            self.assertEqual(components[0]["components"][1]["type"], 12) # Media gallery
-            self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][1]))
+            self.assertEqual(components[0]["components"][-1]["type"], 12) # Media gallery
+            self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][-1]))
             self.assertLess(text.index("Roster Announcement:"), text.index("y6bCxy.png"))
             self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Sign"'))
             self.assertIn("<t:", text)
@@ -108,7 +108,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
             self.assertEqual(raid_schedule.active_panels(path)[0]["panel_message_id"], 12345)
 
-    async def test_forever_roster_groups_show_separate_20_and_two_10_man_teams(self):
+    async def test_forever_roster_uses_diamond_voice_splits_without_a_b_labels(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             raid.create_schema(path)
@@ -119,51 +119,92 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 roster_announce="2026-12-08 21:00",
             )
             empty = raid_schedule.raid_panel_text(event)
-            for header in ("Hyjal · 20-player", "Barrows · 10-player A",
-                           "Barrows · 10-player B", "Ony · 40-player"):
-                self.assertIn("**" + header + "**", empty)
-            self.assertEqual(empty.count("*Not announced*"), 4)
+            for heading in ("Hyjal · 20-player", "Barrows · 10-player",
+                            "Ony · 40-player"):
+                self.assertIn("**" + heading + "**", empty)
+            self.assertEqual(empty.count("*Not announced*"), 5)
             self.assertIn("**Instances:** Hyjal (20m), Barrows (10m), Ony (40m)", empty)
-            self.assertNotIn("**Raid:**", empty)
             self.assertLess(empty.index("**Roster Announcement:**"),
                             empty.index("### Roster"))
+            self.assertNotIn("Group A", empty)
+            self.assertNotIn("Group B", empty)
 
-            # A character doing both Hyjal and Barrows appears on BOTH rosters.
-            # Sheets only passes leadership-approved names to this method.
+            # Unassigned Hyjal players use 🔸 by default. Both channels
+            # distinguish the two voice splits for the 20-player team.
             members = [
-                ("Snore Mon", "Hyjal, Barrows A, Ony"),
-                ("Healer One", "Hyjal, Barrows B"),
-                ("Healer Two", "Barrows B"),
+                ("Snore Mon", "Hyjal, Barrows 🔸, Ony"),
+                ("Healer One", "Hyjal, Barrows 🔹"),
+                ("Healer Two", "Barrows 🔹"),
+                ("Default Gamer", "Hyjal"),
                 ("Pug Main", "Ony"),
                 ("Gamer TBC", ""),
             ]
             grouped = raid_schedule.roster_groups(event, members)
             self.assertEqual(grouped, [
-                ("Hyjal · 20-player", ["Snore Mon", "Healer One"]),
-                ("Barrows · 10-player A", ["Snore Mon"]),
-                ("Barrows · 10-player B", ["Healer One", "Healer Two"]),
+                ("Hyjal · 20-player 🔸", ["Snore Mon", "Default Gamer"]),
+                ("Hyjal · 20-player 🔹", ["Healer One"]),
+                ("Barrows · 10-player 🔸", ["Snore Mon"]),
+                ("Barrows · 10-player 🔹", ["Healer One", "Healer Two"]),
                 ("Ony · 40-player", ["Snore Mon", "Pug Main"]),
                 ("Selected · group pending", ["Gamer TBC"]),
             ])
-            text = raid_schedule.raid_panel_text(event, members)
-            self.assertLess(text.index("**Hyjal · 20-player**"),
-                            text.index("**Barrows · 10-player A**"))
-            self.assertLess(text.index("**Barrows · 10-player A**"),
-                            text.index("**Barrows · 10-player B**"))
-            self.assertIn("**Selected · group pending**", text)
-            self.assertEqual(text.count("• Snore Mon"), 3)
-            self.assertNotIn("Signup", text)
-            self.assertNotIn("Collecting gamers", text)
+            visible = raid_schedule.raid_panel_text(event, members)
+            self.assertEqual(visible.count("• Snore Mon"), 3)
+            self.assertEqual(visible.count("• Healer One"), 2)
+            self.assertNotIn("Group A", visible)
+            self.assertNotIn("Group B", visible)
+            self.assertNotIn("Collecting gamers", visible)
 
-            # Barrows-only nights still display two distinct ten-player rosters.
+            # Actual icon-only URL buttons link to the supplied channels.
+            panel = raid_schedule.RaidEventPanel(
+                event, guild_id=123456789,
+                on_signup=AsyncMock(), on_update=AsyncMock(),
+                on_gear=AsyncMock(), on_absent=AsyncMock(),
+                public_roster=members,
+            )
+            rendered = panel.to_components()
+            main = rendered[0]["components"]
+            self.assertEqual(main[0]["type"], 9)  # Intro + thumbnail
+            self.assertEqual(main[-1]["type"], 12)  # Bottom banner
+            self.assertLess(len(main), 11)  # Discord container component budget
+            url_buttons = [
+                item for item in panel.walk_children()
+                if isinstance(item, discord.ui.Button)
+                and item.style == discord.ButtonStyle.link
+            ]
+            self.assertEqual(len(url_buttons), 4)
+            self.assertTrue(all(button.label is None for button in url_buttons))
+            self.assertEqual(
+                [button.url for button in url_buttons],
+                ["https://discord.com/channels/123456789/1180717517577129984",
+                 "https://discord.com/channels/123456789/1560686612109856819"] * 2,
+            )
+            self.assertEqual([button.emoji.name for button in url_buttons],
+                             ["🔊"] * 4)
+            self.assertEqual(
+                [button.label for button in panel.walk_children()
+                 if isinstance(button, discord.ui.Button)
+                 and button.style != discord.ButtonStyle.link],
+                ["Sign", "Update", "Gear", "Absent"],
+            )
+            self.assertLess(
+                json.dumps(rendered).index("Roster Announcement:"),
+                json.dumps(rendered).index("y6bCxy.png"),
+            )
+
+            # Historic A/B roster tags still resolve to the same voice splits.
+            self.assertEqual(raid_schedule._split_from_tokens({"group a"}), "🔸")
+            self.assertEqual(raid_schedule._split_from_tokens({"group b"}), "🔹")
+
+            # Barrows-only nights still show two icon sections and join links.
             barrows_only = raid_schedule.save_raid(
                 path, 2, "2026-12-10 20:00", "Barrows (10m)"
             )
             text = raid_schedule.raid_panel_text(
-                barrows_only, [("Split Two", "Barrows B")]
+                barrows_only, [("Split Two", "Barrows 🔹")]
             )
-            self.assertIn("**Barrows · 10-player A**", text)
-            self.assertIn("**Barrows · 10-player B**", text)
+            self.assertIn("🔸", text)
+            self.assertIn("🔹", text)
             self.assertNotIn("**Hyjal · 20-player**", text)
             self.assertNotIn("**Ony · 40-player**", text)
 
