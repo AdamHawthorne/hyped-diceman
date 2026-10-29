@@ -122,8 +122,18 @@ def _raid_snapshot(db_path):
     return characters, raids, signups, absences, gear
 
 
-def _desired_rows(db_path):
+def character_discord_ids(db_path):
+    """Distinct Discord accounts with registered characters, for name resolution."""
+    from cogs.raid_schedule import database
+    with database(db_path) as con:
+        return [int(row[0]) for row in con.execute(
+            "SELECT DISTINCT discord_id FROM characters ORDER BY discord_id"
+        )]
+
+
+def _desired_rows(db_path, discord_names=None):
     chars, raids, signups, absences, gear = _raid_snapshot(db_path)
+    discord_names = discord_names or {}
     by_raid_member = {(r["raid_id"], r["discord_id"]): r for r in signups}
     off = {(r["raid_id"], r["discord_id"]): r for r in absences}
     desired = {
@@ -142,7 +152,9 @@ def _desired_rows(db_path):
             if c.get("last_simc_at") else ""
         )
         desired["characters"][key] = [
-            key, str(c["discord_id"]), "", c["name"], c["class_name"],
+            key, str(c["discord_id"]),
+            discord_names.get(int(c["discord_id"]), ""),
+            c["name"], c["class_name"],
             c["spec"], c["role"], "Main" if c["is_main"] else "Alt",
             "", simc_date,
         ]
@@ -220,6 +232,10 @@ def _sync_rows(session, kind, rows, desired):
             sheet_row = existing[key]
             old = rows[sheet_row - 1] if sheet_row - 1 < len(rows) else []
             old = (old[:write_width] + [""] * write_width)[:write_width]
+            # If Discord is unavailable, do not erase a previously known name.
+            if kind == "characters" and not values[2] and old[2]:
+                values = [*values]
+                values[2] = old[2]
             if old != values:
                 updates.append({
                     "range": f"'{tab}'!A{sheet_row}:{end_col}{sheet_row}",
@@ -322,7 +338,7 @@ def _save_public(db_path, published):
     return changed
 
 
-def sync_once(db_path):
+def sync_once(db_path, discord_names=None):
     """Synchronise one SQLite snapshot, then ingest manually approved roster.
 
     No external connection is attempted unless the Fly secret is configured.
@@ -333,7 +349,7 @@ def sync_once(db_path):
     session = _session()
     try:
         remote = _read_tabs(session)
-        desired = _desired_rows(db_path)
+        desired = _desired_rows(db_path, discord_names=discord_names)
         counts = {}
         for kind in SHEETS:
             counts[kind] = _sync_rows(session, kind, remote[kind], desired[kind])
