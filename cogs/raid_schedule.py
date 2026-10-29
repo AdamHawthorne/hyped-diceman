@@ -188,9 +188,18 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         banner_url = validate_banner_url(banner_url)
         if end_at is _UNCHANGED:
             current = con.execute(
-                "SELECT end_at FROM raids WHERE raid_id=?", (number,)
+                "SELECT raid_at, end_at FROM raids WHERE raid_id=?", (number,)
             ).fetchone()
-            end_at = current[0] if current else None
+            end_at = current[1] if current else None
+            if end_at and current[0] != start.isoformat():
+                # Legacy start-time edits keep the same custom raid duration,
+                # rather than pointing to an end on the old calendar date.
+                original_start = datetime.fromisoformat(current[0])
+                original_end = datetime.fromisoformat(end_at)
+                duration = (original_end.astimezone(timezone.utc) -
+                            original_start.astimezone(timezone.utc))
+                end_at = (start.astimezone(timezone.utc) +
+                          duration).astimezone(UK).isoformat()
         if check_channel_id is _UNCHANGED:
             current = con.execute(
                 "SELECT check_channel_id FROM raids WHERE raid_id=?", (number,)
