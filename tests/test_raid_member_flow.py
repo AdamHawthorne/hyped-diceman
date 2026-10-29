@@ -140,6 +140,50 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
         picker = raid.SpecPickerView(42, "Mage", editing_character_id=7)
         self.assertEqual(picker.editing_character_id, 7)
 
+    async def test_signup_note_modal_saves_optional_note_for_correct_member(self):
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "my_signup", return_value=None), \
+             patch.object(raid, "save_signup") as saving:
+            modal = raid.SignupNoteModal(42, 1, 5, "First Last")
+            modal.note._value = "Can stay for 2 hours"
+            response = SimpleNamespace(send_message=AsyncMock())
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID, response=response,
+            )
+            await modal.on_submit(interaction)
+            saving.assert_called_once_with(
+                1, 42, 5, note="Can stay for 2 hours"
+            )
+            self.assertTrue(response.send_message.await_args.kwargs["ephemeral"])
+            response.send_message.reset_mock()
+            interaction.user.id = 99
+            await modal.on_submit(interaction)
+            saving.assert_called_once()
+            self.assertIn("isn't yours", response.send_message.await_args.args[0])
+
+    async def test_update_wizard_saves_profile_in_place(self):
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "update_character_profile",
+                          return_value="First Last") as saving:
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID,
+                response=SimpleNamespace(
+                    edit_message=AsyncMock(), send_message=AsyncMock()
+                ),
+            )
+            await raid.apply_profile_update(
+                interaction, 42, 7, "Warrior", "Protection", "Tank"
+            )
+            saving.assert_called_once_with(
+                42, 7, "Warrior", "Protection", "Tank"
+            )
+            self.assertIsInstance(
+                interaction.response.edit_message.await_args.kwargs["view"],
+                raid.ProfileUpdatedView,
+            )
+
     async def test_absent_button_opens_modal_directly(self):
         with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
             cog = raid.RaidPrototype(SimpleNamespace())
