@@ -673,13 +673,13 @@ class RaidEventPanel(discord.ui.LayoutView):
         if on_absent is not None:
             absent.callback = on_absent
         reminder = discord.ui.Button(
-            label="Alarm", emoji="⏰",
+            emoji="🔔",
             custom_id=f"hyped_raid_{event_id}_reminder",
             style=discord.ButtonStyle.secondary,
             disabled=on_remind is None or bool(event.get("archived_at")),
         )
         if on_remind is not None:
             reminder.callback = on_remind
-        for control in (sign_up, update, gear, reminder, absent):
+        for control in (sign_up, reminder, update, gear, absent):
             controls.add_item(control)
         self.add_item(controls)
