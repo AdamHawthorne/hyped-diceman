@@ -400,15 +400,11 @@ class CharacterActionView(discord.ui.LayoutView):
         rows = member_characters(owner_id)
         if purpose == "signup":
             status = (
-                f"**Your current sign-up:** {discord.utils.escape_markdown(current_signup[0])} "
-                f"({current_signup[1]})\n"
+                f"**Now:** {discord.utils.escape_markdown(current_signup[0])} "
+                f"· {current_signup[1]}\n"
                 if current_signup else ""
             )
-            hint = (
-                f"{status}Choose a saved character to sign up or change your choice.\n"
-                "Only leadership can see who signed up. "
-                "Update gear separately when you have a SimC export."
-            )
+            hint = f"{status}Pick character. Ogre sort your sign-up."
         else:
             hint = ("Choose which character to update. Paste short SimC exports here; "
                     "use /raid gear for larger .txt/.simc files.")
@@ -450,34 +446,14 @@ class CharacterActionView(discord.ui.LayoutView):
                 await interaction.response.send_message(str(exc), ephemeral=True)
                 return
             await interaction.response.send_message(
-                f"Ogre got your sign-up for Raid #{self.raid_id}: "
-                f"**{discord.utils.escape_markdown(match[1])}**. "
-                "Applicant list remains hidden.", ephemeral=True
+                f"Ogre got **{discord.utils.escape_markdown(match[1])}** "
+                f"for Raid #{self.raid_id}.", ephemeral=True
             )
 
         selection.callback = select_character
         self.add_item(discord.ui.ActionRow(selection))
         if purpose == "signup":
-            withdraw = discord.ui.Button(
-                label="Withdraw my sign-up", style=discord.ButtonStyle.secondary,
-            )
-
-            async def on_withdraw(interaction):
-                if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                    await interaction.response.send_message("Private owner test only.", ephemeral=True)
-                    return
-                try:
-                    removed = withdraw_signup(self.raid_id, self.owner_id)
-                except (ValueError, sqlite3.Error) as exc:
-                    await interaction.response.send_message(str(exc), ephemeral=True)
-                    return
-                await interaction.response.send_message(
-                    "Ogre withdrew your sign-up." if removed else "No sign-up to withdraw.",
-                    ephemeral=True,
-                )
-
-            withdraw.callback = on_withdraw
-            self.add_item(discord.ui.ActionRow(withdraw))
+            self.add_item(discord.ui.ActionRow(absence_button(owner_id, raid_id)))
 
 
 class CharacterNameModal(discord.ui.Modal):
@@ -567,6 +543,10 @@ class ClassPickerView(discord.ui.LayoutView):
 
         select.callback = select_class
         self.add_item(discord.ui.ActionRow(select))
+        if self.signup_raid_id is not None:
+            self.add_item(discord.ui.ActionRow(
+                absence_button(self.owner_id, self.signup_raid_id)
+            ))
 
 
 class SpecPickerView(discord.ui.LayoutView):
