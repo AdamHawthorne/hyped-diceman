@@ -108,9 +108,16 @@ def _raid_snapshot(db_path):
             "SELECT * FROM raid_absences ORDER BY raid_id, discord_id"
         )]
         gear = [dict(r) for r in con.execute("""
-            SELECT g.character_id, c.discord_id, c.name, MAX(g.submitted_at) AS latest
-            FROM gear_exports g JOIN characters c ON c.character_id=g.character_id
-            GROUP BY g.character_id
+            SELECT c.character_id, c.discord_id, c.name,
+                (SELECT MAX(g.submitted_at) FROM gear_exports g
+                 WHERE g.character_id=c.character_id) AS simc_latest,
+                (SELECT MAX(i.submitted_at) FROM gear_images i
+                 WHERE i.character_id=c.character_id) AS image_latest
+            FROM characters c
+            WHERE EXISTS (SELECT 1 FROM gear_exports g
+                          WHERE g.character_id=c.character_id)
+               OR EXISTS (SELECT 1 FROM gear_images i
+                          WHERE i.character_id=c.character_id)
         """)]
     return characters, raids, signups, absences, gear
 
@@ -177,8 +184,11 @@ def _desired_rows(db_path):
             ]
     for g in gear:
         key = str(g["character_id"])
+        latest = max(g["simc_latest"] or "", g["image_latest"] or "")
+        formats = ("SimC + Screenshot" if g["simc_latest"] and g["image_latest"]
+                   else "SimC" if g["simc_latest"] else "Screenshot")
         desired["gear"][key] = [
-            key, str(g["discord_id"]), g["name"], g["latest"],
+            key, str(g["discord_id"]), g["name"], latest, formats,
         ]
     return desired
 
@@ -202,8 +212,8 @@ def _sync_rows(session, kind, rows, desired):
     tab, _ = SHEETS[kind]
     existing = _existing_keys(kind, rows)
     write_width = {"characters": 10, "signups": 10, "roster": 8,
-                   "gear": 4, "history": 4}[kind]
-    end_col = {10: "J", 8: "H", 4: "D"}[write_width]
+                   "gear": 5, "history": 4}[kind]
+    end_col = {10: "J", 8: "H", 5: "E", 4: "D"}[write_width]
     updates, additions = [], []
     for key, values in desired.items():
         if key in existing:
