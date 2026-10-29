@@ -28,19 +28,25 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Attendance", raid.SHEET_TABS)
 
     async def test_raid_panel_three_hour_window_handles_midnight_and_dst(self):
-        self.assertEqual(
-            raid_schedule.raid_panel_when("2026-12-09T21:00:00+00:00"),
-            "Wednesday, 9 December 2026\n21:00 - 00:00",
+        for start, date_line in (
+            ("2026-12-09T21:00:00+00:00", "Wednesday, 9 December 2026"),
+            ("2026-07-01T21:00:00+01:00", "Wednesday, 1 July 2026"),
+            ("2027-03-28T00:30:00+00:00", "Sunday, 28 March 2027"),
+        ):
+            with self.subTest(start=start):
+                output = raid_schedule.raid_panel_when(start)
+                self.assertTrue(output.startswith(date_line + "\n"))
+                self.assertRegex(output, r"<t:\d+:t> - <t:\d+:t>")
+                self.assertNotIn("<t:", output.split("\n")[0])
+                self.assertNotIn(":F>", output)
+        # A customised end is a separate Discord timestamp (not a static clock).
+        custom = raid_schedule.raid_panel_when(
+            "2026-12-09T21:00:00+00:00", "2026-12-10T01:30:00+00:00"
         )
-        self.assertEqual(
-            raid_schedule.raid_panel_when("2026-07-01T21:00:00+01:00"),
-            "Wednesday, 1 July 2026\n21:00 - 00:00",
+        expected_end = raid_schedule.format_discord_date(
+            "2026-12-10T01:30:00+00:00", style="t", with_relative=False
         )
-        # Exactly three elapsed hours when UK clocks go forward.
-        self.assertEqual(
-            raid_schedule.raid_panel_when("2027-03-28T00:30:00+00:00"),
-            "Sunday, 28 March 2027\n00:30 - 04:30",
-        )
+        self.assertTrue(custom.endswith(" - " + expected_end))
 
     async def test_schedule_migration_and_v2_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -67,9 +73,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Roster Announcement:", text)
             self.assertIn("**Check:** <#1563663258047619123>", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
-            self.assertIn(
-                "Thursday, 5 November 2026\n20:00 - 23:00",
+            self.assertRegex(
                 raid_schedule.raid_panel_text(event),
+                r"Thursday, 5 November 2026\n<t:\d+:t> - <t:\d+:t>",
             )
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
@@ -377,7 +383,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(" - @everyone **new**", intro)
             self.assertIn("@\u200beveryone", intro)
             self.assertNotIn("\n\n\n", intro)
-            self.assertIn("Wednesday, 9 December 2026\n21:00 - 00:00", intro)
+            self.assertRegex(
+                intro, r"Wednesday, 9 December 2026\n<t:\d+:t> - <t:\d+:t>"
+            )
             self.assertNotIn("**Date:**", intro)
             self.assertNotIn("**Time:**", intro)
 
@@ -585,6 +593,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("y6bCxy.png", components)
             self.assertIn("Choose raid date", components)
             self.assertIn("Choose start time", components)
+            self.assertIn("Choose end time", components)
+            self.assertIn("Choose Check channel", components)
+            self.assertIn("**Check channel:** <#1563663258047619123>", poster.description())
             self.assertIn("Raid instance #1", components)
             self.assertIn("Raid instance #2", components)
             self.assertIn("Raid instance #3", components)
@@ -608,9 +619,69 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(draft2["number"], 1)
             self.assertEqual(draft2["day"], "2026-11-05")
             self.assertEqual(draft2["instance_1"], "Molten Core")
+            self.assertIsNone(draft2["end_time"])
+            self.assertEqual(draft2["check_channel_id"],
+                             raid_schedule.DEFAULT_CHECK_CHANNEL_ID)
             self.assertIn("Edit Raid #1", json.dumps(
                 raid_poster.RaidPosterView(dummy_cog, 42).to_components()
             ))
+
+    async def test_custom_end_time_and_check_channel_roundtrip_and_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.ensure_raid_fields(path)
+            draft = raid_poster.draft_from_event(None)
+            draft.update(
+                day="2026-12-09", time="21:00", end_time="01:30",
+                instance_1="Hyjal (20m)", check_channel_id=1564075966895231059,
+            )
+            end_at = raid_poster.poster_end_at(draft)
+            self.assertTrue(end_at.startswith("2026-12-10T01:30:00"))
+            event = raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)",
+                end_at=end_at, check_channel_id=draft["check_channel_id"]
+            )
+            self.assertEqual(event["end_at"], end_at)
+            self.assertEqual(event["check_channel_id"], 1564075966895231059)
+            self.assertIn("**Check:** <#1564075966895231059>",
+                          raid_schedule.raid_panel_intro(event))
+            self.assertIn(" - " + raid_schedule.format_discord_date(
+                end_at, style="t", with_relative=False
+            ), raid_schedule.raid_panel_intro(event))
+            recovered = raid_poster.draft_from_event(event)
+            self.assertEqual(recovered["end_time"], "01:30")
+            self.assertEqual(recovered["check_channel_id"], 1564075966895231059)
+            # Old setup callers must not erase either new setting.
+            legacy = raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)"
+            )
+            self.assertEqual(legacy["end_at"], end_at)
+            self.assertEqual(legacy["check_channel_id"], 1564075966895231059)
+            # Explicit default selection clears custom end, but not the Check channel.
+            reset = raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)", end_at=None
+            )
+            self.assertIsNone(reset["end_at"])
+            self.assertEqual(reset["check_channel_id"], 1564075966895231059)
+            with raid.database(path) as con:
+                cols = {r[1] for r in con.execute("PRAGMA table_info(raids)")}
+                self.assertTrue({"end_at", "check_channel_id"} <= cols)
+
+    async def test_poster_rejects_invalid_end_times_and_accepts_after_midnight(self):
+        draft = raid_poster.draft_from_event(None)
+        draft.update(day="2026-12-09", time="21:00", instance_1="Hyjal (20m)")
+        self.assertIsNone(raid_poster.poster_end_at(draft))
+        for end_time in ("21:00", "20:00", "garbage", "25:00"):
+            with self.subTest(end_time=end_time):
+                draft["end_time"] = end_time
+                with self.assertRaises(ValueError):
+                    raid_poster.poster_end_at(draft)
+        draft["end_time"] = "00:00"
+        self.assertTrue(raid_poster.poster_end_at(draft).startswith("2026-12-10T00:00"))
+        draft["end_time"] = "23:00"
+        self.assertTrue(raid_poster.poster_end_at(draft).startswith("2026-12-09T23:00"))
 
     async def test_signup_hidden_and_gear_check_is_independent(self):
         with tempfile.TemporaryDirectory() as tmp:
