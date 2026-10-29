@@ -281,7 +281,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(controls, [
                 "Optional Raid Title", "Bottom Banner", "Optional SoftRes",
-                "Remove SoftRes", "Post / Update Raid", "Delete Raid",
+                "Remove SoftRes", "Check Message Link", "Remove Check Link",
+                "Post / Update Raid", "Delete Raid",
             ])
             # Old /raid setup commands must preserve an existing subtitle.
             updated = raid_schedule.save_raid(
