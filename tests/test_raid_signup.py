@@ -44,7 +44,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             text = json.dumps(panel.to_components())
             self.assertIn("<Hyped> Raid #1", text)
-            self.assertIn("**Raid:** Molten Core", text)
+            self.assertIn("**Instances:** Molten Core", text)
             self.assertNotIn("Raid instance #1:", text)
             self.assertIn("asI88C.png", text)
             self.assertIn("y6bCxy.png", text)
@@ -61,19 +61,19 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Collecting gamers", text)
             self.assertIn("### Roster", text)
             self.assertIn("**Roster Announcement:**", text)
-            self.assertTrue(
-                raid_schedule.raid_panel_text(event).strip().endswith(
-                    raid_schedule.format_discord_date(
-                        event["roster_announce_at"], style="R", with_relative=False
-                    )
-                )
-            )
+            panel_text = raid_schedule.raid_panel_text(event)
+            self.assertLess(panel_text.index("**Check:**"),
+                            panel_text.index("**Roster Announcement:**"))
+            self.assertLess(panel_text.index("**Roster Announcement:**"),
+                            panel_text.index("### Roster"))
+            self.assertIn("**Selected players**", panel_text)
+            self.assertIn("-# *Not announced*", panel_text)
             visible = raid_schedule.raid_panel_text(
                 event, [("Snore Mon", "Ony, Hyjal"), ("Healer Main", "Barrows A")]
             )
-            self.assertIn("**Snore Mon** — Ony, Hyjal", visible)
-            self.assertIn("**Healer Main** — Barrows A", visible)
-            self.assertLess(visible.index("Snore Mon"), visible.index("Roster Announcement"))
+            self.assertIn("• Snore Mon", visible)
+            self.assertIn("• Healer Main", visible)
+            self.assertLess(visible.index("Roster Announcement"), visible.index("Snore Mon"))
             self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
@@ -102,7 +102,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             updated = json.dumps(raid_schedule.RaidEventPanel(
                 event, on_register=AsyncMock(), on_characters=AsyncMock()
             ).to_components())
-            self.assertIn("**Raid:** Molten Core, Onyxia, Blackwing Lair", updated)
+            self.assertIn("**Instances:** Molten Core, Onyxia, Blackwing Lair", updated)
             self.assertNotIn("Raid instance #", updated)
             self.assertEqual(raid_schedule.latest_raid(path)["raid_id"], 1)
             raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
