@@ -554,7 +554,6 @@ def raid_panel_intro(event):
         + (f"\n**Check:** [View message]({event['check_message_url']})"
            if event.get("check_message_url") else "")
         + softres_line
-        + "\n### Roster"
     )
 
 
@@ -565,7 +564,7 @@ def raid_roster_status(event):
             event["archived_at"], style="F", with_relative=False
         )
     if not event.get("roster_published"):
-        return "**Confirmation:** " + format_discord_date(
+        return "**Roster confirmation:** " + format_discord_date(
             event.get("roster_announce_at"), style="R", with_relative=False
         )
     stamp = event.get("roster_updated_at")
@@ -607,10 +606,10 @@ def _roster_group_text(title, players):
 def raid_panel_text(event, public_roster=(), *, emoji_map=None):
     """Plain-text equivalent used for previews and roster layout tests."""
     groups = roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
-    return raid_panel_intro(event) + "".join(
+    return raid_panel_intro(event) + ("\n### Roster" if public_roster else "") + "".join(
         "\n\n" + _roster_group_text(title, players)
         for title, players in groups
-    ) + "\n\n" + raid_roster_status(event)
+    ) * bool(public_roster) + "\n\n" + raid_roster_status(event)
 
 
 def roster_components(event, public_roster, *, emoji_map=None):
@@ -618,7 +617,7 @@ def roster_components(event, public_roster, *, emoji_map=None):
     return [
         discord.ui.TextDisplay(_roster_group_text(title, players))
         for title, players in roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
-    ]
+    ] if public_roster else []
 
 
 class RaidEventPanel(discord.ui.LayoutView):
@@ -635,7 +634,7 @@ class RaidEventPanel(discord.ui.LayoutView):
                     RAID_PANEL_IMAGE, description="Hyped raid image"
                 ),
             ),
-            *roster_components(event, public_roster, emoji_map=emoji_map),
+            *( [discord.ui.TextDisplay("### Roster")] + roster_components(event, public_roster, emoji_map=emoji_map) if public_roster else [] ),
             discord.ui.TextDisplay(raid_roster_status(event)),
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(
@@ -647,18 +646,18 @@ class RaidEventPanel(discord.ui.LayoutView):
         ))
         controls = discord.ui.ActionRow()
         sign_up = discord.ui.Button(
-            label="Sign", custom_id=f"hyped_raid_{event_id}_signup",
+            label="Attend", custom_id=f"hyped_raid_{event_id}_signup",
             style=discord.ButtonStyle.success,
             disabled=not bool(event.get("signup_open")) or bool(event.get("roster_published")),
         )
         update = discord.ui.Button(
-            label="Update", custom_id=f"hyped_raid_{event_id}_update",
+            label="Characters", custom_id=f"hyped_raid_{event_id}_update",
             style=discord.ButtonStyle.secondary,
             disabled=(on_update is None or bool(event.get("roster_published"))
                       or bool(event.get("archived_at"))),
         )
         gear = discord.ui.Button(
-            label="Gear", custom_id=f"hyped_raid_{event_id}_gear",
+            label="SimC", custom_id=f"hyped_raid_{event_id}_gear",
             style=discord.ButtonStyle.secondary,
             disabled=on_gear is None or bool(event.get("archived_at")),
         )
@@ -677,6 +676,6 @@ class RaidEventPanel(discord.ui.LayoutView):
             gear.callback = on_gear
         if on_absent is not None:
             absent.callback = on_absent
-        for control in (sign_up, update, gear, absent):
+        for control in (sign_up, update, gear):
             controls.add_item(control)
         self.add_item(controls)
