@@ -6,7 +6,7 @@ import discord
 import sqlite3
 
 from cogs.raid_schedule import (
-    RAID_IMAGE, ACCENT, DEFAULT_CHECK_CHANNEL_ID, format_discord_date,
+    RAID_IMAGE, ACCENT, format_discord_date, validate_check_message_url,
     raid_panel_when,
     list_raids, parse_uk_datetime, read_raid, save_raid,
     validate_softres_url, validate_banner_url, set_softres_url,
@@ -32,7 +32,7 @@ def draft_from_event(event):
     if not event:
         return {
             "number": None, "day": None, "time": "20:00",
-            "end_time": None, "check_channel_id": DEFAULT_CHECK_CHANNEL_ID,
+            "end_time": None, "check_message_url": None,
             "instance_1": None, "instance_2": None, "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
             "custom_title": "", "banner_url": None,
@@ -44,7 +44,7 @@ def draft_from_event(event):
         "time": start.strftime("%H:%M"),
         "end_time": (datetime.fromisoformat(event["end_at"]).astimezone(UK).strftime("%H:%M")
                      if event.get("end_at") else None),
-        "check_channel_id": event.get("check_channel_id") or DEFAULT_CHECK_CHANNEL_ID,
+        "check_message_url": event.get("check_message_url"),
         "instance_1": event.get("instance_1"),
         "instance_2": event.get("instance_2"),
         "instance_3": event.get("instance_3"),
@@ -108,7 +108,7 @@ class PosterTextModal(discord.ui.Modal):
         self.text_field = discord.ui.TextInput(
             label=label, placeholder=placeholder,
             max_length=(1500 if field == "softres_url"
-                        else 512 if field == "banner_url"
+                        else 512 if field in ("banner_url", "check_message_url")
                         else 70 if field == "custom_title"
                         else 5 if field in ("time", "end_time") else 80),
             required=required,
@@ -134,6 +134,8 @@ class PosterTextModal(discord.ui.Modal):
                     datetime.strptime(value, "%H:%M")
             elif self.field == "banner_url":
                 value = validate_banner_url(value)
+            elif self.field == "check_message_url":
+                value = validate_check_message_url(value)
             elif self.field.startswith("instance_"):
                 if not value:
                     raise ValueError("First raid instance cannot be blank.")
@@ -226,8 +228,7 @@ class RaidPosterView(discord.ui.LayoutView):
         self.add_date_picker()
         self.add_time_picker()
         self.add_end_time_picker()
-        self.add_check_channel_picker()
-        for i in (1, 2, 3):
+         for i in (1, 2, 3):
             self.add_instance_picker(i)
         self.add_announcement_picker()
         self.add_controls()
@@ -245,7 +246,8 @@ class RaidPosterView(discord.ui.LayoutView):
             raid_at, announce = poster_schedule(d)
             raid_date = raid_panel_when(parse_uk_datetime(raid_at).isoformat(), poster_end_at(d))
             announce_date = (
-                format_discord_date(parse_uk_datetime(announce).isoformat())
+                format_discord_date(parse_uk_datetime(announce).isoformat(),
+                                    style="R", with_relative=False)
                 if announce else "To be confirmed"
             )
         except ValueError:
@@ -263,9 +265,9 @@ class RaidPosterView(discord.ui.LayoutView):
             f"## Raid Poster · {display_title}\n"
             "-# Leadership setup only. Choose options, then publish the real raid panel.\n\n"
             f"**Raid date:** {raid_date}\n"
-            f"**Check channel:** <#{d.get('check_channel_id') or DEFAULT_CHECK_CHANNEL_ID}>\n"
+            f"**Check message:** {'[View message](' + d['check_message_url'] + ')' if d.get('check_message_url') else 'Not set (optional)'}\n"
             f"{instances}\n"
-            f"**Roster announcement:** {announce_date}\n"
+            f"**Confirmation:** {announce_date}\n"
             f"**SoftRes:** {softres}\n"
             f"**Bottom banner:** {banner}\n"
             "**Post destination:** private #ogre (testing)\n\n"
@@ -409,20 +411,6 @@ class RaidPosterView(discord.ui.LayoutView):
                 await self.changed(interaction, end_time=None if selection == "auto" else selection)
         picker = self._select("Choose end time (UK)", options, choose)
 
-    def add_check_channel_picker(self):
-        picker = discord.ui.ChannelSelect(
-            channel_types=[discord.ChannelType.text, discord.ChannelType.news],
-            placeholder="Choose Check channel (#resources, etc.)",
-            min_values=1, max_values=1,
-        )
-        async def choose(interaction):
-            if not self.authorised(interaction):
-                await interaction.response.send_message("Only owner.", ephemeral=True)
-                return
-            await self.changed(interaction, check_channel_id=picker.values[0].id)
-        picker.callback = choose
-        self.add_item(discord.ui.ActionRow(picker))
-
     def add_instance_picker(self, number):
         field = f"instance_{number}"
         current = self.draft[field]
@@ -483,6 +471,11 @@ class RaidPosterView(discord.ui.LayoutView):
         softres = discord.ui.Button(label="Optional SoftRes", style=discord.ButtonStyle.secondary)
         clear = discord.ui.Button(label="Remove SoftRes", style=discord.ButtonStyle.secondary,
                                   disabled=not bool(self.draft["softres_url"]))
+        check_link = discord.ui.Button(label="Check Message Link",
+                                       style=discord.ButtonStyle.secondary)
+        clear_check = discord.ui.Button(label="Remove Check Link",
+                                        style=discord.ButtonStyle.secondary,
+                                        disabled=not bool(self.draft.get("check_message_url")))
         publish = discord.ui.Button(label="Post / Update Raid", style=discord.ButtonStyle.success)
         delete = discord.ui.Button(label="Delete Raid", style=discord.ButtonStyle.danger,
                                   disabled=self.draft["number"] not in self.saved_raid_ids)
@@ -520,6 +513,21 @@ class RaidPosterView(discord.ui.LayoutView):
         async def remove_link(interaction):
             await self.changed(interaction, softres_url=None)
 
+        async def set_check_link(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            await interaction.response.send_modal(PosterTextModal(
+                self, self.owner_id, interaction.message.id,
+                "check_message_url", "Optional Check message",
+                "Discord message URL",
+                "https://discord.com/channels/server/channel/message",
+                required=False,
+            ))
+
+        async def remove_check_link(interaction):
+            await self.changed(interaction, check_message_url=None)
+
         async def post(interaction):
             if not self.authorised(interaction):
                 await interaction.response.send_message("Only owner.", ephemeral=True)
@@ -534,7 +542,7 @@ class RaidPosterView(discord.ui.LayoutView):
                     custom_title=self.draft.get("custom_title") or "",
                     banner_url=self.draft.get("banner_url") or "",
                     end_at=end_at,
-                    check_channel_id=self.draft.get("check_channel_id") or DEFAULT_CHECK_CHANNEL_ID,
+                    check_message_url=self.draft.get("check_message_url"),
                 )
                 if self.draft["softres_url"] is None:
                     event = set_softres_url(
@@ -566,10 +574,13 @@ class RaidPosterView(discord.ui.LayoutView):
         softres.callback = set_link
         clear.callback = remove_link
         publish.callback = post
+        check_link.callback = set_check_link
+        clear_check.callback = remove_check_link
         delete.callback = ask_delete
         row.add_item(title)
         row.add_item(banner)
         row.add_item(softres)
         row.add_item(clear)
         self.add_item(row)
+        self.add_item(discord.ui.ActionRow(check_link, clear_check))
         self.add_item(discord.ui.ActionRow(publish, delete))
