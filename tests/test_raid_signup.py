@@ -985,7 +985,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('"label": "Absent"', data)
             self.assertNotIn("Withdraw my sign-up", data)
             self.assertNotIn("Applicant list remains hidden", data)
-            self.assertIn("Pick character", data)
+            self.assertIn("Choose the character", data)
             first_time = raid.ClassPickerView(42, signup_raid_id=9)
             self.assertNotIn('"label": "Absent"',
                              json.dumps(first_time.to_components()))
