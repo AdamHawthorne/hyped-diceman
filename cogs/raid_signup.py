@@ -1348,48 +1348,65 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         )
 
     @app_commands.command(
-        name="gear", description="Upload a long .txt/.simc character gear export"
+        name="gear", description="Upload SimC text or a character-panel screenshot"
     )
     @app_commands.describe(
         character="Your saved character name",
-        file="SimulationCraft text export file (.txt or .simc)",
+        file="SimC (.txt/.simc) or character-panel PNG/JPG/WEBP",
     )
     async def gear_file(self, interaction: discord.Interaction,
                         character: str, file: discord.Attachment):
         if not is_test_member(interaction):
             await interaction.response.send_message(
-                "Private owner test only.", ephemeral=True
-            )
-            return
-        matches = [r for r in member_characters(interaction.user.id)
-                   if r[1].casefold() == character.strip().casefold()]
-        if not matches:
-            await interaction.response.send_message(
-                "Ogre not know that character. Use /raid characters first.",
+                "Gear uploads are only available in private #ogre.",
                 ephemeral=True,
             )
             return
-        if not file.filename.lower().endswith((".txt", ".simc")) or file.size > 200000:
-            await interaction.response.send_message(
-                "Upload a .txt or .simc file, 200 KB maximum.", ephemeral=True
+        await interaction.response.defer(ephemeral=True)
+        matches = [
+            r for r in member_characters(interaction.user.id)
+            if r[1].casefold() == character.strip().casefold()
+        ]
+        if not matches:
+            await interaction.followup.send(
+                "Ogre not know that character. Press Sign to register first.",
+                ephemeral=True,
             )
             return
-        await interaction.response.defer(ephemeral=True)
+        filename = file.filename.lower()
+        simc_file = filename.endswith((".txt", ".simc"))
+        image_file = filename.endswith((".png", ".jpg", ".jpeg", ".webp"))
+        if not (simc_file or image_file):
+            await interaction.followup.send(
+                "Use a SimC .txt/.simc or PNG/JPG/WEBP screenshot.",
+                ephemeral=True,
+            )
+            return
+        limit = 200_000 if simc_file else 8 * 1024 * 1024
+        if file.size > limit:
+            await interaction.followup.send(
+                "Ogre say that file too big.", ephemeral=True
+            )
+            return
         try:
             data = await file.read()
-            if len(data) > 200000:
-                raise ValueError("SimC upload exceeds 200 KB.")
-            content = data.decode("utf-8-sig")
-            save_gear(interaction.user.id, matches[0][0], content)
-        except (ValueError, UnicodeDecodeError, sqlite3.Error, discord.HTTPException) as exc:
+            if len(data) > limit:
+                raise ValueError("Uploaded file exceeds the size limit.")
+            if simc_file:
+                save_gear(interaction.user.id, matches[0][0],
+                          data.decode("utf-8-sig"))
+            else:
+                save_gear_image(interaction.user.id, matches[0][0],
+                                file.filename, data)
+        except (ValueError, UnicodeDecodeError, sqlite3.Error,
+                discord.HTTPException) as exc:
             await interaction.followup.send(
                 f"Ogre couldn't update gear: {exc}", ephemeral=True
             )
             return
         await interaction.followup.send(
-            f"Ogre saved new SimC snapshot for "
-            f"**{discord.utils.escape_markdown(matches[0][1])}**. "
-            "Raid sign-up stays unchanged.",
+            f"Ogre saved {'SimC' if simc_file else 'screenshot'} for "
+            f"**{discord.utils.escape_markdown(matches[0][1])}**.",
             ephemeral=True,
         )
 
