@@ -292,7 +292,14 @@ def roster_groups(event, public_roster):
 
 def raid_panel_intro(event):
     """Compact fixed header; all timestamps localise in Discord."""
-    title = event["title"]
+    number = event["raid_id"]
+    # Escape only the user-provided suffix; keep the guild prefix stable.
+    title = f"<Hyped> Raid #{number}"
+    if event.get("custom_title"):
+        suffix = discord.utils.escape_mentions(
+            discord.utils.escape_markdown(event["custom_title"])
+        )
+        title += f" - {suffix}"
     instances = [
         discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))
         for key in ("instance_1", "instance_2", "instance_3")
@@ -305,8 +312,8 @@ def raid_panel_intro(event):
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
-        f"**Date:** {format_discord_date(event['raid_at'], style='D', with_relative=False)}\n"
-        f"**Time:** {format_discord_date(event['raid_at'], style='t', with_relative=False)}\n\n"
+        f"{format_discord_date(event['raid_at'], style='D', with_relative=False)}"
+        f" at {format_discord_date(event['raid_at'], style='t', with_relative=False)}\n\n"
         + "**Instances:** " + ", ".join(instances)
         + "\n**Check:** <#1563663258047619123>"
         + softres_line
@@ -322,6 +329,10 @@ def _roster_group_text(title, players):
     else:
         heading = f"**{title}**"
     if not players:
+        if title == "Hyjal · 20-player":
+            return heading + "\n🔹🔸 - Forming, await announcement"
+        if title.startswith("Barrows · 10-player "):
+            return heading + " - Not announced"
         return heading + "\n-# *Not announced*"
     names = []
     length = len(heading)
