@@ -291,6 +291,26 @@ def _save_public(db_path, published):
             ).fetchall()
             if current == new:
                 continue
+            # Only real changes in approved public names trigger a timestamp.
+            # First nonempty reveal = posted; later changes = updated.
+            if new:
+                from datetime import datetime, timezone
+                instant = datetime.now(timezone.utc).isoformat()
+                con.execute(
+                    """UPDATE raids SET
+                           roster_posted_at=COALESCE(roster_posted_at, ?),
+                           roster_updated_at=CASE WHEN roster_posted_at IS NOT NULL
+                                                  THEN ? ELSE roster_updated_at END
+                       WHERE raid_id=?""",
+                    (instant, instant, raid_id),
+                )
+            else:
+                # Fully withdrawn public rosters revert to the planned state,
+                # rather than saying a now-hidden roster is still posted.
+                con.execute(
+                    "UPDATE raids SET roster_posted_at=NULL, roster_updated_at=NULL WHERE raid_id=?",
+                    (raid_id,),
+                )
             con.execute("DELETE FROM raid_public_roster WHERE raid_id=?", (raid_id,))
             con.executemany(
                 "INSERT INTO raid_public_roster "
