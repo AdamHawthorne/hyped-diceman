@@ -30,6 +30,9 @@ RAID_DB = os.getenv("RAID_DB_PATH", "/data/raid_signup.db" if os.path.isdir("/da
 ACCENT = 0xA87535
 LOGGER = logging.getLogger(__name__)
 
+# Public compatibility constant used by admin/tests; schema validation mirrors it.
+ATTENDANCE_OPTIONS = ("Pending", "Attended", "Late", "AFK", "No-show", "Excused")
+
 @contextmanager
 def database(path=RAID_DB):
     con = sqlite3.connect(path, timeout=20)
