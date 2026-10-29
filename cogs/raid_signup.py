@@ -554,7 +554,7 @@ class AbsenceNoteModal(discord.ui.Modal):
 class SignupNoteModal(discord.ui.Modal):
     """One sign-up for the whole raid night, including an optional note."""
 
-    def __init__(self, member_id, raid_id, char_id, name):
+    def __init__(self, member_id, raid_id, char_id, name, initial_note=""):
         super().__init__(title=f"Sign up · Raid #{raid_id}")
         self.member_id = member_id
         self.raid_id = raid_id
@@ -563,6 +563,7 @@ class SignupNoteModal(discord.ui.Modal):
         self.note = discord.ui.TextInput(
             label="Note (optional)", placeholder="Any plans Ogre should know?",
             required=False, style=discord.TextStyle.paragraph, max_length=500,
+            default=initial_note or None,
         )
         self.add_item(self.note)
 
@@ -584,10 +585,47 @@ class SignupNoteModal(discord.ui.Modal):
         already = existing and existing[0].casefold() == self.name.casefold() \
             and existing[1] == "Available"
         await interaction.response.send_message(
-            f"Ogre {'updated' if already else 'saved'} "
-            f"**{discord.utils.escape_markdown(self.name)}** for Raid "
-            f"#{self.raid_id}.", ephemeral=True,
+            f"✅ **Attendance {'updated' if already else 'registered'}** for Raid #{self.raid_id}.\\n"
+            f"**{discord.utils.escape_markdown(self.name)}** is marked Available.\\n"
+            "Ogre says: If plans change, hit **Absent** as soon as you know.",
+            ephemeral=True,
         )
+
+
+
+class ExistingAttendanceView(discord.ui.LayoutView):
+    """Keep repeat Attend clicks informational, with an explicit note edit."""
+
+    def __init__(self, member_id, raid_id, existing):
+        super().__init__(timeout=300)
+        name, _, note = existing
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## ✅ Already attending Raid #{raid_id}\\n"
+                f"**{discord.utils.escape_markdown(name)}** · Available\\n"
+                + (f"**Note:** {discord.utils.escape_markdown(note)}\\n" if note else "")
+                + "Ogre has you down. If plans change, press **Absent** ASAP."
+            ), accent_color=ACCENT,
+        ))
+        edit = discord.ui.Button(label="Update note", style=discord.ButtonStyle.secondary)
+
+        async def on_edit(interaction):
+            if not is_test_member(interaction) or interaction.user.id != member_id:
+                await interaction.response.send_message("Not your sign-up.", ephemeral=True)
+                return
+            rows = member_characters(member_id)
+            current = next((r for r in rows if r[1].casefold() == name.casefold()), None)
+            if not current:
+                await interaction.response.send_message(
+                    "Character no longer found. Contact leadership.", ephemeral=True,
+                )
+                return
+            await interaction.response.send_modal(
+                SignupNoteModal(member_id, raid_id, current[0], name, initial_note=note)
+            )
+
+        edit.callback = on_edit
+        self.add_item(discord.ui.ActionRow(edit))
 
 
 class GearUploadModal(discord.ui.Modal):
@@ -825,7 +863,7 @@ class CharacterNameModal(discord.ui.Modal):
                 f"**{name}** registered and signed up for Raid "
                 f"#{self.signup_raid_id}! ✅\n"
                 "Nobody else can see your sign-up. "
-                "You can update SimC gear separately.",
+                "Ogre says: If plans change, hit **Absent** as soon as you know.",
                 ephemeral=True,
             )
             return
@@ -1191,12 +1229,16 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                     ephemeral=True,
                 )
                 return
-            existing = my_signup(raid_id, interaction.user.id)
-            # Components V2 views must not be sent alongside ordinary content.
+            existing = signup_note_details(raid_id, interaction.user.id)
+            if existing and existing[1] == "Available":
+                await interaction.followup.send(
+                    view=ExistingAttendanceView(
+                        interaction.user.id, raid_id, existing
+                    ), ephemeral=True,
+                )
+                return
             await interaction.followup.send(
-                view=CharacterActionView(
-                    interaction.user.id, raid_id=raid_id, current_signup=existing
-                ),
+                view=CharacterActionView(interaction.user.id, raid_id=raid_id),
                 ephemeral=True,
             )
         except (ValueError, sqlite3.Error) as exc:
@@ -1210,17 +1252,21 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 "Gear only available in private #ogre.", ephemeral=True
             )
             return
-        await interaction.response.defer(ephemeral=True)
-        if not member_characters(interaction.user.id):
-            await interaction.followup.send(
-                "Ogre need a character first. Press Sign to register.",
+        rows = member_characters(interaction.user.id)
+        if not rows:
+            await interaction.response.send_message(
+                "Ogre needs a character first. Click **Characters** to add one.",
                 ephemeral=True,
             )
-            return
-        await interaction.followup.send(
-            view=CharacterActionView(interaction.user.id, purpose="gear"),
-            ephemeral=True,
-        )
+        elif len(rows) == 1:
+            await interaction.response.send_modal(
+                GearUploadModal(interaction.user.id, rows[0][0], rows[0][1])
+            )
+        else:
+            await interaction.response.send_message(
+                view=CharacterActionView(interaction.user.id, purpose="gear"),
+                ephemeral=True,
+            )
 
     async def on_update(self, interaction):
         if not is_test_member(interaction):
@@ -1229,12 +1275,6 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             )
             return
         await interaction.response.defer(ephemeral=True)
-        if not member_characters(interaction.user.id):
-            await interaction.followup.send(
-                "Ogre need a character first. Press Sign to register.",
-                ephemeral=True,
-            )
-            return
         await interaction.followup.send(
             view=CharacterActionView(interaction.user.id, purpose="update"),
             ephemeral=True,
