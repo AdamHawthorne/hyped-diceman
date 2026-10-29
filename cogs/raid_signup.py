@@ -649,19 +649,34 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         if not self.allowed(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
-        if not member_characters(interaction.user.id):
-            await interaction.response.send_message(
-                "Register your character first with /raid register.", ephemeral=True
+        # Acknowledge immediately to avoid Discord's three-second interaction deadline.
+        await interaction.response.defer(ephemeral=True)
+        try:
+            event = read_raid(RAID_DB, raid_id)
+            if not event or not event["signup_open"] or event["roster_published"]:
+                await interaction.followup.send(
+                    "Sign-ups are closed for this raid.", ephemeral=True
+                )
+                return
+            if not member_characters(interaction.user.id):
+                # First-time users register a character and sign up in one flow.
+                await interaction.followup.send(
+                    view=ClassPickerView(interaction.user.id, signup_raid_id=raid_id),
+                    ephemeral=True,
+                )
+                return
+            existing = my_signup(raid_id, interaction.user.id)
+            # Components V2 views must not be sent alongside ordinary content.
+            await interaction.followup.send(
+                view=CharacterActionView(
+                    interaction.user.id, raid_id=raid_id, current_signup=existing
+                ),
+                ephemeral=True,
             )
-            return
-        existing = my_signup(raid_id, interaction.user.id)
-        await interaction.response.send_message(
-            (f"Current sign-up: **{discord.utils.escape_markdown(existing[0])}**.\n"
-             if existing else "")
-            + "Choose a character below to sign up or change your character.",
-            view=CharacterActionView(interaction.user.id, raid_id=raid_id),
-            ephemeral=True,
-        )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.followup.send(
+                f"Ogre couldn't open sign-ups: {exc}", ephemeral=True
+            )
 
     async def on_gear(self, interaction):
         if not self.allowed(interaction):
