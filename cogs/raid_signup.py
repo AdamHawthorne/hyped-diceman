@@ -257,11 +257,15 @@ def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
                 (class_name, spec, role, previous[0], discord_id),
             )
             return "updated"
+        has_main = con.execute(
+            "SELECT 1 FROM characters WHERE discord_id=? AND is_main=1 LIMIT 1",
+            (discord_id,),
+        ).fetchone()
         con.execute(
             "INSERT INTO characters "
-            "(discord_id, name, realm, class_name, spec, role) "
-            "VALUES (?, ?, '', ?, ?, ?)",
-            (discord_id, name, class_name, spec, role),
+            "(discord_id, name, realm, class_name, spec, role, is_main) "
+            "VALUES (?, ?, '', ?, ?, ?, ?)",
+            (discord_id, name, class_name, spec, role, 0 if has_main else 1),
         )
         return "created"
 
