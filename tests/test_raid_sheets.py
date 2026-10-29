@@ -82,6 +82,20 @@ class RaidSheetsTests(unittest.TestCase):
         )
         self.assertNotIn("Secret Gamer", str(revealed))
         self.assertNotIn("Bench Gamer", str(revealed))
+        # A prior raid using the same number must not leak its roster.
+        self.assertEqual(
+            raid_sheets._public_rows(
+                [header, approved],
+                raid_dates={1: "2026-12-10"},
+            ), {}
+        )
+        self.assertEqual(
+            raid_sheets._public_rows(
+                [header, approved, pug],
+                raid_dates={1: "2026-12-09"},
+                unavailable={"1:42"},
+            ), {1: [("Pug Hero", "Ony, Hyjal")]}
+        )
 
     def test_roster_sync_does_not_change_manual_selection_or_guest_rows(self):
         current = [
