@@ -1,0 +1,135 @@
+"""Offline tests for the optional Google Sheets raid synchronisation bridge."""
+import json
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from cogs import raid_sheets, raid_schedule, raid_signup as raid
+
+
+class FakeSession:
+    def __init__(self):
+        self.calls = []
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class RaidSheetsTests(unittest.TestCase):
+    def setup_db(self, path):
+        raid.create_schema(path)
+        raid_schedule.ensure_raid_fields(path)
+        raid_schedule.save_raid(
+            path, 1, "2026-12-09 21:00", "Hyjal (20m)", "Ony (40m)",
+            roster_announce="2026-12-08 21:00"
+        )
+        raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
+        raid.save_character(42, "Second Character", "Warrior", "Fury", "DPS", path)
+        char_id = raid.member_characters(42, path)[0][0]
+        raid.save_signup(1, 42, char_id, path)
+        raid.save_absence(1, 99, "Family plans", path)
+
+    def test_snapshot_maps_to_expected_rm_tabs_and_signoff_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            self.setup_db(path)
+            desired = raid_sheets._desired_rows(path)
+            self.assertEqual(len(desired["characters"]), 2)
+            self.assertEqual(len(desired["roster"]), 1)
+            self.assertEqual(len(desired["signups"]), 2)
+            absent = desired["signups"]["1:99"]
+            self.assertEqual(absent[5], "Unavailable")
+            self.assertEqual(absent[6], "Family plans")
+            self.assertTrue(absent[9].endswith("+00:00"))
+            self.assertEqual(len(desired["roster"]["1:42"]), 8)
+            self.assertNotIn("Realm", json.dumps(desired))
+
+    def test_public_roster_only_reveals_explicit_selected_rows_with_pugs(self):
+        header = [
+            "Raid ID", "Raid Date", "Discord ID", "Character ID",
+            "Character", "Class", "Spec", "Assigned Role", "Selection",
+            "Bench Notes", "Show on Discord", "Ony (40m)",
+            "Hyjal (20m)", "Barrows (10m)", "Player Source"
+        ]
+        approved = [
+            "1", "2026-12-09", "42", "7", "Snore Mon", "Mage",
+            "Frost", "DPS", "Selected", "", "Yes", "Selected",
+            "Selected", "Group A", "Core"
+        ]
+        hidden = approved.copy()
+        hidden[4] = "Secret Gamer"
+        hidden[10] = "No"
+        bench = approved.copy()
+        bench[4] = "Bench Gamer"
+        bench[8] = "Bench"
+        pug = approved.copy()
+        pug[2] = ""
+        pug[3] = ""
+        pug[4] = "Pug Hero"
+        pug[12] = ""
+        pug[13] = ""
+        pug[14] = "PUG"
+        revealed = raid_sheets._public_rows([header, approved, hidden, bench, pug])
+        self.assertEqual(
+            revealed[1],
+            [
+                ("Snore Mon", "Ony, Hyjal, Barrows A"),
+                ("Pug Hero", "Ony, Hyjal")
+            ]
+        )
+        self.assertNotIn("Secret Gamer", str(revealed))
+        self.assertNotIn("Bench Gamer", str(revealed))
+
+    def test_roster_sync_does_not_change_manual_selection_or_guest_rows(self):
+        current = [
+            ["Raid ID", "Raid Date", "Discord ID", "Character ID", "Character",
+             "Class", "Spec", "Assigned Role", "Selection", "Bench Notes",
+             "Show on Discord"],
+            ["1", "old", "42", "7", "Old Name", "Mage", "Fire", "DPS",
+             "Selected", "Keep manual note", "Yes"],
+            ["1", "2026-12-09", "", "", "Pug Hero", "Warrior", "Fury",
+             "DPS", "Selected", "", "Yes"],
+        ]
+        desired = {
+            "1:42": ["1", "2026-12-09", "42", "7", "Snore Mon", "Mage",
+                     "Frost", "DPS"]
+        }
+        session = FakeSession()
+        calls = []
+
+        def fake_request(session, method, endpoint, **kwargs):
+            calls.append((method, endpoint, kwargs))
+            return {}
+
+        with patch.object(raid_sheets, "_json", side_effect=fake_request):
+            raid_sheets._sync_rows(session, "roster", current, desired)
+        self.assertEqual(len(calls), 1)
+        payload = calls[0][2]["json"]["data"]
+        self.assertEqual(payload[0]["range"], "'RM - Roster Builder'!A2:H2")
+        self.assertEqual(len(payload[0]["values"][0]), 8)
+        self.assertNotIn("Keep manual note", json.dumps(payload))
+        self.assertNotIn("Pug Hero", json.dumps(payload))
+
+    def test_successful_remote_approval_updates_only_raid_public_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            self.setup_db(path)
+            approved = {1: [("Snore Mon", "Ony"),
+                            ("Pug Hero", "Ony")]}
+            changed = raid_sheets._save_public(path, approved)
+            self.assertEqual(changed, {1})
+            self.assertEqual(raid_schedule.read_public_roster(path, 1),
+                             approved[1])
+            self.assertEqual(raid_sheets._save_public(path, approved), set())
+            self.assertEqual(raid_sheets._save_public(path, {}), {1})
+            self.assertEqual(raid_schedule.read_public_roster(path, 1), [])
+            self.assertEqual(raid.my_signup(1, 42, path)[1], "Available")
+
+    def test_missing_credentials_do_not_initiate_connection(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(raid_sheets.configured())
+            with self.assertRaisesRegex(RuntimeError, "not configured"):
+                raid_sheets.sync_once("not-a-db.db")
