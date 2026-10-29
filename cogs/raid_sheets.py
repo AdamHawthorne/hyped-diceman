@@ -15,9 +15,7 @@ import sqlite3
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-SPREADSHEET_ID = os.getenv(
-    "RAID_SHEETS_ID", "1If8ssP3d0-BK97w8wnxrbaxzILB-tDsL75ZNCUJKX_Q"
-)
+SPREADSHEET_ID = os.getenv("RAID_SHEETS_ID", "").strip()
 API = "https://sheets.googleapis.com/v4/spreadsheets"
 SHEETS = {
     "characters": ("RM - Characters", 10),
@@ -32,8 +30,10 @@ READ_RANGES = {
 
 
 def configured():
-    return bool(os.getenv("RAID_GOOGLE_SERVICE_ACCOUNT_B64")
-                or os.getenv("RAID_GOOGLE_SERVICE_ACCOUNT_JSON"))
+    return bool(SPREADSHEET_ID and (
+        os.getenv("RAID_GOOGLE_SERVICE_ACCOUNT_B64")
+        or os.getenv("RAID_GOOGLE_SERVICE_ACCOUNT_JSON")
+    ))
 
 
 def _session():
