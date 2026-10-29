@@ -33,14 +33,15 @@ class RaidTabsTests(unittest.TestCase):
             body = sheet._rows(path, event, {42: "Snore", 43: "Rogue", 44: "Mage"})
             self.assertEqual([r[0] for r in body if r[0] in sheet.SECTIONS],
                              list(sheet.SECTIONS))
-            by_character = {row[1]: row for row in body if row[15]}
+            by_character = {row[1]: row for row in body if row[16]}
             self.assertEqual(by_character["Snore Mon"][0], "Snore")
             self.assertEqual(by_character["Snore Mon"][8], "Signed")
             self.assertEqual(by_character["Snore Mon"][9:14],
                              ["Pending", "No", "No", "No", "No"])
             self.assertEqual(by_character["Snore Mon"][6], "Main tank")
+            self.assertEqual(by_character["Snore Mon"][15], "Not submitted")
             self.assertTrue(by_character["Snore Mon"][7])
-            self.assertTrue(by_character["Snore Mon"][15].isdigit())
+            self.assertTrue(by_character["Snore Mon"][16].isdigit())
             self.assertEqual(sheet._group(
                 {"role": "DPS", "class_name": "Rogue", "spec": "Combat"}, False
             ), "MELEE")
@@ -57,16 +58,16 @@ class RaidTabsTests(unittest.TestCase):
             event = self.setup_raid(path)
             first = sheet._header(event, sheet._rows(path, event, {}), sheet.tab_title(event))
             old = [list(row) for row in first]
-            tank = next(row for row in old if row[15] == "42")
+            tank = next(row for row in old if row[16] == "42")
             tank[9:14] = ["Selected", "Yes", "Yes", "🔸", "No"]
             again = sheet._rows(path, event, {42: "Snore"}, old_rows=old)
-            selected = next(row for row in again if row[15] == "42")
+            selected = next(row for row in again if row[16] == "42")
             self.assertEqual(selected[9:14], ["Selected", "Yes", "Yes", "🔸", "No"])
             published = sheet._approved(sheet._header(event, again, sheet.tab_title(event)), event)
             self.assertIn(("42", "Snore Mon", "Hyjal, Barrows 🔸"), published)
             raid.save_absence(1, 42, "Unavailable", path)
             absent = sheet._rows(path, event, {}, old_rows=old)
-            row = next(row for row in absent if row[15] == "42")
+            row = next(row for row in absent if row[16] == "42")
             self.assertEqual(row[8], "Absent")
             self.assertIn("Signed off:", row[6])
             self.assertEqual(row[9:14], ["Not selected", "No", "No", "No", "No"])
@@ -80,7 +81,7 @@ class RaidTabsTests(unittest.TestCase):
             restored = sheet._rows(path, event, {}, old_rows=sheet._header(
                 event, absent, sheet.tab_title(event)
             ))
-            row = next(row for row in restored if row[15] == "42")
+            row = next(row for row in restored if row[16] == "42")
             self.assertEqual(row[8], "Signed")
             self.assertEqual(row[9:14], ["Pending", "No", "No", "No", "No"])
 
@@ -92,7 +93,7 @@ class RaidTabsTests(unittest.TestCase):
                              "hyjal": "Yes", "barrows": "🔹", "ony": "No",
                              "notes": "Check buffs"}}
             rows = sheet._rows(path, event, {}, legacy=legacy)
-            row = next(r for r in rows if r[15] == "42")
+            row = next(r for r in rows if r[16] == "42")
             self.assertEqual(row[9:14], ["Selected", "Yes", "Yes", "🔹", "No"])
             self.assertEqual(row[14], "Check buffs")
             self.assertIn(("42", "Snore Mon", "Hyjal, Barrows 🔹"),
