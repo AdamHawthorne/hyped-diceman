@@ -404,13 +404,17 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
             VALUES (?, ?, ?, 'Available', ?, ?)
             ON CONFLICT(raid_id, discord_id) DO UPDATE SET
                 character_id=excluded.character_id, availability='Available',
-                note=CASE WHEN ? IS NULL THEN signups.note ELSE excluded.note END,
+                note=CASE
+                    WHEN ? IS NULL AND signups.availability='Available'
+                    THEN signups.note
+                    WHEN ? IS NULL THEN NULL
+                    ELSE excluded.note END,
                 submitted_at=CASE
                     WHEN signups.character_id=excluded.character_id
                      AND signups.availability='Available'
                     THEN signups.submitted_at
                     ELSE excluded.submitted_at END
-        """, (raid_id, discord_id, character_id, note, datetime.now(timezone.utc).isoformat(), note))
+        """, (raid_id, discord_id, character_id, note, datetime.now(timezone.utc).isoformat(), note, note))
         # Returning after an absence restores the player's Available status.
         con.execute(
             "DELETE FROM raid_absences WHERE raid_id=? AND discord_id=?",
@@ -1095,7 +1099,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.response.defer(ephemeral=True)
         if not member_characters(interaction.user.id):
             await interaction.followup.send(
-                "Ogre need a character first. Press Sign Up to register.",
+                "Ogre need a character first. Press Sign to register.",
                 ephemeral=True,
             )
             return
@@ -1113,7 +1117,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.response.defer(ephemeral=True)
         if not member_characters(interaction.user.id):
             await interaction.followup.send(
-                "Ogre need a character first. Press Sign Up to register.",
+                "Ogre need a character first. Press Sign to register.",
                 ephemeral=True,
             )
             return
