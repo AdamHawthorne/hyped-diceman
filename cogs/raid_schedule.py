@@ -18,6 +18,8 @@ RAID_PANEL_IMAGE = "https://i.vgy.me/asI88C.png"
 RAID_PANEL_BANNER = "https://i.vgy.me/y6bCxy.png"
 ACCENT = 0xA87535  # Keep the private raid poster setup colour.
 RAID_PANEL_ACCENT = LEADERSHIP_ACCENT
+DEFAULT_CHECK_CHANNEL_ID = 1563663258047619123
+_UNCHANGED = object()  # Older /raid setup calls must keep poster-specific settings.
 RAID_COLUMNS = {
     "instance_1": "TEXT",
     "instance_2": "TEXT",
@@ -28,6 +30,8 @@ RAID_COLUMNS = {
     "softres_url": "TEXT",
     "custom_title": "TEXT",
     "banner_url": "TEXT",
+    "end_at": "TEXT",
+    "check_channel_id": "INTEGER",
     "roster_posted_at": "TEXT",
     "roster_updated_at": "TEXT",
 }
@@ -135,11 +139,31 @@ def set_softres_url(path, number, url):
 
 def save_raid(path, number, raid_date, instance_1, instance_2=None,
               instance_3=None, roster_announce=None, softres_url=None,
-              custom_title=None, banner_url=None):
+              custom_title=None, banner_url=None,
+              end_at=_UNCHANGED, check_channel_id=_UNCHANGED):
     softres = validate_softres_url(softres_url)
     if not 1 <= number <= 100000:
         raise ValueError("Raid number must be between 1 and 100000.")
     start = parse_uk_datetime(raid_date)
+    if end_at is not _UNCHANGED and end_at is not None:
+        if isinstance(end_at, str):
+            end = datetime.fromisoformat(end_at)
+        elif isinstance(end_at, datetime):
+            end = end_at
+        else:
+            raise ValueError("Raid end time must be a datetime.")
+        if end.tzinfo is None:
+            raise ValueError("Raid end time must include a timezone.")
+        seconds = (end.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds()
+        if not 0 < seconds <= 12 * 3600:
+            raise ValueError("Raid end time must be after the start, within 12 hours.")
+        end_at = end.astimezone(UK).isoformat()
+    if check_channel_id is not _UNCHANGED:
+        if isinstance(check_channel_id, bool) or not str(check_channel_id).isdigit():
+            raise ValueError("Choose a valid Discord text channel for Check.")
+        check_channel_id = int(check_channel_id)
+        if not 0 < check_channel_id < 2**64:
+            raise ValueError("Choose a valid Discord text channel for Check.")
     announce = parse_uk_datetime(roster_announce) if roster_announce else None
     instances = [(part or "").strip() for part in (instance_1, instance_2, instance_3)]
     if not instances[0] or any(len(part) > 80 for part in instances):
@@ -162,6 +186,16 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
             ).fetchone()
             banner_url = existing_banner[0] if existing_banner else None
         banner_url = validate_banner_url(banner_url)
+        if end_at is _UNCHANGED:
+            current = con.execute(
+                "SELECT end_at FROM raids WHERE raid_id=?", (number,)
+            ).fetchone()
+            end_at = current[0] if current else None
+        if check_channel_id is _UNCHANGED:
+            current = con.execute(
+                "SELECT check_channel_id FROM raids WHERE raid_id=?", (number,)
+            ).fetchone()
+            check_channel_id = current[0] if current else None
         if not isinstance(custom_title, str):
             raise ValueError("Optional title must be text.")
         custom_title = " ".join(custom_title.split())
@@ -173,8 +207,9 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         con.execute("""
             INSERT INTO raids(raid_id, title, raid_at, instance_1, instance_2,
                               instance_3, roster_announce_at, softres_url,
-                              signup_open, custom_title, banner_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                              signup_open, custom_title, banner_url,
+                              end_at, check_channel_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
             ON CONFLICT(raid_id) DO UPDATE SET
                 title=excluded.title, raid_at=excluded.raid_at,
                 instance_1=excluded.instance_1, instance_2=excluded.instance_2,
@@ -182,11 +217,14 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 roster_announce_at=excluded.roster_announce_at,
                 softres_url=COALESCE(excluded.softres_url, raids.softres_url),
                 custom_title=excluded.custom_title,
-                banner_url=excluded.banner_url, signup_open=1
+                banner_url=excluded.banner_url,
+                end_at=excluded.end_at,
+                check_channel_id=excluded.check_channel_id,
+                signup_open=1
         """, (number, full_title, start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
               announce.isoformat() if announce else None,
-              softres, custom_title, banner_url))
+              softres, custom_title, banner_url, end_at, check_channel_id))
     return read_raid(path, number)
 
 
@@ -322,13 +360,15 @@ def roster_groups(event, public_roster):
     return result
 
 
-def raid_panel_when(value):
-    """Two-line UK raid schedule with a fixed three-hour real-time duration."""
+def raid_panel_when(value, end_at=None):
+    """Full UK date and two Discord-localised clock times, each with a hover."""
     start = datetime.fromisoformat(value).astimezone(UK)
-    end = (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK)
+    end = (datetime.fromisoformat(end_at).astimezone(UK) if end_at else
+           (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK))
     return (
         f"{start:%A}, {start.day} {start:%B %Y}\n"
-        f"{start:%H:%M} - {end:%H:%M}"
+        f"{format_discord_date(start.isoformat(), style='t', with_relative=False)}"
+        f" - {format_discord_date(end.isoformat(), style='t', with_relative=False)}"
     )
 
 
@@ -351,9 +391,9 @@ def raid_panel_intro(event):
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
-        f"{raid_panel_when(event['raid_at'])}\n\n"
+        f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n\n"
         + "**Instances:** " + ", ".join(instances)
-        + "\n**Check:** <#1563663258047619123>"
+        + f"\n**Check:** <#{event.get('check_channel_id') or DEFAULT_CHECK_CHANNEL_ID}>"
         + softres_line
         + "\n### Roster"
     )
