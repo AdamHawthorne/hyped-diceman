@@ -16,6 +16,7 @@ a separate Google service account. Keep its JSON key private and outside Git.
     $json = Get-Content -Raw $path
     $secret = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
     fly secrets set -a hyped-diceman "RAID_GOOGLE_SERVICE_ACCOUNT_B64=$secret"
+    fly secrets set -a hyped-diceman "RAID_SHEETS_ID=<paste spreadsheet ID from its URL>"
     Remove-Variable json, secret
 
 5. Deploy updated code and dependencies:
@@ -61,7 +62,9 @@ raid deletion; any mirrored record cleanup is manual for now.
 ## Configuration
 
 RAID_GOOGLE_SERVICE_ACCOUNT_B64: base64 of the downloaded JSON service-account
-key. RAID_SHEETS_ID optionally overrides the existing spreadsheet ID, which is
-the default. RAID_DB_PATH is the existing separate SQLite database path.
+key. RAID_SHEETS_ID is required: copy the spreadsheet ID from the existing
+<Hyped> Forever Google Sheet URL. This is set as a Fly secret, not hardcoded.
+The database path is
+RAID_DB_PATH (the existing separate SQLite database).
 The loop remains disabled until credentials are configured.
 Never commit the service account JSON or paste it into Discord or chat.
