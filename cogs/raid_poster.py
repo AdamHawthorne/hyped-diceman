@@ -1,12 +1,13 @@
 """Leadership-only V2 raid poster: menu-driven setup, no public applicant list."""
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import discord
 import sqlite3
 
 from cogs.raid_schedule import (
-    RAID_IMAGE, ACCENT, format_discord_date,
+    RAID_IMAGE, ACCENT, DEFAULT_CHECK_CHANNEL_ID, format_discord_date,
+    raid_panel_when,
     list_raids, parse_uk_datetime, read_raid, save_raid,
     validate_softres_url, validate_banner_url, set_softres_url,
 )
@@ -31,6 +32,7 @@ def draft_from_event(event):
     if not event:
         return {
             "number": None, "day": None, "time": "20:00",
+            "end_time": None, "check_channel_id": DEFAULT_CHECK_CHANNEL_ID,
             "instance_1": None, "instance_2": None, "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
             "custom_title": "", "banner_url": None,
@@ -40,6 +42,9 @@ def draft_from_event(event):
         "number": event["raid_id"],
         "day": start.date().isoformat(),
         "time": start.strftime("%H:%M"),
+        "end_time": (datetime.fromisoformat(event["end_at"]).astimezone(UK).strftime("%H:%M")
+                     if event.get("end_at") else None),
+        "check_channel_id": event.get("check_channel_id") or DEFAULT_CHECK_CHANNEL_ID,
         "instance_1": event.get("instance_1"),
         "instance_2": event.get("instance_2"),
         "instance_3": event.get("instance_3"),
@@ -73,6 +78,24 @@ def poster_schedule(draft):
     return raid_at, announce
 
 
+def poster_end_at(draft):
+    """Return optional UK end datetime, or None for a three-hour default."""
+    if not draft.get("end_time"):
+        return None
+    start = parse_uk_datetime(f'{draft["day"]} {draft["time"]}')
+    try:
+        end_clock = datetime.strptime(draft["end_time"], "%H:%M").time()
+    except (ValueError, TypeError) as exc:
+        raise ValueError("End time must use HH:MM (UK time).") from exc
+    # A clock time at/before the start means an end after midnight.
+    end_day = start.date() + timedelta(days=end_clock <= start.time())
+    end = parse_uk_datetime(f'{end_day.isoformat()} {end_clock:%H:%M}')
+    duration = (end.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds()
+    if not 0 < duration <= 12 * 3600:
+        raise ValueError("End time must be after the start, within 12 hours.")
+    return end.isoformat()
+
+
 class PosterTextModal(discord.ui.Modal):
     """Only custom values require typing; most setup uses dropdowns."""
     def __init__(self, poster, owner_id, message_id, field, title, label, placeholder,
@@ -86,7 +109,8 @@ class PosterTextModal(discord.ui.Modal):
             label=label, placeholder=placeholder,
             max_length=(1500 if field == "softres_url"
                         else 512 if field == "banner_url"
-                        else 70 if field == "custom_title" else 80),
+                        else 70 if field == "custom_title"
+                        else 5 if field == "end_time" else 80),
             required=required,
         )
         self.add_item(self.text_field)
@@ -105,6 +129,9 @@ class PosterTextModal(discord.ui.Modal):
                 value = parse_uk_datetime(value).isoformat()
             elif self.field == "custom_title":
                 value = " ".join(value.split())
+            elif self.field == "end_time":
+                if value:
+                    datetime.strptime(value, "%H:%M")
             elif self.field == "banner_url":
                 value = validate_banner_url(value)
             elif self.field.startswith("instance_"):
@@ -115,6 +142,12 @@ class PosterTextModal(discord.ui.Modal):
             return
         new_draft = dict(self.poster.draft)
         new_draft[self.field] = value or None
+        if self.field == "end_time" and new_draft["day"]:
+            try:
+                poster_end_at(new_draft)
+            except ValueError as exc:
+                await interaction.response.send_message(str(exc), ephemeral=True)
+                return
         if self.field == "custom_announce":
             new_draft["announce"] = "custom"
         await interaction.response.defer(ephemeral=True)
@@ -192,6 +225,8 @@ class RaidPosterView(discord.ui.LayoutView):
         self.add_raid_picker(raids)
         self.add_date_picker()
         self.add_time_picker()
+        self.add_end_time_picker()
+        self.add_check_channel_picker()
         for i in (1, 2, 3):
             self.add_instance_picker(i)
         self.add_announcement_picker()
@@ -208,7 +243,7 @@ class RaidPosterView(discord.ui.LayoutView):
         )
         try:
             raid_at, announce = poster_schedule(d)
-            raid_date = format_discord_date(parse_uk_datetime(raid_at).isoformat())
+            raid_date = raid_panel_when(parse_uk_datetime(raid_at).isoformat(), poster_end_at(d))
             announce_date = (
                 format_discord_date(parse_uk_datetime(announce).isoformat())
                 if announce else "To be confirmed"
@@ -228,6 +263,7 @@ class RaidPosterView(discord.ui.LayoutView):
             f"## Raid Poster · {display_title}\n"
             "-# Leadership setup only. Choose options, then publish the real raid panel.\n\n"
             f"**Raid date:** {raid_date}\n"
+            f"**Check channel:** <#{d.get('check_channel_id') or DEFAULT_CHECK_CHANNEL_ID}>\n"
             f"{instances}\n"
             f"**Roster announcement:** {announce_date}\n"
             f"**SoftRes:** {softres}\n"
@@ -314,6 +350,67 @@ class RaidPosterView(discord.ui.LayoutView):
         async def choose(interaction):
             await self.changed(interaction, time=picker.values[0])
         picker = self._select("Choose start time (UK)", options, choose)
+
+    def add_end_time_picker(self):
+        d = self.draft
+        day = d["day"] or datetime.now(UK).date().isoformat()
+        try:
+            start = parse_uk_datetime(f'{day} {d["time"]}')
+        except ValueError:
+            start = datetime.now(UK)
+        # Convenient options around the raid start; custom HH:MM is also supported.
+        suggested = []
+        for half_hours in range(2, 13):
+            end = (start.astimezone(timezone.utc) +
+                   timedelta(minutes=30 * half_hours)).astimezone(UK)
+            value = end.strftime("%H:%M")
+            if value not in suggested:
+                suggested.append(value)
+        auto_end = (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK)
+        current = d.get("end_time")
+        options = [discord.SelectOption(
+            label=f"Default: +3h ({auto_end:%H:%M} UK)",
+            value="auto", default=current is None,
+        )]
+        for value in suggested:
+            options.append(discord.SelectOption(
+                label=f"{value} UK" + (" (next day)" if value <= d["time"] else ""),
+                value=value, default=value == current,
+            ))
+        if current and current not in suggested:
+            options.append(discord.SelectOption(
+                label=f"{current} UK (custom)",
+                value=current, default=True,
+            ))
+        options.append(discord.SelectOption(label="Other time (HH:MM)...", value="custom"))
+        async def choose(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            selection = picker.values[0]
+            if selection == "custom":
+                await interaction.response.send_modal(PosterTextModal(
+                    self, self.owner_id, interaction.message.id,
+                    "end_time", "Choose raid end time", "End time HH:MM (UK)",
+                    "00:00",
+                ))
+            else:
+                await self.changed(interaction, end_time=None if selection == "auto" else selection)
+        picker = self._select("Choose end time (UK)", options, choose)
+
+    def add_check_channel_picker(self):
+        picker = discord.ui.ChannelSelect(
+            channel_types=[discord.ChannelType.text, discord.ChannelType.news],
+            placeholder="Choose Check channel (#resources, etc.)",
+            min_values=1, max_values=1,
+        )
+        async def choose(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            await self.changed(interaction, check_channel_id=picker.values[0].id)
+        picker.callback = choose
+        self.add_item(discord.ui.ActionRow(picker))
 
     def add_instance_picker(self, number):
         field = f"instance_{number}"
@@ -418,12 +515,15 @@ class RaidPosterView(discord.ui.LayoutView):
                 return
             try:
                 raid_at, announce = poster_schedule(self.draft)
+                end_at = poster_end_at(self.draft)
                 event = save_raid(
                     self.cog.raid_db_path(), self.draft["number"], raid_at,
                     self.draft["instance_1"], self.draft["instance_2"],
                     self.draft["instance_3"], announce, self.draft["softres_url"],
                     custom_title=self.draft.get("custom_title") or "",
                     banner_url=self.draft.get("banner_url") or "",
+                    end_at=end_at,
+                    check_channel_id=self.draft.get("check_channel_id") or DEFAULT_CHECK_CHANNEL_ID,
                 )
                 if self.draft["softres_url"] is None:
                     event = set_softres_url(
