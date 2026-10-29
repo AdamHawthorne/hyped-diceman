@@ -91,6 +91,7 @@ def create_schema(path=RAID_DB):
             raid_id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
             raid_at TEXT NOT NULL,
+            custom_title TEXT,
             signup_open INTEGER NOT NULL DEFAULT 0,
             roster_published INTEGER NOT NULL DEFAULT 0
         );
