@@ -110,7 +110,7 @@ class PosterTextModal(discord.ui.Modal):
             max_length=(1500 if field == "softres_url"
                         else 512 if field == "banner_url"
                         else 70 if field == "custom_title"
-                        else 5 if field == "end_time" else 80),
+                        else 5 if field in ("time", "end_time") else 80),
             required=required,
         )
         self.add_item(self.text_field)
@@ -129,7 +129,7 @@ class PosterTextModal(discord.ui.Modal):
                 value = parse_uk_datetime(value).isoformat()
             elif self.field == "custom_title":
                 value = " ".join(value.split())
-            elif self.field == "end_time":
+            elif self.field in ("time", "end_time"):
                 if value:
                     datetime.strptime(value, "%H:%M")
             elif self.field == "banner_url":
@@ -142,7 +142,7 @@ class PosterTextModal(discord.ui.Modal):
             return
         new_draft = dict(self.poster.draft)
         new_draft[self.field] = value or None
-        if self.field == "end_time" and new_draft["day"]:
+        if self.field in ("time", "end_time") and new_draft["day"]:
             try:
                 poster_end_at(new_draft)
             except ValueError as exc:
@@ -347,8 +347,19 @@ class RaidPosterView(discord.ui.LayoutView):
             discord.SelectOption(label=f"{t} UK", value=t, default=t == self.draft["time"])
             for t in choices
         ]
+        options.append(discord.SelectOption(label="Other start time (HH:MM)...", value="custom"))
         async def choose(interaction):
-            await self.changed(interaction, time=picker.values[0])
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            if picker.values[0] == "custom":
+                await interaction.response.send_modal(PosterTextModal(
+                    self, self.owner_id, interaction.message.id,
+                    "time", "Choose raid start time", "Start time HH:MM (UK)",
+                    "21:00",
+                ))
+            else:
+                await self.changed(interaction, time=picker.values[0])
         picker = self._select("Choose start time (UK)", options, choose)
 
     def add_end_time_picker(self):
