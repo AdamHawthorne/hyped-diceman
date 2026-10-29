@@ -47,7 +47,13 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Raid:** Molten Core", text)
             self.assertNotIn("Raid instance #1:", text)
             self.assertIn("XIszIH.png", text)
-            self.assertIn("Roster announce date:", text)
+            self.assertIn("Roster Announcement:", text)
+            self.assertIn("**Check:** <#1563663258047619123>", text)
+            self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
+            self.assertRegex(raid_schedule.raid_panel_text(event),
+                             r"\\*\\*Date:\\*\\* <t:\\d+:F>")
+            self.assertRegex(raid_schedule.raid_panel_text(event),
+                             r"\\*\\*Roster Announcement:\\*\\* <t:\\d+:R>")
             self.assertIn("-# *Collecting gamers*", text)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
@@ -69,6 +75,99 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raid_schedule.latest_raid(path)["raid_id"], 1)
             raid_schedule.record_panel(path, 1, raid.TEST_CHANNEL_ID, 12345)
             self.assertEqual(raid_schedule.active_panels(path)[0]["panel_message_id"], 12345)
+
+    async def test_duplicate_characters_are_merged_without_losing_gear_or_raids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+            # Emulate two old registrations saved under different realms and spacing.
+            with raid.database(path) as con:
+                con.execute("DROP INDEX idx_raid_characters_member_name")
+                con.execute(
+                    "INSERT INTO characters (discord_id,name,realm,class_name,spec,role) "
+                    "VALUES (42,'Snore Mon','PvP','Mage','Frost','DPS')"
+                )
+                canonical = con.execute(
+                    "SELECT character_id FROM characters WHERE discord_id=42"
+                ).fetchone()[0]
+                con.execute(
+                    "INSERT INTO characters "
+                    "(discord_id,name,realm,class_name,spec,role,is_main,last_simc_at) "
+                    "VALUES (42,'  snore   mon  ','Other','Mage','Fire','DPS',0,12345)"
+                )
+                duplicate = con.execute(
+                    "SELECT MAX(character_id) FROM characters"
+                ).fetchone()[0]
+                con.execute(
+                    "INSERT INTO characters (discord_id,name,realm,class_name,spec,role) "
+                    "VALUES (99,'Snore Mon','','Mage','Frost','DPS')"
+                )
+                con.execute(
+                    "INSERT INTO signups (raid_id,discord_id,character_id,submitted_at) "
+                    "VALUES (1,42,?,'2026-12-01T12:00:00+00:00')",
+                    (duplicate,)
+                )
+                con.execute(
+                    "INSERT INTO attendance (raid_id,discord_id,character_id) "
+                    "VALUES (1,42,?)", (duplicate,)
+                )
+                con.execute(
+                    "INSERT INTO gear_exports (character_id,submitted_at,format,raw_text) "
+                    "VALUES (?,'2026-12-01T13:00:00+00:00','simc_raw','player=SnoreMon')",
+                    (duplicate,)
+                )
+            raid.create_schema(path)
+            raid.create_schema(path)  # migration is safe across repeated restarts
+            with raid.database(path) as con:
+                rows = con.execute(
+                    "SELECT character_id,name,last_simc_at FROM characters "
+                    "WHERE discord_id=42"
+                ).fetchall()
+                self.assertEqual(rows, [(canonical, "Snore Mon", 12345)])
+                self.assertEqual(con.execute(
+                    "SELECT COUNT(*) FROM characters WHERE discord_id=99"
+                ).fetchone()[0], 1)
+                for table in ("signups", "attendance", "gear_exports"):
+                    self.assertEqual(con.execute(
+                        f"SELECT character_id FROM {table} WHERE character_id=?",
+                        (canonical,)
+                    ).fetchone()[0], canonical)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    con.execute(
+                        "INSERT INTO characters "
+                        "(discord_id,name,realm,class_name,spec,role) "
+                        "VALUES (42,'SNORE MON','','Mage','Fire','DPS')"
+                    )
+            self.assertEqual(
+                raid.save_character(42, "  snore  mon ", "Mage", "Arcane", "DPS", path),
+                "updated",
+            )
+            self.assertEqual(raid.list_characters(42, path),
+                             [("Snore Mon", "Mage", "Arcane", "DPS")])
+            self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
+
+    async def test_repeat_signup_is_one_record_and_keeps_original_timestamp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+            raid.save_character(42, "Firstname Lastname", "Mage", "Frost", "DPS", path)
+            char_id = raid.member_characters(42, path)[0][0]
+            raid.save_signup(1, 42, char_id, path)
+            with raid.database(path) as con:
+                con.execute(
+                    "UPDATE signups SET submitted_at='2026-12-01T12:00:00+00:00'"
+                )
+            raid.save_signup(1, 42, char_id, path)
+            with raid.database(path) as con:
+                row = con.execute(
+                    "SELECT COUNT(*), submitted_at FROM signups "
+                    "WHERE raid_id=1 AND discord_id=42"
+                ).fetchone()
+            self.assertEqual(row, (1, "2026-12-01T12:00:00+00:00"))
 
     async def test_optional_inline_softres_link_and_separate_update(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -162,6 +261,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Raid instance #3", components)
             self.assertIn("Optional SoftRes", components)
             self.assertIn("Post / Update Raid", components)
+            self.assertIn("Choose exact announcement date & time", components)
+            self.assertIn("When to announce the roster?", components)
             self.assertIn("New Raid #1", components)
             self.assertNotIn("Signed up:", components)
             draft = raid_poster.draft_from_event(None)
