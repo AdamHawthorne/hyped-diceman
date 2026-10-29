@@ -35,9 +35,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(start=start):
                 output = raid_schedule.raid_panel_when(start)
-                self.assertRegex(output, r"^<t:\d+:D>\n<t:\d+:R>\n")
+                self.assertRegex(output, r"^.+ - <t:\d+:R>\n")
                 self.assertRegex(output, r"<t:\d+:t> - <t:\d+:t>")
-                self.assertEqual(len(output.split("\n")), 3)
+                self.assertEqual(len(output.split("\n")), 2)
                 self.assertNotIn(":F>", output)
         # A customised end is a separate Discord timestamp (not a static clock).
         custom = raid_schedule.raid_panel_when(
@@ -75,7 +75,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(
                 raid_schedule.raid_panel_text(event),
-                r"<t:\d+:D>\n<t:\d+:R>\n<t:\d+:t> - <t:\d+:t>",
+                r"Thursday 5th Nov - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>",
             )
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
@@ -387,7 +387,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("@\u200beveryone", intro)
             self.assertNotIn("\n\n\n", intro)
             self.assertRegex(
-                intro, r"<t:\d+:D>\n<t:\d+:R>\n<t:\d+:t> - <t:\d+:t>"
+                intro, r"Wednesday 9th Dec - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>"
             )
             self.assertNotIn("**Date:**", intro)
             self.assertNotIn("**Time:**", intro)
