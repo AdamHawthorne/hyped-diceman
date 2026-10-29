@@ -160,24 +160,19 @@ class RaidTabsTests(unittest.TestCase):
                 path, 1, [tuple(entry[1:6]) for entry in selected]
             ), set())
 
-    def test_class_and_role_emoji_from_guild_or_fallback(self):
-        emojis = {"tank": "<:Tank:123456789012345678>",
-                  "warrior": "<:Warrior:123456789012345679>",
-                  "ranged": "<:Ranged:123456789012345680>",
-                  "mage": "<:Mage:123456789012345681>"}
+    def test_class_and_role_emoji_from_fixed_guild_ids(self):
         self.assertEqual(raid_schedule.roster_name_with_emojis(
-            "Snore Mon", "Warrior", "Tank", "Protection", emojis
-        ), "<:Tank:123456789012345678> <:Warrior:123456789012345679> Snore Mon")
+            "Snore Mon", "Warrior", "Tank", "Protection"
+        ), "<:Tank:1565477012322132099> <:Warrior:1565476863835644034> Snore Mon")
         self.assertEqual(raid_schedule.roster_name_with_emojis(
-            "Mage One", "Mage", "DPS", "Frost", emojis
-        ), "<:Ranged:123456789012345680> <:Mage:123456789012345681> Mage One")
+            "Mage One", "Mage", "DPS", "Frost"
+        ), "<:Caster:1565477140429021285> <:Mage:1565476478957916310> Mage One")
         text = raid_schedule.roster_name_with_emojis(
             "Rogue One", "Rogue", "DPS", "Combat"
         )
-        self.assertIn("Rogue One", text)
-        self.assertNotIn("• ", text)
-        self.assertNotIn(":Rogue:", text)
-        self.assertIn("🗡️", text)
+        self.assertEqual(
+            text, "<:Melee:1565477048305197207> <:Rogue:1565476692611563550> Rogue One"
+        )
 
     def test_public_changes_do_not_overwrite_other_raids(self):
         with tempfile.TemporaryDirectory() as tmp:
