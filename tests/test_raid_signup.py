@@ -1060,8 +1060,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                  "raid_id": 9, "signup_open": 1, "roster_published": 0,
              }), patch.object(raid, "member_characters", return_value=[
                  (12, "Firstname Lastname", "Mage", "Frost", "DPS", None),
-             ]), patch.object(raid, "my_signup", return_value=(
-                 "Firstname Lastname", "Available",
+             ]), patch.object(raid, "signup_note_details", return_value=(
+                 "Firstname Lastname", "Available", "Old note",
              )):
             cog = raid.RaidPrototype(SimpleNamespace())
             response = SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock())
@@ -1074,11 +1074,11 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             await cog.on_signup(interaction, 9)
             response.defer.assert_awaited_once_with(ephemeral=True)
             kwargs = followup.send.await_args.kwargs
-            self.assertIsInstance(kwargs["view"], raid.CharacterActionView)
+            self.assertIsInstance(kwargs["view"], raid.ExistingAttendanceView)
             self.assertTrue(kwargs["ephemeral"])
             self.assertNotIn("content", kwargs)
             self.assertEqual(followup.send.await_args.args, ())
-            self.assertIn("**Now:** Firstname Lastname", json.dumps(kwargs["view"].to_components()))
+            self.assertIn("Already attending", json.dumps(kwargs["view"].to_components()))
             self.assertFalse(response.send_message.called)
 
     async def test_first_time_signup_opens_registration_with_raid_context(self):
