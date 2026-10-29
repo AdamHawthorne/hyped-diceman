@@ -103,7 +103,7 @@ class RaidTabsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             event = self.setup_raid(path)
-            self.assertIn("**Confirmation:**", raid_schedule.raid_roster_status(event))
+            self.assertIn("**Roster confirmation:**", raid_schedule.raid_roster_status(event))
             with self.assertRaises(ValueError):
                 raid_schedule.raid_status(path, 1, "confirm", confirmed_entries=[])
             confirmed = raid_schedule.raid_status(path, 1, "confirm",
