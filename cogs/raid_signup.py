@@ -203,13 +203,14 @@ def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
                 "WHERE character_id=? AND discord_id=?",
                 (class_name, spec, role, previous[0], discord_id),
             )
-        else:
-            con.execute(
-                "INSERT INTO characters "
-                "(discord_id, name, realm, class_name, spec, role) "
-                "VALUES (?, ?, '', ?, ?, ?)",
-                (discord_id, name, class_name, spec, role),
-            )
+            return "updated"
+        con.execute(
+            "INSERT INTO characters "
+            "(discord_id, name, realm, class_name, spec, role) "
+            "VALUES (?, ?, '', ?, ?, ?)",
+            (discord_id, name, class_name, spec, role),
+        )
+        return "created"
 
 
 def list_characters(discord_id, path=RAID_DB):
@@ -493,12 +494,16 @@ class CharacterActionView(discord.ui.LayoutView):
                 )
                 return
             try:
+                existing = my_signup(self.raid_id, self.owner_id)
                 save_signup(self.raid_id, self.owner_id, char_id)
             except (ValueError, sqlite3.Error) as exc:
                 await interaction.response.send_message(str(exc), ephemeral=True)
                 return
+            already = existing and existing[0].casefold() == match[1].casefold() \
+                and existing[1] == "Available"
             await interaction.response.send_message(
-                f"Ogre got **{discord.utils.escape_markdown(match[1])}** "
+                f"Ogre {'already got' if already else 'got'} "
+                f"**{discord.utils.escape_markdown(match[1])}** "
                 f"for Raid #{self.raid_id}.", ephemeral=True
             )
 
@@ -526,8 +531,8 @@ class CharacterNameModal(discord.ui.Modal):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         try:
-            save_character(interaction.user.id, self.name.value,
-                           self.class_name, self.spec, self.role)
+            outcome = save_character(interaction.user.id, self.name.value,
+                                     self.class_name, self.spec, self.role)
         except (ValueError, sqlite3.Error) as exc:
             await interaction.response.send_message(
                 f"Ogre couldn't save character: {exc}", ephemeral=True
@@ -557,7 +562,8 @@ class CharacterNameModal(discord.ui.Modal):
             )
             return
         await interaction.response.send_message(
-            f"Ogre remember **{name}** · {self.class_name} / {self.spec} · "
+            f"Ogre {'updated' if outcome == 'updated' else 'saved'} "
+            f"**{name}** · {self.class_name} / {self.spec} · "
             f"**{self.role}**.\nUse **/raid characters** to see saved profiles.",
             ephemeral=True,
         )
