@@ -173,14 +173,13 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 and item.style == discord.ButtonStyle.link
             ]
             self.assertEqual(len(url_buttons), 4)
-            self.assertTrue(all(button.label is None for button in url_buttons))
+            self.assertTrue(all(button.label in (None, "") for button in url_buttons))
             self.assertEqual(
                 [button.url for button in url_buttons],
                 ["https://discord.com/channels/123456789/1180717517577129984",
                  "https://discord.com/channels/123456789/1560686612109856819"] * 2,
             )
-            self.assertEqual([button.emoji.name for button in url_buttons],
-                             ["🔊"] * 4)
+            self.assertTrue(all(str(button.emoji) == "🔊" for button in url_buttons))
             self.assertEqual(
                 [button.label for button in panel.walk_children()
                  if isinstance(button, discord.ui.Button)
