@@ -32,6 +32,21 @@ VALUES = {
 }
 MAX_BODY_ROWS = 460
 
+# Display order: move Signed At (legacy H) to the far right (R).
+DISPLAY_ORDER = tuple(i for i in range(18) if i != 7) + (7,)
+
+def _display(row):
+    padded = (list(row) + [""] * 18)[:18]
+    return [padded[i] for i in DISPLAY_ORDER]
+
+def _internal(row):
+    padded = (list(row) + [""] * 18)[:18]
+    restored = [""] * 18
+    for display_index, internal_index in enumerate(DISPLAY_ORDER):
+        restored[internal_index] = padded[display_index]
+    return restored
+
+
 
 def tab_title(event):
     start = datetime.fromisoformat(event["raid_at"]).astimezone(UK)
@@ -43,10 +58,11 @@ def _q(tab):
 
 
 def _read(session, tab):
-    return raid_sheets._json(
+    result = raid_sheets._json(
         session, "GET", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/{_q(tab)}",
         params={"valueRenderOption": "FORMATTED_VALUE"},
     ).get("values", [])
+    return [_internal(row) for row in result]
 
 
 def _list_tabs(session):
@@ -324,7 +340,7 @@ def _make_tab(session, title):
             }}, "fields": "userEnteredFormat"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
-                      "startIndex": 16, "endIndex": 18},
+                      "startIndex": 15, "endIndex": 17},
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
@@ -337,7 +353,8 @@ def _make_tab(session, title):
                       "startIndex": col, "endIndex": col + 1},
             "properties": {"pixelSize": width}, "fields": "pixelSize",
         }})
-    for col, options in VALUES.items():
+    for old_col, options in VALUES.items():
+        col = DISPLAY_ORDER.index(old_col)
         requests.append({"setDataValidation": {
             "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
                       "startColumnIndex": col, "endColumnIndex": col + 1},
@@ -391,7 +408,7 @@ def _write(session, title, sid, existing, rows):
         session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
         + quote(f"'{title}'!A1:R{len(needed)}", safe="'!:"),
         params={"valueInputOption": "RAW"},
-        json={"values": needed},
+        json={"values": [_display(row) for row in needed]},
     )
     _paint_sections(session, sid, rows)
     return sum(a != b for a, b in zip(
