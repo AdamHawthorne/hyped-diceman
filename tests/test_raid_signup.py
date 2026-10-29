@@ -51,9 +51,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Check:** <#1563663258047619123>", text)
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"\\*\\*Date:\\*\\* <t:\\d+:F>")
+                             r"\*\*Date:\*\* <t:\d+:F>")
             self.assertRegex(raid_schedule.raid_panel_text(event),
-                             r"\\*\\*Roster Announcement:\\*\\* <t:\\d+:R>")
+                             r"\*\*Roster Announcement:\*\* <t:\d+:R>")
             self.assertIn("-# *Collecting gamers*", text)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
