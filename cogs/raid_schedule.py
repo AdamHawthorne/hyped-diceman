@@ -516,22 +516,16 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
 
 
 def raid_panel_when(value, end_at=None):
-    """UK weekday/ordinal date plus Discord-localised countdown and times."""
+    """Native Discord full date, relative countdown, and local times."""
     start = datetime.fromisoformat(value).astimezone(UK)
     end = (datetime.fromisoformat(end_at).astimezone(UK) if end_at else
            (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK))
-    # Discord has no timestamp style for weekday + ordinal short date.
-    # Render the UK calendar label explicitly; countdown and times stay native
-    # Discord timestamps and localise automatically for every viewer.
-    day = start.day
-    ending = "th" if 11 <= day % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    date_label = f"{start:%A} {day}{ending} {start:%b}"
     return (
-        f"{date_label} - {format_discord_date(start.isoformat(), style='R', with_relative=False)}\n"
+        f"{format_discord_date(start.isoformat(), style='F', with_relative=False)}"
+        f" - {format_discord_date(start.isoformat(), style='R', with_relative=False)}\n"
         f"{format_discord_date(start.isoformat(), style='t', with_relative=False)}"
         f" - {format_discord_date(end.isoformat(), style='t', with_relative=False)}"
     )
-
 
 def raid_panel_intro(event):
     """Compact header; raid times are UK, announcement timestamps localise."""
@@ -585,17 +579,15 @@ def raid_roster_status(event):
 def _roster_group_text(title, players):
     """Always show muted Tanks / Healers / DPS placeholders per raid roster."""
     if title.startswith("Barrows · 10-player "):
-        heading = ("**Barrows**\n" if title.endswith("🔸") else "") + title[-1]
+        heading = f"**Barrows** {title[-1]}"
     elif title == "Hyjal · 20-player":
-        heading = "**Hyjal**"
+        heading = "**Hyjal** 🔹🔸"
     elif title == "Ony · 40-player":
         heading = "**Ony**"
     else:
         heading = f"**{title}**"
 
-    # Preserve the diamond indicators while providing three stable role sections.
-    symbol = "🔹🔸" if title == "Hyjal · 20-player" else ""
-    lines = [heading] + ([symbol] if symbol else [])
+    lines = [heading]
     for label, category in (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS")):
         lines.append(f"-# **{label}**")
         if players:
