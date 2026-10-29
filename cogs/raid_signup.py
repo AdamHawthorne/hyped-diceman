@@ -592,8 +592,8 @@ class SignupNoteModal(discord.ui.Modal):
         already = existing and existing[0].casefold() == self.name.casefold() \
             and existing[1] == "Available"
         await interaction.response.send_message(
-            f"✅ **Attendance {'updated' if already else 'registered'}** for Raid #{self.raid_id}.\\n"
-            f"**{discord.utils.escape_markdown(self.name)}** is marked Available.\\n"
+            f"✅ **Attendance {'updated' if already else 'registered'}** for Raid #{self.raid_id}.\n"
+            f"**{discord.utils.escape_markdown(self.name)}** is marked Available.\n"
             "Ogre says: If plans change, hit **Absent** as soon as you know.",
             ephemeral=True,
         )
@@ -608,9 +608,9 @@ class ExistingAttendanceView(discord.ui.LayoutView):
         name, _, note = existing
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                f"## ✅ Already attending Raid #{raid_id}\\n"
-                f"**{discord.utils.escape_markdown(name)}** · Available\\n"
-                + (f"**Note:** {discord.utils.escape_markdown(note)}\\n" if note else "")
+                f"## ✅ Already attending Raid #{raid_id}\n"
+                f"**{discord.utils.escape_markdown(name)}** · Available\n"
+                + (f"**Note:** {discord.utils.escape_markdown(note)}\n" if note else "")
                 + "Ogre has you down. If plans change, press **Absent** ASAP."
             ), accent_color=ACCENT,
         ))
@@ -716,7 +716,7 @@ class CharacterActionView(discord.ui.LayoutView):
             "update": "Choose a character to manage, or add an alt.",
         }[purpose]
         self.add_item(discord.ui.Container(
-            discord.ui.TextDisplay(f"## {title}\\n{hint}"),
+            discord.ui.TextDisplay(f"## {title}\n{hint}"),
             accent_color=ACCENT,
         ))
         options = [
@@ -780,8 +780,8 @@ class CharacterManageView(discord.ui.LayoutView):
         is_main = character_id in main_character_ids(owner_id)
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
-                f"## {guild_emoji(class_name)} {discord.utils.escape_markdown(name)}\\n"
-                f"{class_name} / {spec} · {guild_emoji(combat_role(role, class_name, spec))} {role}\\n"
+                f"## {guild_emoji(class_name)} {discord.utils.escape_markdown(name)}\n"
+                f"{class_name} / {spec} · {guild_emoji(combat_role(role, class_name, spec))} {role}\n"
                 f"**{'Main' if is_main else 'Alt'}**"
             ), accent_color=ACCENT,
         ))
