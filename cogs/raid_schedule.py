@@ -207,30 +207,49 @@ def record_panel(path, number, channel_id, message_id):
         )
 
 
-def roster_groups(event, public_roster):
-    """Display independently approved Hyjal, Barrows A/B and optional Ony teams.
+# Exact guild voice channels. An icon-only Discord link button beside each
+# diamond opens that channel; joining voice still requires a Discord action.
+VOICE_ORANGE = 1180717517577129984
+VOICE_BLUE = 1560686612109856819
+VOICE_SPLITS = {
+    "🔸": VOICE_ORANGE,
+    "🔹": VOICE_BLUE,
+}
 
-    The sheet remains authoritative: only Selected + Show on Discord = Yes
-    rows enter this cache. A player may appear in Hyjal AND a Barrows group.
+
+def _split_from_tokens(tokens):
+    """New diamond and historic Group A/B Sheet values refer to same rooms."""
+    if {"barrows 🔹", "group b", "🔹", "barrows b"} & tokens:
+        return "🔹"
+    return "🔸"  # Default voice channel when split has not been assigned.
+
+
+def roster_groups(event, public_roster):
+    """Only approved names, grouped by instance and actual voice split.
+
+    Every Hyjal player gets a default 🔸 or explicit 🔹 voice allocation.
+    Barrows shows *separate* 🔸 and 🔹 10-player rosters, with no A/B labels.
+    One person can be on both a Hyjal and Barrows roster.
     """
     instances = [
         (event.get(key) or "").casefold()
         for key in ("instance_1", "instance_2", "instance_3")
     ]
-    group_names = []
-    if any("hyjal" in name for name in instances):
-        group_names.append(("Hyjal · 20-player", "Hyjal"))
-    if any("barrows" in name for name in instances):
-        group_names += [
-            ("Barrows · 10-player A", "Barrows A"),
-            ("Barrows · 10-player B", "Barrows B"),
-        ]
-    if any("ony" in name for name in instances):
-        group_names.append(("Ony · 40-player", "Ony"))
-    if not group_names:
-        group_names.append(("Selected players", "Selected"))
+    has_hyjal = any("hyjal" in name for name in instances)
+    has_barrows = any("barrows" in name for name in instances)
+    has_ony = any("ony" in name for name in instances)
 
-    groups = [(title, []) for title, _ in group_names]
+    group_titles = []
+    if has_hyjal:
+        group_titles.extend(("Hyjal · 20-player 🔸", "Hyjal · 20-player 🔹"))
+    if has_barrows:
+        group_titles.extend(("Barrows · 10-player 🔸", "Barrows · 10-player 🔹"))
+    if has_ony:
+        group_titles.append("Ony · 40-player")
+    if not group_titles:
+        group_titles.append("Selected players")
+
+    groups = {title: [] for title in group_titles}
     pending = []
     for name, assignment in public_roster:
         clean_name = discord.utils.escape_mentions(
@@ -239,23 +258,34 @@ def roster_groups(event, public_roster):
         if not clean_name:
             continue
         tokens = {item.strip().casefold() for item in (assignment or "").split(",")}
+        split = _split_from_tokens(tokens)
         matched = False
-        for index, (_, tag) in enumerate(group_names):
-            if tag == "Selected" or tag.casefold() in tokens:
-                groups[index][1].append(clean_name)
-                matched = True
-        # A manually revealed player with no instance assignment is still
-        # announced, but never falsely attributed to a 10/20/40 roster.
+        if has_hyjal and "hyjal" in tokens:
+            groups[f"Hyjal · 20-player {split}"].append(clean_name)
+            matched = True
+        if has_barrows and (
+            {"barrows 🔸", "barrows 🔹", "barrows a", "barrows b",
+             "group a", "group b", "🔸", "🔹"} & tokens
+        ):
+            groups[f"Barrows · 10-player {split}"].append(clean_name)
+            matched = True
+        if has_ony and "ony" in tokens:
+            groups["Ony · 40-player"].append(clean_name)
+            matched = True
+        if "Selected players" in groups:
+            groups["Selected players"].append(clean_name)
+            matched = True
         if not matched:
             pending.append(clean_name)
+    result = list(groups.items())
     if pending:
-        groups.append(("Selected · group pending", pending))
-    return groups
+        result.append(("Selected · group pending", pending))
+    return result
 
 
-def raid_panel_text(event, public_roster=()):
-    """Private sheet approvals shown under distinct instance/group headings."""
-    title = event["title"]  # Generated from a validated integer, not player input.
+def raid_panel_intro(event):
+    """Compact fixed header; all timestamps localise in Discord."""
+    title = event["title"]
     instances = [
         discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))
         for key in ("instance_1", "instance_2", "instance_3")
@@ -266,7 +296,7 @@ def raid_panel_text(event, public_roster=()):
     )
     softres = event.get("softres_url")
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
-    prefix = (
+    return (
         f"## {title}\n"
         f"**Date:** {format_discord_date(event['raid_at'], style='D', with_relative=False)}\n"
         f"**Time:** {format_discord_date(event['raid_at'], style='t', with_relative=False)}\n\n"
@@ -276,44 +306,80 @@ def raid_panel_text(event, public_roster=()):
         + f"\n**Roster Announcement:** {roster_date}"
         + "\n\n### Roster"
     )
-    parts = [prefix]
-    length = len(prefix)
-    # Keep one V2 TextDisplay within Discord's 4000-character limit, even for
-    # partially announced 40-person Ony rosters overlapping 20/10 groups.
-    for title, players in roster_groups(event, public_roster):
-        heading = f"\n\n**{title}**\n"
-        if length + len(heading) > 3750:
+
+
+def _roster_group_text(title, players):
+    """A voice icon identifies the section; a join button is its accessory."""
+    if title.startswith("Hyjal · 20-player "):
+        heading = "**Hyjal · 20-player**\n" + title[-1]
+    elif title.startswith("Barrows · 10-player "):
+        heading = "**Barrows · 10-player**\n" + title[-1]
+    else:
+        heading = f"**{title}**"
+    if not players:
+        return heading + "\n-# *Not announced*"
+    names = []
+    length = len(heading)
+    for name in players:
+        line = f"• {name}"
+        if length + len(line) + 2 > 3800:
+            names.append("-# *More selected players not shown here*")
             break
-        parts.append(heading)
-        length += len(heading)
-        if not players:
-            placeholder = "-# *Not announced*"
-            parts.append(placeholder)
-            length += len(placeholder)
-            continue
-        for name in players:
-            line = f"• {name}\n"
-            if length + len(line) > 3750:
-                parts.append("-# *More selected players not shown here*")
-                return "".join(parts)
-            parts.append(line)
-            length += len(line)
-    return "".join(parts).rstrip()
+        names.append(line)
+        length += len(line) + 1
+    return heading + "\n" + "\n".join(names)
+
+
+def raid_panel_text(event, public_roster=()):
+    """Plain-text equivalent used for previews and roster layout tests."""
+    groups = roster_groups(event, public_roster)
+    return raid_panel_intro(event) + "".join(
+        "\n\n" + _roster_group_text(title, players)
+        for title, players in groups
+    )
+
+
+def _voice_button(guild_id, title):
+    """Icon-only link opens a voice room; Discord cannot auto-join voice."""
+    split = title[-1]
+    if not guild_id or split not in VOICE_SPLITS:
+        return None
+    channel_id = VOICE_SPLITS[split]
+    return discord.ui.Button(
+        style=discord.ButtonStyle.link,
+        emoji="🔊",
+        url=f"https://discord.com/channels/{int(guild_id)}/{channel_id}",
+    )
+
+
+def roster_components(event, public_roster, *, guild_id=None):
+    """Voice join buttons directly beside the diamond-marked roster sections."""
+    components = []
+    for title, players in roster_groups(event, public_roster):
+        text = discord.ui.TextDisplay(_roster_group_text(title, players))
+        button = _voice_button(guild_id, title)
+        if button:
+            components.append(discord.ui.Section(text, accessory=button))
+        else:
+            components.append(text)
+    return components
 
 
 class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
     def __init__(self, event, *, on_register=None, on_characters=None, on_signup=None,
-                 on_gear=None, on_update=None, on_absent=None, public_roster=()):
+                 on_gear=None, on_update=None, on_absent=None,
+                 public_roster=(), guild_id=None):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
             discord.ui.Section(
-                discord.ui.TextDisplay(raid_panel_text(event, public_roster)),
+                discord.ui.TextDisplay(raid_panel_intro(event)),
                 accessory=discord.ui.Thumbnail(
                     RAID_PANEL_IMAGE, description="Hyped raid image"
                 ),
             ),
+            *roster_components(event, public_roster, guild_id=guild_id),
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(
                     media=RAID_PANEL_BANNER,
