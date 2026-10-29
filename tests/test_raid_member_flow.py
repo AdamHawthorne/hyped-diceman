@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 from PIL import Image
@@ -15,6 +15,38 @@ from cogs import raid_schedule, raid_signup as raid, raid_sheets
 
 
 class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_raid_sheet_names_resolve_from_discord_without_changing_rolls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid.save_character(42, "Character One", "Mage", "Frost", "DPS", path)
+            raid.save_character(42, "Character Two", "Mage", "Frost", "DPS", path)
+            member = SimpleNamespace(display_name="Ogre Leader")
+            guild = SimpleNamespace(
+                get_member=Mock(return_value=None),
+                fetch_member=AsyncMock(return_value=member),
+            )
+            bot = SimpleNamespace(
+                get_guild=Mock(return_value=guild),
+                get_user=Mock(return_value=None),
+            )
+            cog = raid.RaidPrototype(bot)
+            with patch.object(raid, "RAID_DB", path):
+                names = await cog.raid_discord_names()
+                self.assertEqual(names, {42: "Ogre Leader"})
+                guild.fetch_member.assert_awaited_once_with(42)
+                # A cached name avoids additional requests on the next sync.
+                self.assertEqual(await cog.raid_discord_names(), names)
+                guild.fetch_member.assert_awaited_once_with(42)
+                with patch.object(raid_sheets, "sync_once", return_value=(
+                    {"characters": 2}, set()
+                )) as sync:
+                    self.assertEqual(
+                        await cog.sync_raid_sheets(),
+                        ({"characters": 2}, set()),
+                    )
+                    sync.assert_called_once_with(path, {42: "Ogre Leader"})
+
     async def test_main_panel_has_exactly_four_buttons(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
