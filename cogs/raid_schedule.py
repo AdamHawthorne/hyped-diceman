@@ -48,14 +48,20 @@ def parse_uk_datetime(value):
     return aware
 
 
-def format_discord_date(value):
+def format_discord_date(value, *, style="F", with_relative=True):
+    """Discord full date or relative countdown, not both unless requested."""
     if not value:
         return "To be confirmed"
+    if style not in ("F", "R"):
+        raise ValueError("Unsupported Discord date style.")
     instant = datetime.fromisoformat(value)
     if instant.tzinfo is None:
         raise ValueError("Raid times must have a timezone.")
     timestamp = int(instant.timestamp())
-    return f"<t:{timestamp}:F> · <t:{timestamp}:R>"
+    display = f"<t:{timestamp}:{style}>"
+    if with_relative and style != "R":
+        return display + f" · <t:{timestamp}:R>"
+    return display
 
 
 def ensure_raid_fields(path):
@@ -199,7 +205,9 @@ def raid_panel_text(event):
         for key in ("instance_1", "instance_2", "instance_3")
         if event.get(key)
     ]
-    roster_date = format_discord_date(event.get("roster_announce_at"))
+    roster_date = format_discord_date(
+        event.get("roster_announce_at"), style="R", with_relative=False
+    )
     roster_text = (
         "Roster published — check the official raid announcement."
         if event.get("roster_published") else "-# *Collecting gamers*"
@@ -208,9 +216,10 @@ def raid_panel_text(event):
     softres_line = f"\n\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
-        f"**Date:** {format_discord_date(event['raid_at'])}\n\n"
+        f"**Date:** {format_discord_date(event['raid_at'], with_relative=False)}\n\n"
         + "**Raid:** " + ", ".join(instances)
-        + f"\n\n### Roster\n**Roster announce date:** {roster_date}\n"
+        + "\n**Check:** <#1563663258047619123>"
+        + f"\n\n### Roster\n**Roster Announcement:** {roster_date}\n"
         + roster_text
         + softres_line
     )
