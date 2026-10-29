@@ -177,6 +177,7 @@ def delete_raid(path, number):
         if not event:
             raise ValueError(f"Raid #{number} no longer exists.")
         con.execute("DELETE FROM signups WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_absences WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True
