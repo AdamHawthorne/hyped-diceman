@@ -317,6 +317,48 @@ def set_main_character(discord_id, character_id, path=RAID_DB):
         )
 
 
+
+def delete_character(discord_id, character_id, path=RAID_DB):
+    """Delete an unused character without erasing raid/attendance history."""
+    with database(path) as con:
+        con.execute("BEGIN IMMEDIATE")
+        character = con.execute(
+            "SELECT name,is_main FROM characters WHERE discord_id=? AND character_id=?",
+            (discord_id, character_id),
+        ).fetchone()
+        if not character:
+            raise ValueError("That character is no longer yours.")
+        for table in ("signups", "attendance"):
+            if con.execute(
+                f"SELECT 1 FROM {table} WHERE character_id=? LIMIT 1",
+                (character_id,),
+            ).fetchone():
+                raise ValueError(
+                    "This character has raid sign-up or attendance history. "
+                    "Ogre won't delete that history. Ask leadership to archive it."
+                )
+        # Gear belongs exclusively to this character, unlike raid history.
+        for table in ("gear_exports", "gear_images"):
+            con.execute(f"DELETE FROM {table} WHERE character_id=?", (character_id,))
+        con.execute(
+            "DELETE FROM characters WHERE discord_id=? AND character_id=?",
+            (discord_id, character_id),
+        )
+        if character[1]:
+            next_character = con.execute(
+                "SELECT character_id FROM characters WHERE discord_id=? "
+                "ORDER BY character_id LIMIT 1",
+                (discord_id,),
+            ).fetchone()
+            if next_character:
+                con.execute(
+                    "UPDATE characters SET is_main=1 WHERE discord_id=? AND character_id=?",
+                    (discord_id, next_character[0]),
+                )
+        return character[0]
+
+
+
 def main_character_ids(discord_id, path=RAID_DB):
     try:
         with database(path) as con:
@@ -810,10 +852,68 @@ class CharacterManageView(discord.ui.LayoutView):
                 view=CharacterManageView(self.owner_id, self.character_id, character)
             )
 
+        delete = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
+
+        async def delete_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=ConfirmCharacterDeleteView(self.owner_id, self.character_id, name)
+            )
+
+        delete.callback = delete_callback
         edit.callback, main.callback = edit_callback, main_callback
         buttons.add_item(edit)
         buttons.add_item(main)
+        buttons.add_item(delete)
         self.add_item(buttons)
+
+
+
+class ConfirmCharacterDeleteView(discord.ui.LayoutView):
+    """Require an explicit second click before permanently removing a character."""
+
+    def __init__(self, owner_id, character_id, character_name):
+        super().__init__(timeout=180)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## Delete {discord.utils.escape_markdown(character_name)}?\\n"
+                "This permanently removes the character and saved SimC exports. "
+                "Characters with raid sign-up or attendance history cannot be deleted."
+            ), accent_color=ACCENT,
+        ))
+        controls = discord.ui.ActionRow()
+        confirm = discord.ui.Button(label="Confirm delete", style=discord.ButtonStyle.danger)
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+
+        async def confirm_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            try:
+                removed = delete_character(owner_id, character_id)
+            except (ValueError, sqlite3.Error) as exc:
+                await interaction.response.send_message(f"Ogre can't delete: {exc}", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterActionView(owner_id, purpose="update"),
+            )
+
+        async def cancel_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterActionView(owner_id, purpose="update"),
+            )
+
+        confirm.callback = confirm_callback
+        cancel.callback = cancel_callback
+        controls.add_item(confirm)
+        controls.add_item(cancel)
+        self.add_item(controls)
+
 
 
 class CharacterNameModal(discord.ui.Modal):
