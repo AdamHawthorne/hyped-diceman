@@ -27,13 +27,37 @@ ACCENT = 0xA87535
 LOGGER = logging.getLogger(__name__)
 
 SHEET_TABS = {
-    "Characters": ("Character ID", "Discord ID", "Discord Name", "Character", "Realm", "Class", "Spec", "Role", "Main/Alt", "Last Gear Update"),
-    "Sign-ups": ("Raid ID", "Raid Date", "Discord ID", "Character ID", "Availability", "Notes", "SimC Updated", "Submitted At"),
-    "Gear Checks": ("Character ID", "Character", "Discord ID", "Exported At", "SimC Format", "Equipment Data", "Review Status", "Review Notes"),
-    "Roster Builder": ("Raid ID", "Raid Date", "Discord ID", "Character ID", "Selection", "Assigned Role", "Bench", "Published At"),
-    "Attendance": ("Raid ID", "Raid Date", "Discord ID", "Discord Name", "Character ID", "Character", "Roster Status", "Attendance", "Late Minutes", "AFK Minutes", "Excused", "Leadership Notes", "Updated At"),
-    "Raid History": ("Raid ID", "Raid Date", "Instance", "Roster Published", "Completed", "Notes"),
+    "Characters": (
+        "Character ID", "Discord ID", "Discord Name", "Character", "Class",
+        "Spec", "Role", "Main / Alt", "Profile Updated", "SimC Updated",
+    ),
+    "Sign-ups": (
+        "Raid ID", "Raid Date", "Discord ID", "Character ID", "Character",
+        "Availability", "Sign-up Notes", "Sign-up Time", "Last Updated",
+        "Signed off at",
+    ),
+    "Gear Checks": (
+        "Character ID", "Discord ID", "Character", "SimC Submitted",
+        "Export Format", "Item Summary", "Gear Review", "Leadership Notes",
+        "Raw Export Reference",
+    ),
+    "Roster Builder": (
+        "Raid ID", "Raid Date", "Discord ID", "Character ID", "Character",
+        "Class", "Spec", "Assigned Role", "Selection", "Bench Notes",
+        "Show on Discord", "Ony (40m)", "Hyjal (20m)", "Barrows (10m)",
+        "Player Source",
+    ),
+    "Attendance": (
+        "Raid ID", "Raid Date", "Discord ID", "Discord Name", "Character ID",
+        "Character", "Roster Status", "Attendance", "Late Minutes",
+        "AFK Minutes", "Excused", "Leadership Notes", "Updated At",
+    ),
+    "Raid History": (
+        "Raid ID", "Raid Date", "Instance", "Start Time",
+        "Roster Published", "Raid Completed", "Leadership Notes",
+    ),
 }
+
 ATTENDANCE_OPTIONS = ("Pending", "Attended", "Late", "AFK", "No-show", "Excused")
 
 
