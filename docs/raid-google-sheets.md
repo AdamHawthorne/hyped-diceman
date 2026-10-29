@@ -38,6 +38,21 @@ a separate Google service account. Keep its JSON key private and outside Git.
 - RM - Attendance remains manual.
 - Original Roster, Attendance, Assignments and other guild tabs stay untouched.
 
+## Optional raid title and compact event layout
+
+In private `/raid poster`, **Optional Raid Title** adds text after the
+fixed `<Hyped> Raid #N` prefix, e.g. `<Hyped> Raid #1 - First Clear`.
+Leave it empty for the original title; reopen the option and submit blank
+to clear it. Existing title text persists when older `/raid setup` commands
+edit a saved raid. It does not change the raid ID or existing sign-ups.
+
+The Discord raid card displays the localised `<t:...:D> at <t:...:t>`
+on one line with no Date/Time labels. Use one blank line, not multiple,
+between the title/date, event details and roster. Until the Hyjal team is
+announced it shows `🔹🔸 - Forming, await announcement`. The two Barrows
+teams show `🔸 - Not announced` and `🔹 - Not announced` on their
+respective lines. There are no voice-link buttons.
+
 ## Raid member controls
 
 The live Discord raid card has exactly four buttons:
