@@ -516,16 +516,12 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
 
 
 def raid_panel_when(value, end_at=None):
-    """Compact UK date, live Discord countdown and local start/end times."""
+    """Native Discord date and local, hoverable start/end times."""
     start = datetime.fromisoformat(value).astimezone(UK)
     end = (datetime.fromisoformat(end_at).astimezone(UK) if end_at else
            (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK))
-    day = start.day
-    suffix = ("th" if 11 <= day % 100 <= 13
-              else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th"))
-    short_date = f"{start:%A} {day}{suffix} {start:%b}"
     return (
-        f"{short_date} - {format_discord_date(start.isoformat(), style='R', with_relative=False)}\n"
+        f"{format_discord_date(start.isoformat(), style='D', with_relative=False)}\n"
         f"{format_discord_date(start.isoformat(), style='t', with_relative=False)}"
         f" - {format_discord_date(end.isoformat(), style='t', with_relative=False)}"
     )
@@ -624,7 +620,7 @@ class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
     def __init__(self, event, *, on_register=None, on_characters=None, on_signup=None,
                  on_gear=None, on_update=None, on_absent=None,
-                 public_roster=(), emoji_map=None):
+                 public_roster=(), emoji_map=None, on_remind=None):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -676,6 +672,14 @@ class RaidEventPanel(discord.ui.LayoutView):
             gear.callback = on_gear
         if on_absent is not None:
             absent.callback = on_absent
-        for control in (sign_up, update, gear):
+        reminder = discord.ui.Button(
+            label="Alarm", emoji="⏰",
+            custom_id=f"hyped_raid_{event_id}_reminder",
+            style=discord.ButtonStyle.secondary,
+            disabled=on_remind is None or bool(event.get("archived_at")),
+        )
+        if on_remind is not None:
+            reminder.callback = on_remind
+        for control in (sign_up, update, gear, reminder):
             controls.add_item(control)
         self.add_item(controls)
