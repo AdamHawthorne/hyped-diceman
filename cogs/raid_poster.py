@@ -12,11 +12,7 @@ from cogs.raid_schedule import (
 )
 
 UK = ZoneInfo("Europe/London")
-INSTANCES = (
-    "Molten Core", "Onyxia's Lair", "Blackwing Lair", "Zul'Gurub",
-    "Ruins of Ahn'Qiraj", "Temple of Ahn'Qiraj", "Naxxramas",
-    "World Bosses", "Other / Custom",
-)
+INSTANCES = ("Hyjal (20m)", "Barrows (10m)", "Ony (40m)")
 TIMES = ("18:00", "18:30", "19:00", "19:30", "20:00", "20:30",
          "21:00", "21:30", "22:00")
 ANNOUNCEMENTS = {
@@ -122,6 +118,51 @@ class PosterTextModal(discord.ui.Modal):
             await interaction.followup.send("Ogre couldn't update raid poster.", ephemeral=True)
 
 
+class RaidDeleteConfirmation(discord.ui.LayoutView):
+    """Destructive action needs a second, explicit owner-only confirmation."""
+
+    def __init__(self, cog, owner_id, raid_number):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.owner_id = owner_id
+        self.raid_number = raid_number
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## Delete <Hyped> Raid #{raid_number}?\n\n"
+                "**This cannot be undone.**\n"
+                "Ogre will remove its raid card, sign-ups and attendance.\n"
+                "Saved characters, gear exports and other raids remain untouched."
+            ), accent_color=0xBA4C40,
+        ))
+        confirm = discord.ui.Button(label=f"Yes, delete Raid #{raid_number}",
+                                    style=discord.ButtonStyle.danger)
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+
+        async def do_delete(interaction):
+            if not self.cog.allowed(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message(
+                    "Only Ogre's owner may delete raids.", ephemeral=True
+                )
+                return
+            await self.cog.delete_raid_from_poster(interaction, self.raid_number)
+
+        async def undo(interaction):
+            if not self.cog.allowed(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message(
+                    "Only Ogre's owner may edit raids.", ephemeral=True
+                )
+                return
+            from cogs.raid_schedule import read_raid
+            event = read_raid(self.cog.raid_db_path(), self.raid_number)
+            await interaction.response.edit_message(
+                view=RaidPosterView(self.cog, self.owner_id, draft_from_event(event))
+            )
+
+        confirm.callback = do_delete
+        cancel.callback = undo
+        self.add_item(discord.ui.ActionRow(confirm, cancel))
+
+
 class RaidPosterView(discord.ui.LayoutView):
     """Owner-controlled non-ephemeral setup card; published raid is a separate message."""
     def __init__(self, cog, owner_id, draft=None):
@@ -138,6 +179,7 @@ class RaidPosterView(discord.ui.LayoutView):
                 accessory=discord.ui.Thumbnail(RAID_IMAGE),
             ), accent_color=ACCENT,
         ))
+        self.saved_raid_ids = {r["raid_id"] for r in raids}
         self.add_raid_picker(raids)
         self.add_date_picker()
         self.add_time_picker()
@@ -172,7 +214,8 @@ class RaidPosterView(discord.ui.LayoutView):
             f"**Raid date:** {raid_date}\n"
             f"{instances}\n"
             f"**Roster announcement:** {announce_date}\n"
-            f"**SoftRes:** {softres}\n\n"
+            f"**SoftRes:** {softres}\n"
+            "**Post destination:** private #ogre (testing)\n\n"
             "Applicant list will never be shown on the raid panel."
         )
 
@@ -312,6 +355,8 @@ class RaidPosterView(discord.ui.LayoutView):
         clear = discord.ui.Button(label="Remove SoftRes", style=discord.ButtonStyle.secondary,
                                   disabled=not bool(self.draft["softres_url"]))
         publish = discord.ui.Button(label="Post / Update Raid", style=discord.ButtonStyle.success)
+        delete = discord.ui.Button(label="Delete Raid", style=discord.ButtonStyle.danger,
+                                  disabled=self.draft["number"] not in self.saved_raid_ids)
 
         async def set_link(interaction):
             if not self.authorised(interaction):
@@ -349,10 +394,25 @@ class RaidPosterView(discord.ui.LayoutView):
                 return
             await self.cog.post_panel(interaction, event)
 
+        async def ask_delete(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            if self.draft["number"] not in self.saved_raid_ids:
+                await interaction.response.send_message(
+                    "This raid is not saved yet.", ephemeral=True
+                )
+                return
+            await interaction.response.edit_message(view=RaidDeleteConfirmation(
+                self.cog, self.owner_id, self.draft["number"]
+            ))
+
         softres.callback = set_link
         clear.callback = remove_link
         publish.callback = post
+        delete.callback = ask_delete
         row.add_item(softres)
         row.add_item(clear)
         row.add_item(publish)
+        row.add_item(delete)
         self.add_item(row)
