@@ -97,6 +97,35 @@ class RaidSheetsTests(unittest.TestCase):
             ), {1: [("Pug Hero", "Ony")]}
         )
 
+    def test_sheet_group_a_and_b_assignments_render_separately_without_hidden_raiders(self):
+        headers = [
+            "Raid ID", "Raid Date", "Discord ID", "Character ID",
+            "Character", "Class", "Spec", "Assigned Role", "Selection",
+            "Bench Notes", "Show on Discord", "Ony (40m)",
+            "Hyjal (20m)", "Barrows (10m)", "Player Source",
+        ]
+        a = ["1", "2026-12-09", "42", "7", "Snore Mon", "Warrior",
+             "Protection", "Tank", "Selected", "", "Yes", "",
+             "Selected", "Group A", "Core"]
+        b = ["1", "2026-12-09", "43", "8", "Healer Main", "Shaman",
+             "Restoration", "Healer", "Selected", "", "Yes", "",
+             "Selected", "Group B", "Core"]
+        hidden = b.copy()
+        hidden[2], hidden[3], hidden[4], hidden[10] = "44", "9", "Hidden Raider", "No"
+        published = raid_sheets._public_rows([headers, a, b, hidden])
+        event = {
+            "instance_1": "Hyjal (20m)",
+            "instance_2": "Barrows (10m)",
+            "instance_3": None,
+        }
+        grouped = raid_schedule.roster_groups(event, published[1])
+        self.assertEqual(grouped, [
+            ("Hyjal · 20-player", ["Snore Mon", "Healer Main"]),
+            ("Barrows · 10-player A", ["Snore Mon"]),
+            ("Barrows · 10-player B", ["Healer Main"]),
+        ])
+        self.assertNotIn("Hidden Raider", str(grouped))
+
     def test_roster_sync_does_not_change_manual_selection_or_guest_rows(self):
         current = [
             ["Raid ID", "Raid Date", "Discord ID", "Character ID", "Character",
