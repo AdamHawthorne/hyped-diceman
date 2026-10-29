@@ -184,9 +184,16 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
     section_rows = []
     for section in SECTIONS:
         section_rows.append([section] + [""] * (len(COLUMNS) - 1))
-        section_rows.extend(sorted(
+        ordered = sorted(
             groups[section], key=lambda row: (row[2].casefold(), row[1].casefold())
-        ))
+        )
+        last_class = None
+        for row in ordered:
+            klass = row[2].strip()
+            if klass and klass != last_class:
+                section_rows.append(["  " + klass.upper()] + [""] * (len(COLUMNS) - 1))
+                last_class = klass
+            section_rows.append(row)
         if section != SECTIONS[-1]:
             section_rows.append([""] * len(COLUMNS))
     if len(section_rows) > MAX_BODY_ROWS:
@@ -197,12 +204,14 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
 def _approved(rows, event):
     """Return only specifically selected and visible signed-on players."""
     entries = []
-    any_known = any(
-        key and name.lower() in " ".join(
-            (event.get(k) or "").lower() for k in
-            ("instance_1", "instance_2", "instance_3")
-        ) for key, name in (("h", "hyjal"), ("b", "barrows"), ("o", "ony"))
+    instance_names = " ".join(
+        (event.get(k) or "").lower() for k in
+        ("instance_1", "instance_2", "instance_3")
     )
+    has_hyjal = "hyjal" in instance_names
+    has_barrows = "barrows" in instance_names
+    has_ony = "ony" in instance_names
+    any_known = has_hyjal or has_barrows or has_ony
     for source in rows[7:]:
         row = (source + [""] * len(COLUMNS))[:len(COLUMNS)]
         if (row[8].strip().casefold() != "signed" or
@@ -210,11 +219,11 @@ def _approved(rows, event):
                 row[10].strip().casefold() != "yes" or not row[1].strip()):
             continue
         assignment = []
-        if row[11].strip().casefold() == "yes":
+        if has_hyjal and row[11].strip().casefold() == "yes":
             assignment.append("Hyjal")
-        if row[12].strip() in ("🔸", "🔹"):
+        if has_barrows and row[12].strip() in ("🔸", "🔹"):
             assignment.append("Barrows " + row[12].strip())
-        if row[13].strip().casefold() == "yes":
+        if has_ony and row[13].strip().casefold() == "yes":
             assignment.append("Ony")
         if any_known and not assignment:
             continue
@@ -316,13 +325,16 @@ def _paint_sections(session, sid, rows):
         "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
     }}]
     for i, row in enumerate(rows[7:], start=7):
-        if row[0] not in SECTIONS or any(row[1:]):
+        is_section = row[0] in SECTIONS
+        is_class = row[0].startswith("  ") and not any(row[1:])
+        if not is_section and not is_class:
             continue
+        bg = accent if is_section else {"red": 0.96, "green": 0.96, "blue": 0.97}
         requests.append({"repeatCell": {
             "range": {"sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
                       "startColumnIndex": 0, "endColumnIndex": 15},
             "cell": {"userEnteredFormat": {
-                "backgroundColor": accent, "textFormat": {"bold": True}}},
+                "backgroundColor": bg, "textFormat": {"bold": True}}},
             "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
         }})
     raid_sheets._json(session, "POST",
@@ -408,6 +420,22 @@ def read_selected(db_path, raid_id):
         session.close()
 
 
+def _hide_legacy(session, titles):
+    outdated = [details["sheetId"] for name, details in titles.items()
+                if name.startswith("RM - ") and not details.get("hidden")]
+    if not outdated:
+        return
+    raid_sheets._json(
+        session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+        json={"requests": [{"updateSheetProperties": {
+            "properties": {"sheetId": sid, "hidden": True}, "fields": "hidden",
+        }} for sid in outdated]},
+    )
+    for name, details in titles.items():
+        if name.startswith("RM - "):
+            details["hidden"] = True
+
+
 def sync_once(db_path, discord_names=None):
     """Synchronise only posted raids into one private tab each."""
     if not raid_sheets.configured():
@@ -441,7 +469,9 @@ def sync_once(db_path, discord_names=None):
                     if not _ or _ not in unavailable.get(raid_id, ())
                 ]
         # Archived raids retain their most recent public roster and history.
-        from cogs.raid_sheets import _save_public
+        # Once an active raid tab exists, hide (never delete) old management tabs.
+        if any(name.startswith("Raid #") for name in titles):
+            _hide_legacy(session, titles)
         changed = set()
         for raid_id, selected in published.items():
             changed.update(_save_public_for_one(db_path, raid_id, selected))
