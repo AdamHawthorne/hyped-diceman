@@ -163,6 +163,25 @@ def active_panels(path):
         )]
 
 
+def delete_raid(path, number):
+    """Delete one raid and its applications/attendance, not character or SimC data.
+
+    Explicit dependent-row deletion makes this safe even on SQLite connections
+    where foreign key enforcement is enabled, while retaining all other raids.
+    """
+    with database(path) as con:
+        con.execute("PRAGMA foreign_keys=ON")
+        event = con.execute(
+            "SELECT raid_id FROM raids WHERE raid_id=?", (number,)
+        ).fetchone()
+        if not event:
+            raise ValueError(f"Raid #{number} no longer exists.")
+        con.execute("DELETE FROM signups WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
+    return True
+
+
 def record_panel(path, number, channel_id, message_id):
     with database(path) as con:
         con.execute(
