@@ -245,7 +245,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 barrows_only, [("Split Two", "Barrows 🔹")]
             )
             self.assertIn("🔸 - TBD", barrows_text)
-            self.assertIn("🔹\nSplit Two", barrows_text)
+            self.assertIn("🔹\n-# **DPS**\nSplit Two", barrows_text)
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
 
