@@ -584,15 +584,18 @@ class RaidEventPanel(discord.ui.LayoutView):
         )
         update = discord.ui.Button(
             label="Update", custom_id=f"hyped_raid_{event_id}_update",
-            style=discord.ButtonStyle.secondary, disabled=on_update is None,
+            style=discord.ButtonStyle.secondary,
+            disabled=on_update is None or bool(event.get("archived_at")),
         )
         gear = discord.ui.Button(
             label="Gear", custom_id=f"hyped_raid_{event_id}_gear",
-            style=discord.ButtonStyle.secondary, disabled=on_gear is None,
+            style=discord.ButtonStyle.secondary,
+            disabled=on_gear is None or bool(event.get("archived_at")),
         )
         absent = discord.ui.Button(
             label="Absent", custom_id=f"hyped_raid_{event_id}_absent",
-            style=discord.ButtonStyle.danger, disabled=on_absent is None,
+            style=discord.ButtonStyle.danger,
+            disabled=on_absent is None or bool(event.get("archived_at")),
         )
         if on_signup is not None:
             sign_up.callback = on_signup
