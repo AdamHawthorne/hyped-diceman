@@ -220,6 +220,42 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raid.withdraw_signup(1, 42, path), 1)
             self.assertIsNone(raid.my_signup(1, 42, path))
 
+    async def test_poster_publish_updates_existing_raid_and_removes_optional_softres(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(
+                path, 1, "2026-11-05 20:00", "Molten Core",
+                softres_url="https://softres.it/raid/abc123",
+            )
+            cog = SimpleNamespace(raid_db_path=lambda: path, allowed=lambda i: True,
+                                  post_panel=AsyncMock())
+            draft = raid_poster.draft_from_event(raid_schedule.read_raid(path, 1))
+            draft.update(day="2026-11-06", instance_1="Onyxia's Lair",
+                         instance_2=None, instance_3=None, softres_url=None)
+            poster = raid_poster.RaidPosterView(cog, 42, draft)
+            button = next(
+                item for item in poster.walk_children()
+                if isinstance(item, discord.ui.Button)
+                and item.label == "Post / Update Raid"
+            )
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), response=SimpleNamespace(
+                    send_message=AsyncMock()
+                )
+            )
+            await button.callback(interaction)
+            saved = raid_schedule.read_raid(path, 1)
+            self.assertEqual(saved["instance_1"], "Onyxia's Lair")
+            self.assertEqual(saved["raid_at"][:10], "2026-11-06")
+            self.assertIsNone(saved["softres_url"])
+            self.assertEqual(saved["signup_open"], 1)
+            cog.post_panel.assert_awaited_once()
+            self.assertNotIn("Sign-ups hidden", json.dumps(
+                interaction.response.send_message.await_args.kwargs
+            ) if interaction.response.send_message.await_args else "")
+
     async def test_poster_command_is_non_ephemeral_and_private_channel_only(self):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
