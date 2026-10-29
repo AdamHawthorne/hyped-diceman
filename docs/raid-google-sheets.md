@@ -71,9 +71,18 @@ PUGs can be entered manually in A (Raid ID), E (Character), I (Selection),
 K (Show on Discord), L:N (assignments) and O (PUG), with no Discord ID.
 Setting K back to No hides that player on the next successful sync.
 
-Names remain private unless BOTH I=Selected and K=Yes. Revealed names
-appear under one Roster section, and Roster Announcement remains at the bottom.
-Announcement timing is display-only; it does not auto-publish the rest.
+Names remain private unless BOTH I=Selected and K=Yes. Inside the
+single Roster section, approved names are grouped into Hyjal (20-player),
+Barrows 10-player A, Barrows 10-player B, and Ony (40-player) when those
+instances are scheduled. A player assigned to both Hyjal and Barrows is
+shown in both groups, so they can see their 10-player team. Approved players
+without a matching instance allocation appear under "Selected · group pending".
+Unannounced groups display a small "Not announced" placeholder.
+
+Roster Announcement sits above the Roster section, immediately below Check,
+and uses the relative Discord timestamp. Announcement timing is display-only;
+it does not automatically publish the rest. The banner stays inside the
+gold-bordered panel below the grouped rosters.
 
 The current synchroniser does NOT delete mirrored historic rows on
 raid deletion; any mirrored record cleanup is manual for now.
