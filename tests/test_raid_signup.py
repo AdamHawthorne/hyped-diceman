@@ -35,7 +35,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(start=start):
                 output = raid_schedule.raid_panel_when(start)
-                self.assertRegex(output, r"^.+ - <t:\d+:R>\n")
+                self.assertRegex(output, r"^<t:\d+:D>\n")
                 self.assertRegex(output, r"<t:\d+:t> - <t:\d+:t>")
                 self.assertEqual(len(output.split("\n")), 2)
                 self.assertNotIn(":F>", output)
@@ -75,7 +75,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(" · <t:", raid_schedule.raid_panel_text(event))
             self.assertRegex(
                 raid_schedule.raid_panel_text(event),
-                r"Thursday 5th Nov - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>",
+                r"<t:\d+:D>\n<t:\d+:t> - <t:\d+:t>",
             )
             self.assertNotIn("**Date:**", text)
             self.assertNotIn("**Time:**", text)
@@ -198,7 +198,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [button.label for button in panel.walk_children()
                  if isinstance(button, discord.ui.Button)],
-                ["Attend", "Characters", "SimC"],
+                ["Attend", "Characters", "SimC", "Alarm"],
             )
             self.assertLess(
                 json.dumps(rendered).index("Roster confirmation:"),
@@ -366,7 +366,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("@\u200beveryone", intro)
             self.assertNotIn("\n\n\n", intro)
             self.assertRegex(
-                intro, r"Wednesday 9th Dec - <t:\d+:R>\n<t:\d+:t> - <t:\d+:t>"
+                intro, r"<t:\d+:D>\n<t:\d+:t> - <t:\d+:t>"
             )
             self.assertNotIn("**Date:**", intro)
             self.assertNotIn("**Time:**", intro)
@@ -706,7 +706,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                        if isinstance(item, discord.ui.Button)]
             self.assertFalse(next(b for b in buttons if b.label == "Attend").disabled)
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", "Characters", "SimC"])
+                             ["Attend", "Characters", "SimC", "Alarm"])
             self.assertFalse(all(b.disabled for b in buttons))
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.secondary)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
