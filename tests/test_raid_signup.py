@@ -198,7 +198,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [button.label for button in panel.walk_children()
                  if isinstance(button, discord.ui.Button)],
-                ["Attend", "Characters", "SimC", "Alarm"],
+                ["Attend", "Characters", "SimC", "Alarm", "Absent"],
             )
             self.assertLess(
                 json.dumps(rendered).index("Roster confirmation:"),
@@ -697,7 +697,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('"style": 3', components)
             self.assertIn('"label": "Characters"', components)
             self.assertIn('"label": "SimC"', components)
-            self.assertNotIn('"label": "Absent"', components)
+            self.assertIn('"label": "Absent"', components)
             self.assertNotIn('"label": "Register character"', components)
             self.assertNotIn('"label": "My characters"', components)
             self.assertNotIn("Signed up:", components)
@@ -706,9 +706,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                        if isinstance(item, discord.ui.Button)]
             self.assertFalse(next(b for b in buttons if b.label == "Attend").disabled)
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", "Characters", "SimC", "Alarm"])
+                             ["Attend", "Characters", "SimC", "Alarm", "Absent"])
             self.assertFalse(all(b.disabled for b in buttons))
-            self.assertEqual(buttons[-1].style, discord.ButtonStyle.secondary)
+            self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
             # Registration and signup must work before any SimC gear upload.
