@@ -194,7 +194,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             signup["role"], "Main" if profile.get("is_main", 1) else "Alt",
             sign_note, signup["submitted_at"], "Absent" if absent else "Signed",
             choice(9, "selection", "Selected"),
-            choice(10, "show", "Yes"),
+            "No" if absent else choice(10, "show", "Yes"),
             choice(11, "hyjal", "No"),
             choice(12, "barrows", "No"),
             choice(13, "ony", "No"),
