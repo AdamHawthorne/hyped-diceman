@@ -92,6 +92,9 @@ def create_schema(path=RAID_DB):
             title TEXT NOT NULL,
             raid_at TEXT NOT NULL,
             custom_title TEXT,
+            banner_url TEXT,
+            roster_posted_at TEXT,
+            roster_updated_at TEXT,
             signup_open INTEGER NOT NULL DEFAULT 0,
             roster_published INTEGER NOT NULL DEFAULT 0
         );
