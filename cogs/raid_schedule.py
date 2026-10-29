@@ -189,6 +189,14 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
     # None preserves the title when older /raid setup workflows edit an event.
     # An explicitly blank title from the poster removes the optional suffix.
     with database(path) as con:
+        existing_state = con.execute(
+            "SELECT roster_published, archived_at FROM raids WHERE raid_id=?",
+            (number,)
+        ).fetchone()
+        if existing_state and existing_state[1]:
+            raise ValueError("Archived raids are read-only.")
+        if existing_state and existing_state[0]:
+            raise ValueError("Reopen the confirmed roster before editing this raid.")
         if custom_title is None:
             existing = con.execute(
                 "SELECT custom_title FROM raids WHERE raid_id=?", (number,)
