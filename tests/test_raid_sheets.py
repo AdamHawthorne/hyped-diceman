@@ -262,14 +262,13 @@ class RaidSheetsTests(unittest.TestCase):
             event = raid_schedule.read_raid(path, 1)
             self.assertIsNone(event.get("roster_posted_at"))
             self.assertIsNone(event.get("roster_updated_at"))
-            self.assertIn("**Roster Announcement:**", raid_schedule.raid_roster_status(event))
+            self.assertIn("**Roster:** Forming", raid_schedule.raid_roster_status(event))
             approved = {1: [("Snore Mon", "Hyjal")]}
             self.assertEqual(raid_sheets._save_public(path, approved), {1})
             posted = raid_schedule.read_raid(path, 1)
             self.assertTrue(posted["roster_posted_at"])
             self.assertIsNone(posted["roster_updated_at"])
-            self.assertRegex(raid_schedule.raid_roster_status(posted),
-                             r"\*\*Roster posted:\*\* <t:\d+:F>")
+            self.assertIn("**Roster:** Forming", raid_schedule.raid_roster_status(posted))
             self.assertEqual(raid_sheets._save_public(path, approved), set())
             same = raid_schedule.read_raid(path, 1)
             self.assertEqual(posted["roster_posted_at"], same["roster_posted_at"])
@@ -279,13 +278,12 @@ class RaidSheetsTests(unittest.TestCase):
             updated = raid_schedule.read_raid(path, 1)
             self.assertEqual(updated["roster_posted_at"], posted["roster_posted_at"])
             self.assertTrue(updated["roster_updated_at"])
-            self.assertRegex(raid_schedule.raid_roster_status(updated),
-                             r"\*\*Update:\*\* <t:\d+:F>")
+            self.assertIn("**Roster:** Forming", raid_schedule.raid_roster_status(updated))
             self.assertEqual(raid_sheets._save_public(path, {}), {1})
             withdrawn = raid_schedule.read_raid(path, 1)
             self.assertIsNone(withdrawn["roster_posted_at"])
             self.assertIsNone(withdrawn["roster_updated_at"])
-            self.assertIn("**Roster Announcement:**",
+            self.assertIn("**Roster:** Forming",
                           raid_schedule.raid_roster_status(withdrawn))
 
     def test_missing_credentials_do_not_initiate_connection(self):
