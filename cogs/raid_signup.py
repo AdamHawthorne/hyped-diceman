@@ -1,6 +1,7 @@
 """Private raid management: local database and optional Google Sheets sync."""
 import os
 import asyncio
+import io
 import logging
 import sqlite3
 import time
@@ -10,6 +11,7 @@ from contextlib import contextmanager
 import discord
 from discord import app_commands
 from discord.ext import commands
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from cogs import raid_sheets
 from cogs.raid_poster import RaidPosterView
@@ -123,6 +125,14 @@ def create_schema(path=RAID_DB):
             raw_text TEXT NOT NULL,
             parsed_json TEXT
         );
+        CREATE TABLE IF NOT EXISTS gear_images(
+            image_id INTEGER PRIMARY KEY,
+            character_id INTEGER NOT NULL REFERENCES characters(character_id),
+            submitted_at TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            image_data BLOB NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS attendance(
             raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
             discord_id INTEGER NOT NULL,
@@ -155,7 +165,7 @@ def create_schema(path=RAID_DB):
         for matches in grouped.values():
             keep_id, clean_name, _, _ = matches[0]
             for duplicate_id, _, _, _ in matches[1:]:
-                for table in ("signups", "attendance", "gear_exports"):
+                for table in ("signups", "attendance", "gear_exports", "gear_images"):
                     con.execute(
                         f"UPDATE {table} SET character_id=? WHERE character_id=?",
                         (keep_id, duplicate_id),
@@ -306,8 +316,75 @@ def save_gear(discord_id, character_id, text, path=RAID_DB):
         )
 
 
-def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
-    """Accept an applicant's own saved character; gear updates are independent."""
+def update_character_profile(discord_id, character_id, class_name, spec, role, path=RAID_DB):
+    """Edit class/spec/role in place, retaining gear exports and all raid signups."""
+    if role not in CLASS_SPECS.get(class_name, {}).get(spec, ()):
+        raise ValueError("Choose a valid class, spec and raid role.")
+    with database(path) as con:
+        row = con.execute(
+            "SELECT name FROM characters WHERE character_id=? AND discord_id=?",
+            (character_id, discord_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("Ogre cannot edit someone else's character.")
+        con.execute(
+            "UPDATE characters SET class_name=?, spec=?, role=? "
+            "WHERE character_id=? AND discord_id=?",
+            (class_name, spec, role, character_id, discord_id),
+        )
+    return row[0]
+
+
+def save_gear_image(discord_id, character_id, filename, payload, path=RAID_DB):
+    """Validate/compress a screenshot into the isolated raid database, no URLs."""
+    if len(payload) > 8 * 1024 * 1024:
+        raise ValueError("Screenshot too big (8 MB max).")
+    if len(payload) < 100:
+        raise ValueError("Screenshot file is empty or invalid.")
+    try:
+        with Image.open(io.BytesIO(payload)) as image:
+            if image.format not in ("PNG", "JPEG", "WEBP"):
+                raise ValueError("Upload PNG, JPG or WEBP character-panel screenshots.")
+            if image.width * image.height > 24_000_000:
+                raise ValueError("Screenshot resolution is too large.")
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((1800, 1800))
+            data = io.BytesIO()
+            image.convert("RGB").save(data, format="JPEG", quality=82, optimize=True)
+            screenshot = data.getvalue()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("That is not a valid character-panel screenshot.") from exc
+    with database(path) as con:
+        row = con.execute(
+            "SELECT 1 FROM characters WHERE character_id=? AND discord_id=?",
+            (character_id, discord_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("That character doesn't belong to you.")
+        con.execute(
+            "INSERT INTO gear_images "
+            "(character_id, submitted_at, filename, mime_type, image_data) "
+            "VALUES (?, ?, ?, 'image/jpeg', ?)",
+            (character_id, datetime.now(timezone.utc).isoformat(),
+             "character-panel.jpg", screenshot),
+        )
+
+
+def last_gear_image(character_id, path=RAID_DB):
+    with database(path) as con:
+        return con.execute(
+            "SELECT filename, image_data FROM gear_images "
+            "WHERE character_id=? ORDER BY image_id DESC LIMIT 1",
+            (character_id,),
+        ).fetchone()
+
+
+def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
+    """Accept one signed-up character per member/night with optional note."""
+    if note is not None:
+        note = note.strip()
+        if len(note) > 500:
+            raise ValueError("Sign-up note must be 500 characters or less.")
     with database(path) as con:
         event = con.execute(
             "SELECT signup_open, roster_published FROM raids WHERE raid_id=?",
@@ -323,17 +400,17 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB):
         if not character:
             raise ValueError("Choose one of your own saved characters.")
         con.execute("""
-            INSERT INTO signups(raid_id, discord_id, character_id, availability, submitted_at)
-            VALUES (?, ?, ?, 'Available', ?)
+            INSERT INTO signups(raid_id, discord_id, character_id, availability, note, submitted_at)
+            VALUES (?, ?, ?, 'Available', ?, ?)
             ON CONFLICT(raid_id, discord_id) DO UPDATE SET
                 character_id=excluded.character_id, availability='Available',
-                note=NULL,
+                note=CASE WHEN ? IS NULL THEN signups.note ELSE excluded.note END,
                 submitted_at=CASE
                     WHEN signups.character_id=excluded.character_id
                      AND signups.availability='Available'
                     THEN signups.submitted_at
                     ELSE excluded.submitted_at END
-        """, (raid_id, discord_id, character_id, datetime.now(timezone.utc).isoformat()))
+        """, (raid_id, discord_id, character_id, note, datetime.now(timezone.utc).isoformat(), note))
         # Returning after an absence restores the player's Available status.
         con.execute(
             "DELETE FROM raid_absences WHERE raid_id=? AND discord_id=?",
