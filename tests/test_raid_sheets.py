@@ -76,7 +76,7 @@ class RaidSheetsTests(unittest.TestCase):
         self.assertEqual(
             revealed[1],
             [
-                ("Snore Mon", "Ony, Hyjal, Barrows A"),
+                ("Snore Mon", "Ony, Hyjal, Barrows 🔸"),
                 ("Pug Hero", "Ony")
             ]
         )
@@ -120,11 +120,21 @@ class RaidSheetsTests(unittest.TestCase):
         }
         grouped = raid_schedule.roster_groups(event, published[1])
         self.assertEqual(grouped, [
-            ("Hyjal · 20-player", ["Snore Mon", "Healer Main"]),
-            ("Barrows · 10-player A", ["Snore Mon"]),
-            ("Barrows · 10-player B", ["Healer Main"]),
+            ("Hyjal · 20-player 🔸", ["Snore Mon"]),
+            ("Hyjal · 20-player 🔹", ["Healer Main"]),
+            ("Barrows · 10-player 🔸", ["Snore Mon"]),
+            ("Barrows · 10-player 🔹", ["Healer Main"]),
         ])
         self.assertNotIn("Hidden Raider", str(grouped))
+        # New sheet dropdown icons use the same destinations as legacy groups.
+        updated = [r.copy() for r in (a, b)]
+        updated[0][13] = "🔸"
+        updated[1][13] = "🔹"
+        self.assertEqual(
+            raid_sheets._public_rows([headers, *updated])[1],
+            [("Snore Mon", "Hyjal, Barrows 🔸"),
+             ("Healer Main", "Hyjal, Barrows 🔹")],
+        )
 
     def test_roster_sync_does_not_change_manual_selection_or_guest_rows(self):
         current = [
