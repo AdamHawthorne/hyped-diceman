@@ -47,6 +47,47 @@ class RaidSheetsTests(unittest.TestCase):
             self.assertEqual(len(desired["roster"]["1:42"]), 8)
             self.assertNotIn("Realm", json.dumps(desired))
 
+    def test_character_discord_name_from_live_guild_and_existing_sheet_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            self.setup_db(path)
+            # Two characters from one member should only require one lookup.
+            self.assertEqual(raid_sheets.character_discord_ids(path), [42])
+            default = raid_sheets._desired_rows(path)
+            first_id = next(iter(default["characters"]))
+            self.assertEqual(default["characters"][first_id][2], "")
+            renamed = raid_sheets._desired_rows(path, discord_names={42: "Ogre"})
+            self.assertEqual(renamed["characters"][first_id][2], "Ogre")
+            self.assertEqual(default["characters"][first_id][3], "Snore Mon")
+
+            # A temporarily unavailable Discord API must not blank a known name.
+            row = [*default["characters"][first_id]]
+            row[2] = "Previous Name"
+            sheet = [["Character ID", "Discord ID", "Discord Name"], row]
+            calls = []
+
+            def fake_request(session, method, endpoint, **kwargs):
+                calls.append(kwargs)
+                return {}
+
+            with patch.object(raid_sheets, "_json", side_effect=fake_request):
+                written = raid_sheets._sync_rows(
+                    FakeSession(), "characters", sheet,
+                    {first_id: default["characters"][first_id]}
+                )
+            self.assertEqual(written, 0)
+            self.assertFalse(calls)
+
+            with patch.object(raid_sheets, "_json", side_effect=fake_request):
+                written = raid_sheets._sync_rows(
+                    FakeSession(), "characters", sheet,
+                    {first_id: renamed["characters"][first_id]}
+                )
+            self.assertEqual(written, 1)
+            self.assertEqual(calls[-1]["json"]["data"][0]["range"],
+                             "'RM - Characters'!A2:J2")
+            self.assertEqual(calls[-1]["json"]["data"][0]["values"][0][2], "Ogre")
+
     def test_public_roster_only_reveals_explicit_selected_rows_with_pugs(self):
         header = [
             "Raid ID", "Raid Date", "Discord ID", "Character ID",
