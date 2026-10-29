@@ -46,9 +46,11 @@ Leave it empty for the original title; reopen the option and submit blank
 to clear it. Existing title text persists when older `/raid setup` commands
 edit a saved raid. It does not change the raid ID or existing sign-ups.
 
-The Discord raid card displays the full localised weekday/date/time
-as `<t:...:F>` with no Date/Time labels. Its accent matches the
-Leadership panel (`#8C5A3C`), but the private poster setup keeps its
+The Discord raid card displays the UK weekday/date on one line,
+then the UK start and calculated end time (three elapsed hours later) on
+the line immediately below. There are no Date/Time labels. The single
+line break between Check and Roster keeps that section compact.
+Its accent matches the Leadership panel (`#8C5A3C`), but the private poster setup keeps its
 existing accent. Roster headings display **Hyjal**, **Barrows** and **Ony**
 without player counts. Until selected teams are announced, all groups use
 `TBD`: Hyjal shows `🔹🔸 - TBD`, Barrows shows `🔸 - TBD` and
@@ -104,24 +106,17 @@ PUGs can be entered manually in A (Raid ID), E (Character), I (Selection),
 K (Show on Discord), L:N (assignments) and O (PUG), with no Discord ID.
 Setting K back to No hides that player on the next successful sync.
 
-Names remain private unless BOTH I=Selected and K=Yes. In the single
-Roster section, **Hyjal shows one unsplit 20-player roster** with one
-"Not announced" placeholder until names are revealed. There are no 🔸/🔹
-labels or separate teams under Hyjal. Barrows (10-player) continues to show
-two groups labelled 🔸 and 🔹, corresponding to the selected split in
-column N. Old Group A/B values remain compatible for existing rows.
-Ony (40-player) has its own roster when scheduled.
+Names remain private unless BOTH I=Selected and K=Yes. Hyjal displays
+one unsplit 20-player roster, with 🔹🔸 - TBD until announced. Barrows
+has separate 🔸 and 🔹 rosters, both initially marked TBD; Ony has
+its own roster when scheduled. A player selected for both Hyjal and
+Barrows appears in both assigned sections. Approved players without
+a matching instance allocation appear under "Selected · group pending".
 
-**The raid card contains no clickable voice-channel links or join buttons.**
-A player selected for both Hyjal and Barrows appears in the Hyjal roster and
-their assigned Barrows group. Approved players without a matching instance
-allocation appear under "Selected · group pending". Unannounced groups display
-a small "Not announced" placeholder.
-
-Roster Announcement sits above the Roster section, immediately below Check,
-and uses the relative Discord timestamp. Announcement timing is display-only;
-it does not automatically publish the rest. The banner stays inside the
-gold-bordered panel below the grouped rosters.
+The card has no clickable voice-channel or join links. Roster Announcement
+sits below the roster sections and is display-only: it does not publish
+anyone automatically. The banner remains below that status within the
+leadership-coloured container.
 
 The current synchroniser does NOT delete mirrored historic rows on
 raid deletion; any mirrored record cleanup is manual for now.
