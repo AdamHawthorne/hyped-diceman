@@ -2645,7 +2645,7 @@ if ADMIN_MODE:
 
     @bot.tree.command(
         name="serveraudit",
-        description="Owner-only export of server roles, channels and permissions",
+        description="Owner-only export of server roles, channels, permissions and emojis",
         guild=discord.Object(id=ADMIN_GUILD_ID)
     )
     async def serveraudit_admin(interaction: discord.Interaction):
@@ -2755,6 +2755,18 @@ if ADMIN_MODE:
 
             channels.append(row)
 
+        emojis = []
+
+        for emoji in sorted(guild.emojis, key=lambda e: e.name.lower()):
+            marker = "a" if emoji.animated else ""
+            emojis.append({
+                "id": emoji.id,
+                "name": emoji.name,
+                "animated": emoji.animated,
+                "available": emoji.available,
+                "markup": f"<{marker}:{emoji.name}:{emoji.id}>",
+            })
+
         audit = {
             "generated_at": datetime.now(TZ).isoformat(),
             "bot": BOT_NAME,
@@ -2783,6 +2795,7 @@ if ADMIN_MODE:
                 "No message content is included.",
                 "Role member counts are intentionally omitted because the bot does not use the privileged members intent.",
             ],
+            "emojis": emojis,
             "roles": roles,
             "channels": channels,
         }
