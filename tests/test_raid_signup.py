@@ -1,5 +1,6 @@
 """Offline tests of isolated raid sign-up preview and attendance schema."""
 import json
+import discord
 import sqlite3
 import tempfile
 import unittest
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
-from cogs import raid_schedule
+from cogs import raid_schedule, raid_poster
 
 import cogs.raid_signup as raid
 
@@ -145,6 +146,106 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(opened)
             self.assertTrue(all(con.was_closed for con in opened),
                             "A raid scheduling SQLite connection was left open")
+
+    async def test_poster_menu_and_schedule_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            dummy_cog = SimpleNamespace(raid_db_path=lambda: path,
+                                        allowed=lambda interaction: True)
+            poster = raid_poster.RaidPosterView(dummy_cog, 42)
+            components = json.dumps(poster.to_components())
+            self.assertIn("Raid Poster", components)
+            self.assertIn("Choose raid date", components)
+            self.assertIn("Choose start time", components)
+            self.assertIn("Raid instance #1", components)
+            self.assertIn("Raid instance #2", components)
+            self.assertIn("Raid instance #3", components)
+            self.assertIn("Optional SoftRes", components)
+            self.assertIn("Post / Update Raid", components)
+            self.assertIn("New Raid #1", components)
+            self.assertNotIn("Signed up:", components)
+            draft = raid_poster.draft_from_event(None)
+            draft.update(number=1, day="2026-11-05", instance_1="Molten Core")
+            at, announce = raid_poster.poster_schedule(draft)
+            self.assertEqual(at, "2026-11-05 20:00")
+            self.assertEqual(announce, "2026-11-04 20:00")
+            event = raid_schedule.save_raid(path, 1, at, "Molten Core",
+                                            roster_announce=announce)
+            self.assertEqual(event["signup_open"], 1)
+            draft2 = raid_poster.draft_from_event(event)
+            self.assertEqual(draft2["number"], 1)
+            self.assertEqual(draft2["day"], "2026-11-05")
+            self.assertEqual(draft2["instance_1"], "Molten Core")
+            self.assertIn("Edit Raid #1", json.dumps(
+                raid_poster.RaidPosterView(dummy_cog, 42).to_components()
+            ))
+
+    async def test_signup_hidden_but_enabled_and_requires_own_simc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            event = raid_schedule.save_raid(
+                path, 1, "2026-11-05 20:00", "Molten Core"
+            )
+            panel = raid_schedule.RaidEventPanel(
+                event, on_register=AsyncMock(), on_characters=AsyncMock(),
+                on_signup=AsyncMock(), on_gear=AsyncMock(),
+            )
+            components = json.dumps(panel.to_components())
+            self.assertIn("Sign-ups hidden", components)
+            self.assertIn('"label": "Sign up"', components)
+            self.assertIn('"label": "Update gear"', components)
+            self.assertNotIn("Signed up:", components)
+            # Existing panels get active signup buttons when an on_signup is bound.
+            buttons = [item for item in panel.walk_children()
+                       if isinstance(item, discord.ui.Button)]
+            self.assertFalse(next(b for b in buttons if b.label == "Sign up").disabled)
+            self.assertFalse(next(b for b in buttons if b.label == "Update gear").disabled)
+            raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
+            char_id = raid.member_characters(42, path)[0][0]
+            with self.assertRaises(ValueError):
+                raid.save_signup(1, 42, char_id, path)
+            with self.assertRaises(ValueError):
+                raid.save_gear(999, char_id, "player=SnoreMon\nlevel=60\n" * 5, path)
+            raid.save_gear(42, char_id, "player=SnoreMon\nlevel=60\n" * 5, path)
+            raid.save_signup(1, 42, char_id, path)
+            raid.save_signup(1, 42, char_id, path)
+            self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
+            with raid.database(path) as con:
+                self.assertEqual(con.execute("SELECT COUNT(*) FROM signups").fetchone()[0], 1)
+                self.assertEqual(con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 1)
+            self.assertEqual(raid.withdraw_signup(1, 42, path), 1)
+            self.assertIsNone(raid.my_signup(1, 42, path))
+
+    async def test_poster_command_is_non_ephemeral_and_private_channel_only(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
+             patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
+            raid.create_schema(raid.RAID_DB)
+            raid_schedule.ensure_raid_fields(raid.RAID_DB)
+            cog = raid.RaidPrototype(SimpleNamespace())
+            channel = SimpleNamespace(send=AsyncMock(
+                return_value=SimpleNamespace(jump_url="https://discord.com/channels/77/55/1")
+            ))
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                channel_id=raid.TEST_CHANNEL_ID, channel=channel,
+                response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
+                followup=SimpleNamespace(send=AsyncMock()),
+            )
+            await cog.poster.callback(cog, interaction)
+            self.assertIsInstance(
+                channel.send.await_args.kwargs["view"], raid_poster.RaidPosterView
+            )
+            interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+            interaction.channel_id = raid.RAID_CHANNEL_ID
+            interaction.response.send_message.reset_mock()
+            await cog.poster.callback(cog, interaction)
+            self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+            channel.send.assert_awaited_once()
 
     async def test_uk_time_is_discord_localised_and_validated(self):
         summer = raid_schedule.parse_uk_datetime("2026-07-01 20:00")
