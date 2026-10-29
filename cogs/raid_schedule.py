@@ -13,7 +13,6 @@ import discord
 
 UK = ZoneInfo("Europe/London")
 RAID_IMAGE = "https://i.vgy.me/XIszIH.png"
-RAID_DIVIDER_IMAGE = "https://i.vgy.me/WGNGdr.png"
 ACCENT = 0xA87535
 RAID_COLUMNS = {
     "instance_1": "TEXT",
