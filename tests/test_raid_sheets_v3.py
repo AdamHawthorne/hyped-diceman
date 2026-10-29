@@ -163,15 +163,15 @@ class RaidTabsTests(unittest.TestCase):
     def test_class_and_role_emoji_from_fixed_guild_ids(self):
         self.assertEqual(raid_schedule.roster_name_with_emojis(
             "Snore Mon", "Warrior", "Tank", "Protection"
-        ), "<:Tank:1565477012322132099> <:Warrior:1565476863835644034> Snore Mon")
+        ), "<:Tank:1565477012322132099> <:Warrior:1565482101585748109> Snore Mon")
         self.assertEqual(raid_schedule.roster_name_with_emojis(
             "Mage One", "Mage", "DPS", "Frost"
-        ), "<:Caster:1565477140429021285> <:Mage:1565476478957916310> Mage One")
+        ), "<:Caster:1565477140429021285> <:Mage:1565481787231182969> Mage One")
         text = raid_schedule.roster_name_with_emojis(
             "Rogue One", "Rogue", "DPS", "Combat"
         )
         self.assertEqual(
-            text, "<:Melee:1565477048305197207> <:Rogue:1565476692611563550> Rogue One"
+            text, "<:Melee:1565477048305197207> <:Rogue:1565481939522297936> Rogue One"
         )
 
     def test_public_changes_do_not_overwrite_other_raids(self):
