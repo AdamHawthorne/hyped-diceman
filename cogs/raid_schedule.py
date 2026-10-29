@@ -516,12 +516,13 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
 
 
 def raid_panel_when(value, end_at=None):
-    """Full UK date and two Discord-localised clock times, each with a hover."""
+    """Discord-localised date, relative countdown and start/end times."""
     start = datetime.fromisoformat(value).astimezone(UK)
     end = (datetime.fromisoformat(end_at).astimezone(UK) if end_at else
            (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK))
     return (
         f"{format_discord_date(start.isoformat(), style='D', with_relative=False)}\n"
+        f"{format_discord_date(start.isoformat(), style='R', with_relative=False)}\n"
         f"{format_discord_date(start.isoformat(), style='t', with_relative=False)}"
         f" - {format_discord_date(end.isoformat(), style='t', with_relative=False)}"
     )
