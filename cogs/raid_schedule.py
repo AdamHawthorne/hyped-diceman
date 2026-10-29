@@ -10,12 +10,14 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit
 
 import discord
+from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 UK = ZoneInfo("Europe/London")
 RAID_IMAGE = "https://i.vgy.me/XIszIH.png"  # Poster thumbnail stays unchanged.
 RAID_PANEL_IMAGE = "https://i.vgy.me/asI88C.png"
 RAID_PANEL_BANNER = "https://i.vgy.me/y6bCxy.png"
-ACCENT = 0xA87535
+ACCENT = 0xA87535  # Keep the private raid poster setup colour.
+RAID_PANEL_ACCENT = LEADERSHIP_ACCENT
 RAID_COLUMNS = {
     "instance_1": "TEXT",
     "instance_2": "TEXT",
@@ -374,10 +376,10 @@ def _roster_group_text(title, players):
         heading = f"**{title}**"
     if not players:
         if title == "Hyjal · 20-player":
-            return heading + "\n🔹🔸 - Not announced"
+            return heading + "\n🔹🔸 - TBD"
         if title.startswith("Barrows · 10-player "):
-            return heading + " - Not announced"
-        return heading + "\n- Not announced"
+            return heading + " - TBD"
+        return heading + "\n- TBD"
     names = []
     length = len(heading)
     for name in players:
@@ -429,7 +431,7 @@ class RaidEventPanel(discord.ui.LayoutView):
                     description="Hyped raid bottom banner",
                 ),
             ),
-            accent_color=ACCENT,
+            accent_color=RAID_PANEL_ACCENT,
         ))
         controls = discord.ui.ActionRow()
         sign_up = discord.ui.Button(
