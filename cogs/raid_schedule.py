@@ -5,7 +5,7 @@ synchronisation is separate: the Google Sheet does not authorise a Fly bot.
 """
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit
 
@@ -322,8 +322,18 @@ def roster_groups(event, public_roster):
     return result
 
 
+def raid_panel_when(value):
+    """Two-line UK raid schedule with a fixed three-hour real-time duration."""
+    start = datetime.fromisoformat(value).astimezone(UK)
+    end = (start.astimezone(timezone.utc) + timedelta(hours=3)).astimezone(UK)
+    return (
+        f"{start:%A}, {start.day} {start:%B %Y}\n"
+        f"{start:%H:%M} - {end:%H:%M}"
+    )
+
+
 def raid_panel_intro(event):
-    """Compact fixed header; all timestamps localise in Discord."""
+    """Compact header; raid times are UK, announcement timestamps localise."""
     number = event["raid_id"]
     # Escape only the user-provided suffix; keep the guild prefix stable.
     title = f"<Hyped> Raid #{number}"
@@ -341,11 +351,11 @@ def raid_panel_intro(event):
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     return (
         f"## {title}\n"
-        f"{format_discord_date(event['raid_at'], style='F', with_relative=False)}\n\n"
+        f"{raid_panel_when(event['raid_at'])}\n\n"
         + "**Instances:** " + ", ".join(instances)
         + "\n**Check:** <#1563663258047619123>"
         + softres_line
-        + "\n\n### Roster"
+        + "\n### Roster"
     )
 
 
