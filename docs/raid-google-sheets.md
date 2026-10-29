@@ -55,7 +55,8 @@ Below the fixed headings, registrations appear under five sections:
 | M | Barrows: No / 🔸 / 🔹 | Leadership |
 | N | Ony: No / Yes | Leadership |
 | O | Leadership notes | Leadership |
-| P-Q | Internal Discord and character IDs, hidden for readability | Ogre |
+| P | Gear / SimC: Not submitted, SimC received, Screenshot received or both | Ogre |
+| Q-R | Internal Discord and character IDs, hidden for readability | Ogre |
 
 Every new player is **Signed** by default. Selection begins **Pending**;
 Show on Discord begins **No**. This prevents accidental public disclosure.
