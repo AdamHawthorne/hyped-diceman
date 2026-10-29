@@ -206,6 +206,39 @@ class RaidSheetsTests(unittest.TestCase):
         self.assertNotIn("Keep manual note", json.dumps(payload))
         self.assertNotIn("Pug Hero", json.dumps(payload))
 
+    def test_new_signups_preserve_preformatted_dropdown_rows(self):
+        """Appending raid records must not insert rows and shift validations."""
+        for kind, values, expected_end in (
+            ("roster", ["1", "2026-12-09", "42", "7",
+                        "Snore Mon", "Warrior", "Protection", "Tank"], "H"),
+            ("characters", ["7", "42", "Snore", "Snore Mon", "Warrior",
+                            "Protection", "Tank", "Main", "", ""], "J"),
+            ("signups", ["1", "2026-12-09", "42", "7", "Snore Mon",
+                         "Available", "", "", "", ""], "J"),
+        ):
+            with self.subTest(kind=kind):
+                tab = raid_sheets.SHEETS[kind][0]
+                header = [f"Column {i}" for i in range(len(values))]
+                calls = []
+
+                def fake_request(session, method, endpoint, **kwargs):
+                    calls.append((method, endpoint, kwargs))
+                    return {}
+
+                with patch.object(raid_sheets, "_json", side_effect=fake_request):
+                    count = raid_sheets._sync_rows(
+                        FakeSession(), kind, [header], {"new": values},
+                    )
+                self.assertEqual(count, 1)
+                self.assertEqual(len(calls), 1)
+                method, endpoint, options = calls[0]
+                self.assertEqual(method, "POST")
+                self.assertTrue(endpoint.endswith(":append"))
+                self.assertIn(f"'{tab}'!A:{expected_end}", endpoint)
+                self.assertEqual(options["params"]["insertDataOption"], "OVERWRITE")
+                self.assertEqual(options["params"]["valueInputOption"], "RAW")
+                self.assertEqual(options["json"]["values"], [values])
+
     def test_successful_remote_approval_updates_only_raid_public_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
