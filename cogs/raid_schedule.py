@@ -207,8 +207,54 @@ def record_panel(path, number, channel_id, message_id):
         )
 
 
+def roster_groups(event, public_roster):
+    """Display independently approved Hyjal, Barrows A/B and optional Ony teams.
+
+    The sheet remains authoritative: only Selected + Show on Discord = Yes
+    rows enter this cache. A player may appear in Hyjal AND a Barrows group.
+    """
+    instances = [
+        (event.get(key) or "").casefold()
+        for key in ("instance_1", "instance_2", "instance_3")
+    ]
+    group_names = []
+    if any("hyjal" in name for name in instances):
+        group_names.append(("Hyjal · 20-player", "Hyjal"))
+    if any("barrows" in name for name in instances):
+        group_names += [
+            ("Barrows · 10-player A", "Barrows A"),
+            ("Barrows · 10-player B", "Barrows B"),
+        ]
+    if any("ony" in name for name in instances):
+        group_names.append(("Ony · 40-player", "Ony"))
+    if not group_names:
+        group_names.append(("Selected players", "Selected"))
+
+    groups = [(title, []) for title, _ in group_names]
+    pending = []
+    for name, assignment in public_roster:
+        clean_name = discord.utils.escape_mentions(
+            discord.utils.escape_markdown(name)
+        )
+        if not clean_name:
+            continue
+        tokens = {item.strip().casefold() for item in (assignment or "").split(",")}
+        matched = False
+        for index, (_, tag) in enumerate(group_names):
+            if tag == "Selected" or tag.casefold() in tokens:
+                groups[index][1].append(clean_name)
+                matched = True
+        # A manually revealed player with no instance assignment is still
+        # announced, but never falsely attributed to a 10/20/40 roster.
+        if not matched:
+            pending.append(clean_name)
+    if pending:
+        groups.append(("Selected · group pending", pending))
+    return groups
+
+
 def raid_panel_text(event, public_roster=()):
-    """One roster section; only the explicitly revealed selected names appear."""
+    """Private sheet approvals shown under distinct instance/group headings."""
     title = event["title"]  # Generated from a validated integer, not player input.
     instances = [
         discord.utils.escape_mentions(discord.utils.escape_markdown(event[key]))
@@ -218,30 +264,41 @@ def raid_panel_text(event, public_roster=()):
     roster_date = format_discord_date(
         event.get("roster_announce_at"), style="R", with_relative=False
     )
-    people = []
-    for name, assignment in public_roster:
-        clean = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
-        info = discord.utils.escape_mentions(
-            discord.utils.escape_markdown(assignment or "")
-        )
-        item = f"• **{clean}**" + (f" — {info}" if info else "")
-        if sum(map(len, people)) + len(item) > 3100:
-            break
-        people.append(item)
-    roster_lines = ("\n".join(people) + "\n\n") if people else ""
     softres = event.get("softres_url")
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
-    return (
+    prefix = (
         f"## {title}\n"
         f"**Date:** {format_discord_date(event['raid_at'], style='D', with_relative=False)}\n"
         f"**Time:** {format_discord_date(event['raid_at'], style='t', with_relative=False)}\n\n"
-        + "**Raid:** " + ", ".join(instances)
+        + "**Instances:** " + ", ".join(instances)
         + "\n**Check:** <#1563663258047619123>"
         + softres_line
-        + "\n\n### Roster\n"
-        + roster_lines
-        + f"**Roster Announcement:** {roster_date}"
+        + f"\n**Roster Announcement:** {roster_date}"
+        + "\n\n### Roster"
     )
+    parts = [prefix]
+    length = len(prefix)
+    # Keep one V2 TextDisplay within Discord's 4000-character limit, even for
+    # partially announced 40-person Ony rosters overlapping 20/10 groups.
+    for title, players in roster_groups(event, public_roster):
+        heading = f"\n\n**{title}**\n"
+        if length + len(heading) > 3750:
+            break
+        parts.append(heading)
+        length += len(heading)
+        if not players:
+            placeholder = "-# *Not announced*"
+            parts.append(placeholder)
+            length += len(placeholder)
+            continue
+        for name in players:
+            line = f"• {name}\n"
+            if length + len(line) > 3750:
+                parts.append("-# *More selected players not shown here*")
+                return "".join(parts)
+            parts.append(line)
+            length += len(line)
+    return "".join(parts).rstrip()
 
 
 class RaidEventPanel(discord.ui.LayoutView):
