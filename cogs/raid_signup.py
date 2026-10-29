@@ -123,6 +123,11 @@ def is_test_owner(interaction):
     return (interaction.user.id == OWNER_ID and interaction.guild_id == GUILD_ID
             and interaction.channel_id == TEST_CHANNEL_ID)
 
+def is_test_member(interaction):
+    """Members can use the real raid panel, but only inside private #ogre."""
+    return (interaction.guild_id == GUILD_ID
+            and interaction.channel_id == TEST_CHANNEL_ID)
+
 
 def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
     """Update by player + character name, including records from the old realm form.
@@ -278,7 +283,7 @@ class GearPasteModal(discord.ui.Modal):
         self.add_item(self.export)
 
     async def on_submit(self, interaction):
-        if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+        if not is_test_member(interaction) or interaction.user.id != self.owner_id:
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         try:
@@ -333,7 +338,7 @@ class CharacterActionView(discord.ui.LayoutView):
         )
 
         async def select_character(interaction):
-            if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
                 await interaction.response.send_message("Private owner test only.", ephemeral=True)
                 return
             char_id = int(selection.values[0])
@@ -367,7 +372,7 @@ class CharacterActionView(discord.ui.LayoutView):
             )
 
             async def on_withdraw(interaction):
-                if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+                if not is_test_member(interaction) or interaction.user.id != self.owner_id:
                     await interaction.response.send_message("Private owner test only.", ephemeral=True)
                     return
                 try:
@@ -398,7 +403,7 @@ class CharacterNameModal(discord.ui.Modal):
         self.add_item(self.name)
 
     async def on_submit(self, interaction: discord.Interaction):
-        if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+        if not is_test_member(interaction) or interaction.user.id != self.owner_id:
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         try:
@@ -461,7 +466,7 @@ class ClassPickerView(discord.ui.LayoutView):
         )
 
         async def select_class(interaction):
-            if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
                 await interaction.response.send_message("Private owner test only.", ephemeral=True)
                 return
             await interaction.response.edit_message(
@@ -492,7 +497,7 @@ class SpecPickerView(discord.ui.LayoutView):
         )
 
         async def select_spec(interaction):
-            if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
                 await interaction.response.send_message("Private owner test only.", ephemeral=True)
                 return
             spec = select.values[0]
@@ -531,7 +536,7 @@ class RolePickerView(discord.ui.LayoutView):
         )
 
         async def select_role(interaction):
-            if not is_test_owner(interaction) or interaction.user.id != self.owner_id:
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
                 await interaction.response.send_message("Private owner test only.", ephemeral=True)
                 return
             await interaction.response.send_modal(
@@ -630,7 +635,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 self.bot.add_view(self.make_panel(event), message_id=event["panel_message_id"])
 
     async def on_register(self, interaction):
-        if not self.allowed(interaction):
+        if not is_test_member(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         await interaction.response.send_message(
@@ -638,7 +643,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         )
 
     async def on_characters(self, interaction):
-        if not self.allowed(interaction):
+        if not is_test_member(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         await interaction.response.send_message(
@@ -646,7 +651,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         )
 
     async def on_signup(self, interaction, raid_id):
-        if not self.allowed(interaction):
+        if not is_test_member(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         # Acknowledge immediately to avoid Discord's three-second interaction deadline.
@@ -679,7 +684,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             )
 
     async def on_gear(self, interaction):
-        if not self.allowed(interaction):
+        if not is_test_member(interaction):
             await interaction.response.send_message("Private owner test only.", ephemeral=True)
             return
         if not member_characters(interaction.user.id):
@@ -840,7 +845,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     )
     async def gear_file(self, interaction: discord.Interaction,
                         character: str, file: discord.Attachment):
-        if not self.allowed(interaction):
+        if not is_test_member(interaction):
             await interaction.response.send_message(
                 "Private owner test only.", ephemeral=True
             )
@@ -879,7 +884,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     @gear_file.autocomplete("character")
     async def autocomplete_character(self, interaction: discord.Interaction, current: str):
-        if not is_test_owner(interaction):
+        if not is_test_member(interaction):
             return []
         return [
             app_commands.Choice(name=row[1], value=row[1])
