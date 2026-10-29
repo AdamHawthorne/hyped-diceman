@@ -98,7 +98,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("• Snore Mon", visible)
             self.assertIn("• Healer Main", visible)
-            self.assertGreater(visible.index("Roster"), visible.index("Snore Mon"))
+            self.assertGreater(visible.index("**Roster:**"), visible.index("Snore Mon"))
             self.assertNotIn("Applicant", visible)
             self.assertNotIn("Sign-ups hidden", text)
             self.assertNotIn("WGNGdr.png", text)
