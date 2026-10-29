@@ -34,6 +34,10 @@ RAID_COLUMNS = {
     "check_channel_id": "INTEGER",
     "roster_posted_at": "TEXT",
     "roster_updated_at": "TEXT",
+    "confirmed_at": "TEXT",
+    "archived_at": "TEXT",
+    "archive_notes": "TEXT",
+    "wcl_url": "TEXT",
 }
 
 
@@ -85,6 +89,16 @@ def ensure_raid_fields(path):
         for field, sql_type in RAID_COLUMNS.items():
             if field not in names:
                 con.execute(f"ALTER TABLE raids ADD COLUMN {field} {sql_type}")
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS raid_confirmed_roster (
+                raid_id INTEGER NOT NULL,
+                position INTEGER NOT NULL,
+                discord_id TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL,
+                assignment TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (raid_id, position)
+            )
+        """)
 
 
 def validate_softres_url(value):
@@ -229,7 +243,9 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 banner_url=excluded.banner_url,
                 end_at=excluded.end_at,
                 check_channel_id=excluded.check_channel_id,
-                signup_open=1
+                signup_open=CASE WHEN raids.roster_published=1
+                       OR raids.archived_at IS NOT NULL
+                       THEN 0 ELSE 1 END
         """, (number, full_title, start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
               announce.isoformat() if announce else None,
@@ -283,9 +299,72 @@ def delete_raid(path, number):
         con.execute("DELETE FROM signups WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_absences WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_public_roster WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True
+
+def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url=None):
+    """Explicit leadership lifecycle: confirm, reopen, archive; no auto-confirm."""
+    if mode not in ("confirm", "reopen", "archive"):
+        raise ValueError("Unknown raid status transition.")
+    now = datetime.now(timezone.utc).isoformat()
+    with database(path) as con:
+        con.execute("PRAGMA foreign_keys=ON")
+        event = con.execute(
+            "SELECT roster_published, archived_at FROM raids WHERE raid_id=?",
+            (number,)
+        ).fetchone()
+        if not event:
+            raise ValueError("Raid does not exist.")
+        if event[1]:
+            raise ValueError("Archived raids are read-only.")
+        if mode == "confirm":
+            if event[0]:
+                raise ValueError("Roster is already confirmed.")
+            if not confirmed_entries:
+                raise ValueError("Select and show at least one player before confirming.")
+            con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
+            con.executemany(
+                "INSERT INTO raid_confirmed_roster "
+                "(raid_id, position, discord_id, name, assignment) VALUES (?,?,?,?,?)",
+                [(number, index, str(member_id or ""), name, assignment)
+                 for index, (member_id, name, assignment) in enumerate(confirmed_entries)],
+            )
+            con.execute(
+                "UPDATE raids SET roster_published=1, signup_open=0, "
+                "confirmed_at=?, roster_posted_at=?, roster_updated_at=NULL "
+                "WHERE raid_id=?", (now, now, number)
+            )
+        elif mode == "reopen":
+            con.execute(
+                "UPDATE raids SET roster_published=0, signup_open=1, "
+                "confirmed_at=NULL, roster_posted_at=NULL, roster_updated_at=NULL "
+                "WHERE raid_id=?", (number,)
+            )
+            con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
+        else:
+            if not event[0]:
+                raise ValueError("Confirm the raid roster before archiving.")
+            con.execute(
+                "UPDATE raids SET archived_at=?, archive_notes=?, wcl_url=?, "
+                "signup_open=0 WHERE raid_id=?",
+                (now, notes or "", wcl_url or "", number),
+            )
+    return read_raid(path, number)
+
+
+def confirmed_roster(path, number, unavailable=()):
+    """Public snapshot is locked; only subsequent absences can remove members."""
+    unavailable = {str(value) for value in unavailable}
+    with database(path) as con:
+        rows = con.execute(
+            "SELECT discord_id, name, assignment FROM raid_confirmed_roster "
+            "WHERE raid_id=? ORDER BY position", (number,)
+        ).fetchall()
+    return [(name, assignment) for member_id, name, assignment in rows
+            if not member_id or member_id not in unavailable]
+
 
 def read_public_roster(path, raid_id):
     """Only manually revealed rows from the private sheet's approved roster."""
@@ -409,18 +488,22 @@ def raid_panel_intro(event):
 
 
 def raid_roster_status(event):
-    """Use real publication/change times, never infer publication from a plan."""
+    """Only an explicit leadership confirmation is a published roster."""
+    if event.get("archived_at"):
+        return "**Archived:** " + format_discord_date(
+            event["archived_at"], style="F", with_relative=False
+        )
+    if not event.get("roster_published"):
+        return "**Roster:** Forming, awaiting confirmation"
     stamp = event.get("roster_updated_at")
     if stamp:
         return "**Update:** " + format_discord_date(stamp, style="F", with_relative=False)
     stamp = event.get("roster_posted_at")
     if stamp:
-        return "**Roster posted:** " + format_discord_date(
+        return "**Roster confirmed:** " + format_discord_date(
             stamp, style="F", with_relative=False
         )
-    return "**Roster Announcement:** " + format_discord_date(
-        event.get("roster_announce_at"), style="R", with_relative=False
-    )
+    return "**Roster:** Forming, awaiting confirmation
 
 
 def _roster_group_text(title, players):
@@ -448,7 +531,8 @@ def _roster_group_text(title, players):
             break
         names.append(line)
         length += len(line) + 1
-    return heading + "\n" + "\n".join(names)
+    symbol = "🔹🔸" if title == "Hyjal · 20-player" else ""
+    return heading + ("\n" + symbol if symbol else "") + "\n" + "\n".join(names)
 
 
 def raid_panel_text(event, public_roster=()):
