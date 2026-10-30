@@ -36,6 +36,11 @@ VALUES = {
 }
 MAX_BODY_ROWS = 460
 
+# Re-apply row styling on the first sync after a bot restart, and whenever
+# a role section moves as more people register or change role.
+_FORMATTED_SECTION_LAYOUTS = {}
+
+
 # Absent At is displayed in R; Signed At remains the far-right column S.
 DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 10, 15, 14, 16, 17, 18, 7)
 
@@ -434,13 +439,49 @@ def _make_tab(session, title):
     return sid
 
 
+def _section_positions(rows):
+    """Absolute zero-based Sheet row indices for role headings."""
+    return tuple(
+        index for index, row in enumerate(rows[7:], start=7)
+        if row[0] in SECTIONS and not row[1].strip()
+    )
+
+
 def _paint_sections(session, sid, rows):
-    """Keep dropdowns only on player rows without changing the Roster theme."""
-    requests = [
+    """Move the dark role bands with their expanding player groups.
+
+    Existing raid tabs can have manually applied fixed-position dark rows:
+    without repainting, the third Tank can inherit a Healers header's white
+    text on black and the relocated Healers heading becomes a grey player row.
+    Only change background and text style; retain values, notes, dropdowns,
+    conditional class colours, borders, widths and alignment.
+    """
+    black = {"red": 0, "green": 0, "blue": 0}
+    white = {"red": 1, "green": 1, "blue": 1}
+    grey = {"red": 0.89, "green": 0.89, "blue": 0.89}
+    ink = {"red": 0.08, "green": 0.08, "blue": 0.08}
+
+    def paint(first, last, background, foreground, *, bold=False, size=10):
+        return {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": first,
+                      "endRowIndex": last, "startColumnIndex": 0,
+                      "endColumnIndex": len(COLUMNS)},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": background,
+                "textFormat": {"foregroundColor": foreground, "bold": bold,
+                               "fontFamily": "Roboto", "fontSize": size}}},
+            "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"}}
+
+    # Reset old role heading colours, including rows vacated after someone
+    # switches role; then paint current headings at their actual row positions.
+    requests = [paint(7, 500, grey, ink)]
+    requests.extend(paint(index, index + 1, black, white, bold=True, size=11)
+                    for index in _section_positions(rows))
+    requests.append(
         {"setDataValidation": {"range": {
             "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
             "startColumnIndex": 7, "endColumnIndex": 8}}}
-    ]
+    )
     # Leadership Notes (display column O) is free text, not a dropdown.
     requests.append({"setDataValidation": {"range": {
         "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
@@ -467,19 +508,27 @@ def _write(session, title, sid, existing, rows):
     width = len(COLUMNS)
     current = [(row + [""] * width)[:width] for row in existing]
     needed = rows + [[""] * width] * max(0, len(current) - len(rows))
-    if [_display(r) for r in current] == [_display(r) for r in needed]:
-        return 0
     if len(needed) > 500:
         raise RuntimeError("Raid tab has too many populated rows to rewrite safely.")
-    raid_sheets._json(
-        session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-        + quote(f"'{title}'!A1:S{len(needed)}", safe="'!:"),
-        params={"valueInputOption": "RAW"},
-        json={"values": [_display(row) for row in needed]},
-    )
-    _paint_sections(session, sid, rows)
-    return sum(_display(a) != _display(b) for a, b in zip(
-        current + [[""] * width] * max(0, len(needed) - len(current)), needed))
+    old_display = [_display(r) for r in current]
+    new_display = [_display(r) for r in needed]
+    changed = old_display != new_display
+    if changed:
+        raid_sheets._json(
+            session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
+            + quote(f"'{title}'!A1:S{len(needed)}", safe="'!:"),
+            params={"valueInputOption": "RAW"},
+            json={"values": new_display},
+        )
+    # Even when data is unchanged, repair pre-existing fixed-position styling
+    # once on the next sync following deployment/restart.
+    layout = _section_positions(rows)
+    if changed or _FORMATTED_SECTION_LAYOUTS.get(sid) != layout:
+        _paint_sections(session, sid, rows)
+        _FORMATTED_SECTION_LAYOUTS[sid] = layout
+    return sum(a != b for a, b in zip(
+        old_display + [[""] * width] * max(0, len(needed) - len(current)),
+        new_display))
 
 
 def _one(session, db_path, event, names, titles):
