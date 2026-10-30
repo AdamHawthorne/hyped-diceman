@@ -340,29 +340,56 @@ def _make_tab(session, title):
         }}}]},
     )
     sid = created["replies"][0]["addSheet"]["properties"]["sheetId"]
+    # Apply the agreed Raid #1 theme once, when creating a new raid tab.
+    # Existing tabs are never recoloured by the sign-up sync.
+    black = {"red": 0, "green": 0, "blue": 0}
+    white = {"red": 1, "green": 1, "blue": 1}
+    grey = {"red": 0.89, "green": 0.89, "blue": 0.89}
+    ink = {"red": 0.08, "green": 0.08, "blue": 0.08}
+
+    def fill(first, last, background, foreground, bold=False, size=10):
+        return {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": first,
+                      "endRowIndex": last, "startColumnIndex": 0,
+                      "endColumnIndex": 19},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": background,
+                "textFormat": {"foregroundColor": foreground, "bold": bold,
+                               "fontFamily": "Roboto", "fontSize": size}}},
+            "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"}}
+
     requests = [
-        {"repeatCell": {"range": {
-            "sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
-            "startColumnIndex": 0, "endColumnIndex": 19},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": TITLE_COLOR,
-                "textFormat": {"bold": True, "fontSize": 18,
-                               "fontFamily": "Roboto",
-                               "foregroundColor": {"red": 1, "green": 1, "blue": 1}}
-            }}, "fields": "userEnteredFormat"}},
-        {"repeatCell": {"range": {
-            "sheetId": sid, "startRowIndex": 6, "endRowIndex": 7,
-            "startColumnIndex": 0, "endColumnIndex": 16},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 1, "green": 1, "blue": 1},
-                "textFormat": {"bold": True, "fontSize": 12, "fontFamily": "Roboto"}
-            }}, "fields": "userEnteredFormat"}},
+        fill(0, 500, black, white),
+        fill(0, 1, black, white, True, 18),
+        fill(6, 7, {"red": .063, "green": .063, "blue": .063}, white, True, 11),
+        fill(7, 500, grey, ink),
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": 15, "endIndex": 17},
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
+    # Role headings retain AMOLED black while player rows stay light grey.
+    # The sync only changes values and dropdowns, never formatting.
+    for section_row in (7, 10, 12, 14, 16):
+        requests.append(fill(section_row, section_row + 1, black, white, True, 11))
+    class_colours = {
+        "Warrior": "C79C6E", "Warlock": "8787ED", "Shaman": "0070DD",
+        "Rogue": "FFF569", "Priest": "FFFFFF", "Paladin": "F58CBA",
+        "Monk": "00FF96", "Mage": "40C7EB", "Hunter": "ABD473",
+        "Druid": "FF7D0A", "Demon Hunter": "A330C9",
+        "Death Knight": "C41F3B",
+    }
+    for name, hex_colour in class_colours.items():
+        colour = {channel: int(hex_colour[pos:pos + 2], 16) / 255
+                  for channel, pos in (("red", 0), ("green", 2), ("blue", 4))}
+        requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
+            "ranges": [{"sheetId": sid, "startRowIndex": 7,
+                        "endRowIndex": 500, "startColumnIndex": 2,
+                        "endColumnIndex": 3}],
+            "booleanRule": {"condition": {"type": "TEXT_CONTAINS",
+                           "values": [{"userEnteredValue": name}]},
+                            "format": {"backgroundColor": colour}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 200), (7, 95),
                        (8, 110), (9, 135), (10, 75), (11, 95),
