@@ -41,6 +41,7 @@ RAID_COLUMNS = {
     "archived_at": "TEXT",
     "archive_notes": "TEXT",
     "wcl_url": "TEXT",
+    "default_show_discord": "INTEGER NOT NULL DEFAULT 1",
 }
 
 
