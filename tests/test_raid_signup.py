@@ -203,7 +203,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 ["Attend", None, "Characters", "SimC", "Absent"],
             )
             self.assertLess(
-                json.dumps(rendered).index("Roster confirmation:"),
+                json.dumps(rendered).index("Roster confirmed:"),
                 json.dumps(rendered).index("y6bCxy.png"),
             )
 
