@@ -22,7 +22,7 @@ COLUMNS = (
     "Hyjal", "Barrows", "Ony", "Leadership Notes", "Gear / SimC",
     "Discord ID (internal)", "Character ID (internal)", "Absent At"
 )
-SECTIONS = ("TANKS", "HEALERS", "MELEE", "RANGED", "ABSENT")
+SECTIONS = ("Tanks", "Healers", "Melee", "Ranged", "Absent")
 MELEE = {
     ("warrior", "*"), ("rogue", "*"), ("paladin", "retribution"),
     ("druid", "feral"), ("shaman", "enhancement"),
@@ -100,17 +100,17 @@ def _list_tabs(session):
 
 def _group(signup, absent):
     if absent:
-        return "ABSENT"
+        return "Absent"
     role = (signup.get("role") or "").casefold()
     if role == "tank":
-        return "TANKS"
+        return "Tanks"
     if role == "healer":
-        return "HEALERS"
+        return "Healers"
     klass = (signup.get("class_name") or "").casefold()
     spec = (signup.get("spec") or "").casefold()
     if (klass, spec) in MELEE or (klass, "*") in MELEE:
-        return "MELEE"
-    return "RANGED"
+        return "Melee"
+    return "Ranged"
 
 
 def _leadership(rows):
@@ -231,7 +231,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             continue
         previous = manual.get(member_id, [""] * len(COLUMNS))
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
-        groups["ABSENT"].append([
+        groups["Absent"].append([
             name, previous[1], previous[2], previous[3], previous[4],
             previous[5], ("Absent: " + (absence.get("note") or "")
                           + " | Signed off: " + absence["signed_off_at"]),
@@ -377,7 +377,7 @@ def _make_tab(session, title):
                     "endColumnIndex": 19}],
         "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
                        "values": [{"userEnteredValue":
-                           '=REGEXMATCH($A8,"^(TANKS|HEALERS|MELEE|RANGED|ABSENT)$")'}]},
+                           '=REGEXMATCH($A8,"^(Tanks|Healers|Melee|Ranged|Absent)$")'}]},
                         "format": {"backgroundColor": black,
                                    "textFormat": {"foregroundColor": white,
                                                   "bold": True}}}}}})
