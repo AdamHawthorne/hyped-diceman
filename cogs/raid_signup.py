@@ -224,9 +224,11 @@ def is_test_owner(interaction):
             and interaction.channel_id == TEST_CHANNEL_ID)
 
 def is_test_member(interaction):
-    """Members can use the real raid panel, but only inside private #ogre."""
-    return (interaction.guild_id == GUILD_ID
-            and interaction.channel_id == TEST_CHANNEL_ID)
+    """Allow guild members to test player-facing raid actions in any guild channel.
+
+    Officer management still uses the separate owner-only allowed() guard.
+    """
+    return interaction.guild_id == GUILD_ID
 
 
 def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
@@ -948,7 +950,7 @@ class CharacterNameModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
         try:
             outcome = save_character(interaction.user.id, self.name.value,
@@ -1022,7 +1024,7 @@ class ClassPickerView(discord.ui.LayoutView):
 
         async def select_class(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("Private owner test only.", ephemeral=True)
+                await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
                 return
             await interaction.response.edit_message(
                 view=SpecPickerView(
@@ -1058,7 +1060,7 @@ class SpecPickerView(discord.ui.LayoutView):
 
         async def select_spec(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("Private owner test only.", ephemeral=True)
+                await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
                 return
             spec = select.values[0]
             roles = CLASS_SPECS[self.class_name][spec]
@@ -1107,7 +1109,7 @@ class RolePickerView(discord.ui.LayoutView):
 
         async def select_role(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("Private owner test only.", ephemeral=True)
+                await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
                 return
             if self.editing_character_id is not None:
                 await apply_profile_update(
@@ -1498,7 +1500,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def on_register(self, interaction):
         if not is_test_member(interaction):
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
         await interaction.response.send_message(
             view=ClassPickerView(interaction.user.id), ephemeral=True
@@ -1506,7 +1508,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def on_characters(self, interaction):
         if not is_test_member(interaction):
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
         await interaction.response.send_message(
             character_list_text(interaction.user.id), ephemeral=True
@@ -1514,7 +1516,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def on_signup(self, interaction, raid_id):
         if not is_test_member(interaction):
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
         # Acknowledge immediately to avoid Discord's three-second interaction deadline.
         await interaction.response.defer(ephemeral=True)
@@ -1920,7 +1922,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     async def softres(self, interaction: discord.Interaction,
                       number: int, url: str | None = None):
         if not self.allowed(interaction):
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
         try:
             event = set_softres_url(RAID_DB, number, url)
@@ -1935,7 +1937,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     @app_commands.describe(number="Raid number (leave blank for latest)")
     async def panel(self, interaction: discord.Interaction, number: int | None = None):
         if not self.allowed(interaction):
-            await interaction.response.send_message("Private owner test only.", ephemeral=True)
+            await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
         event = read_raid(RAID_DB, number) if number is not None else latest_raid(RAID_DB)
         if not event:
