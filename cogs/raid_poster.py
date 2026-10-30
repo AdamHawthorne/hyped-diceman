@@ -322,7 +322,8 @@ class RaidPosterView(discord.ui.LayoutView):
             f"**Post destination:** {'<#' + str(d['channel_id']) + '>' if d.get('channel_id') else 'Current channel (private #ogre)'}\n\n"
             f"**Ping roles on new post:** {', '.join('<@&' + str(r) + '>' for r in d.get('ping_role_ids', [])) or 'None'}\n\n"
             f"**Default Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n\n"
-            "Applicant list will never be shown on the raid panel."
+            "Sign-ups appear by class and role immediately. Team assignments stay private until roster confirmation.\n"
+            "-# Show on Discord controls the confirmed team roster, not the live sign-up list."
         )
 
     def _select(self, label, options, callback):
