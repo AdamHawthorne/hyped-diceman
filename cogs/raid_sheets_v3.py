@@ -110,7 +110,7 @@ def _group(signup, absent):
     spec = (signup.get("spec") or "").casefold()
     if (klass, spec) in MELEE or (klass, "*") in MELEE:
         return "MELEE"
-    return "DPS"
+    return "RANGED"
 
 
 def _leadership(rows):
@@ -319,8 +319,8 @@ def _header(event, body, tab):
         ["Instances", instances, "Confirmed",
          event.get("confirmed_at") or "", "Archived", event.get("archived_at") or ""],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
-         event.get("archive_notes") or "", f"{signed} signed · {absent} absent"],
-        ["", ""],
+         event.get("archive_notes") or ""],
+        [f"{signed} signed · {absent} absent"],
         ["", ""],
         list(COLUMNS),
     ]
@@ -361,7 +361,7 @@ def _make_tab(session, title):
     requests = [
         fill(0, 500, black, white),
         fill(0, 1, black, white, True, 18),
-        fill(6, 7, {"red": .063, "green": .063, "blue": .063}, white, True, 11),
+        fill(6, 7, black, white, True, 11),
         fill(7, 500, grey, ink),
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
@@ -429,6 +429,10 @@ def _paint_sections(session, sid, rows):
             "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
             "startColumnIndex": 7, "endColumnIndex": 8}}}
     ]
+    # Leadership Notes (display column N) is free text, not a dropdown.
+    requests.append({"setDataValidation": {"range": {
+        "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
+        "startColumnIndex": 13, "endColumnIndex": 14}}})
     for old_col, options in VALUES.items():
         col = DISPLAY_ORDER.index(old_col)
         requests.append({"setDataValidation": {
