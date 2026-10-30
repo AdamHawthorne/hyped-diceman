@@ -231,6 +231,25 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
 
+    async def test_hunter_specs_use_forever_melee_and_ranged_groups(self):
+        for spec, expected in (
+            ("Survival", "Melee"),
+            ("Beast Mastery", "Ranged"),
+            ("Marksmanship", "Ranged"),
+        ):
+            self.assertEqual(
+                raid_schedule.signup_role_group("Hunter", spec, "DPS"),
+                expected,
+            )
+        grouped = raid_schedule.signup_role_groups([
+            ("Surv Hunter", "", "Hunter", "DPS", "Survival"),
+            ("BM Hunter", "", "Hunter", "DPS", "Beast Mastery"),
+            ("MM Hunter", "", "Hunter", "DPS", "Marksmanship"),
+        ])
+        self.assertEqual([label for label, _ in grouped], ["Melee", "Ranged"])
+        self.assertIn("Surv Hunter", grouped[0][1][0])
+        self.assertEqual(len(grouped[1][1]), 2)
+
     async def test_collecting_roster_shows_role_groups_then_confirmed_teams(self):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")):
