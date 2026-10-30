@@ -1425,9 +1425,9 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         )
 
     async def cog_load(self):
-        # Reattach real panel buttons after restarts so posted panels keep working.
+        # Reattach controls in every destination, including after restarts.
         for event in active_panels(RAID_DB):
-            if event.get("panel_channel_id") == TEST_CHANNEL_ID:
+            if event.get("panel_channel_id") and event.get("panel_message_id"):
                 self.bot.add_view(self.make_panel(event), message_id=event["panel_message_id"])
         if raid_sheets.configured():
             self._sheet_task = asyncio.create_task(self.sheet_sync_loop())
@@ -1486,16 +1486,18 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 event = read_raid(RAID_DB, raid_id)
                 if not event or not event.get("panel_message_id"):
                     continue
-                if event.get("panel_channel_id") != TEST_CHANNEL_ID:
-                    continue
-                channel = self.bot.get_channel(TEST_CHANNEL_ID)
-                if channel is None:
+                channel_id = event.get("panel_channel_id")
+                if not channel_id:
                     continue
                 try:
+                    channel = self.bot.get_channel(channel_id)
+                    if channel is None:
+                        channel = await self.bot.fetch_channel(channel_id)
                     message = await channel.fetch_message(event["panel_message_id"])
                     await message.edit(view=self.make_panel(event))
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    LOGGER.warning("Unable to refresh revealed roster for Raid #%s", raid_id)
+                    LOGGER.warning("Unable to refresh revealed roster for Raid #%s in channel %s",
+                                   raid_id, channel_id)
             return counts, changed
 
     async def on_register(self, interaction):
@@ -1554,7 +1556,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     async def on_gear(self, interaction):
         if not is_test_member(interaction):
             await interaction.response.send_message(
-                "Gear only available in private #ogre.", ephemeral=True
+                "Gear is available to members of this server.", ephemeral=True
             )
             return
         rows = member_characters(interaction.user.id)
@@ -1576,7 +1578,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     async def on_update(self, interaction):
         if not is_test_member(interaction):
             await interaction.response.send_message(
-                "Update only available in private #ogre.", ephemeral=True
+                "Characters are available to members of this server.", ephemeral=True
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -1588,7 +1590,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     async def on_absent(self, interaction, raid_id):
         if not is_test_member(interaction):
             await interaction.response.send_message(
-                "Absence only available in private #ogre.", ephemeral=True
+                "Absence is available to members of this server.", ephemeral=True
             )
             return
         await interaction.response.send_modal(
@@ -1630,7 +1632,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def post_panel(self, interaction, event, destination_id=None, ping_role_ids=None):
         """Publish to the poster-selected text channel; edit existing panel in place."""
-        channel_id = destination_id or interaction.channel_id
+        channel_id = destination_id or event.get("panel_channel_id") or interaction.channel_id
         channel = self.bot.get_channel(channel_id)
         if channel is None:
             try:
@@ -1990,7 +1992,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                         character: str, file: discord.Attachment):
         if not is_test_member(interaction):
             await interaction.response.send_message(
-                "Gear uploads are only available in private #ogre.",
+                "Gear uploads are available to members of this server.",
                 ephemeral=True,
             )
             return
