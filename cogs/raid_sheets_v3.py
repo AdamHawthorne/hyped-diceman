@@ -384,50 +384,46 @@ def _make_tab(session, title):
 
 
 def _paint_sections(session, sid, rows):
-    # Reset previous section headings when sign-ups move between groups.
-    pale = {"red": 1, "green": 1, "blue": 1}
-    accent = {"red": 0.93, "green": 0.90, "blue": 0.85}
-    requests = [{"repeatCell": {
-        "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
-                  "startColumnIndex": 0, "endColumnIndex": 16},
-        "cell": {"userEnteredFormat": {
-            "backgroundColor": pale, "textFormat": {"bold": False}}},
-        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
-    }}]
+    """Keep dropdowns only on player rows without changing the Roster theme."""
+    requests = [
+        {"setDataValidation": {"range": {
+            "sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
+            "startColumnIndex": 7, "endColumnIndex": 8}}}
+    ]
+    for old_col, options in VALUES.items():
+        col = DISPLAY_ORDER.index(old_col)
+        requests.append({"setDataValidation": {
+            "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
+                      "startColumnIndex": col, "endColumnIndex": col + 1},
+            "rule": {"condition": {"type": "ONE_OF_LIST",
+                       "values": [{"userEnteredValue": v} for v in options]},
+                     "strict": True, "showCustomUi": True}}})
     for i, row in enumerate(rows[7:], start=7):
-        is_section = row[0] in SECTIONS
-        is_class = row[0].startswith("  ") and not any(row[1:])
-        if not is_section and not is_class:
-            continue
-        bg = accent if is_section else {"red": 0.96, "green": 0.96, "blue": 0.97}
-        requests.append({"repeatCell": {
-            "range": {"sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
-                      "startColumnIndex": 0, "endColumnIndex": 16},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": bg, "textFormat": {"bold": True}}},
-            "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
-        }})
-    raid_sheets._json(session, "POST",
-                     f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
-                     json={"requests": requests})
-
+        if not row[1].strip():
+            requests.append({"setDataValidation": {"range": {
+                "sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
+                "startColumnIndex": 8, "endColumnIndex": 13}}})
+    raid_sheets._json(
+        session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+        json={"requests": requests},
+    )
 
 def _write(session, title, sid, existing, rows):
     width = len(COLUMNS)
     current = [(row + [""] * width)[:width] for row in existing]
     needed = rows + [[""] * width] * max(0, len(current) - len(rows))
-    if current == needed:
+    if [_display(r) for r in current] == [_display(r) for r in needed]:
         return 0
     if len(needed) > 500:
         raise RuntimeError("Raid tab has too many populated rows to rewrite safely.")
     raid_sheets._json(
         session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-        + quote(f"'{title}'!A1:R{len(needed)}", safe="'!:"),
+        + quote(f"'{title}'!A1:S{len(needed)}", safe="'!:"),
         params={"valueInputOption": "RAW"},
         json={"values": [_display(row) for row in needed]},
     )
     _paint_sections(session, sid, rows)
-    return sum(a != b for a, b in zip(
+    return sum(_display(a) != _display(b) for a, b in zip(
         current + [[""] * width] * max(0, len(needed) - len(current)), needed))
 
 
@@ -451,6 +447,13 @@ def _one(session, db_path, event, names, titles):
             )
             titles[title] = titles.pop(original)
             titles[title]["title"] = title
+    if not new and titles[title].get("gridProperties", {}).get("columnCount", 0) < len(COLUMNS):
+        missing = len(COLUMNS) - titles[title]["gridProperties"]["columnCount"]
+        raid_sheets._json(
+            session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+            json={"requests": [{"appendDimension": {
+                "sheetId": sid, "dimension": "COLUMNS", "length": missing}}]},
+        )
     existing = [] if new else _read(session, title)
     # Also recover a sheet created just before an interrupted first write.
     legacy = _legacy_choices(session, event) if new or not existing else None
