@@ -1252,11 +1252,11 @@ class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
             await interaction.response.send_message(f"Roster check failed: {exc}", ephemeral=True)
             return
         await interaction.response.send_message(
-            f"**Complete Raid #{self.raid_id}?**\\n"
+            f"**Complete Raid #{self.raid_id}?**\n"
             f"Selected and bench players: **{len(candidates)}**. "
             "Pending attendance will become Attended; existing no-shows, late "
-            "and excused results will be preserved. The raid will be archived.\\n"
-            f"WCL: {url or 'Not provided'}\\n"
+            "and excused results will be preserved. The raid will be archived.\n"
+            f"WCL: {url or 'Not provided'}\n"
             f"Loot: {'Provided' if loot else 'Not provided'}",
             view=RaidCompletionConfirm(self.cog, self.raid_id, url, combined),
             ephemeral=True)
