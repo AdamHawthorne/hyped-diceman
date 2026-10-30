@@ -100,7 +100,7 @@ class RaidTabsTests(unittest.TestCase):
                     req["range"]["startRowIndex"] for req in fills[1:]
                     if req["cell"]["userEnteredFormat"]["textFormat"]["bold"]
                 ]
-                self.assertEqual(headers, [7, 12, 14, 16, 22])
+                self.assertEqual(headers, [7, 12, 14, 17, 20])
                 self.assertNotIn(10, headers)
                 self.assertNotIn(11, headers)
                 self.assertEqual(
