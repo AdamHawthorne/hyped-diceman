@@ -462,6 +462,30 @@ def _one(session, db_path, event, names, titles):
                         "source": {"sheetId": sid, "dimension": "COLUMNS",
                                    "startIndex": 17, "endIndex": 18},
                         "destinationIndex": 19}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 17, "endIndex": 19},
+                        "properties": {"pixelSize": 195}, "fields": "pixelSize"}},
+                    {"repeatCell": {
+                        "range": {"sheetId": sid, "startRowIndex": 6,
+                                  "endRowIndex": 7, "startColumnIndex": 17,
+                                  "endColumnIndex": 19},
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                            "textFormat": {"fontFamily": "Roboto",
+                                           "fontSize": 12, "bold": True}}},
+                        "fields": "userEnteredFormat"}},
+                    {"repeatCell": {
+                        "range": {"sheetId": sid, "startRowIndex": 7,
+                                  "endRowIndex": 500, "startColumnIndex": 17,
+                                  "endColumnIndex": 19},
+                        "cell": {"userEnteredFormat": {
+                            "textFormat": {"fontFamily": "Roboto", "fontSize": 10},
+                            "verticalAlignment": "MIDDLE",
+                            "horizontalAlignment": "CENTER"}},
+                        "fields": "userEnteredFormat.textFormat,"
+                                  "userEnteredFormat.verticalAlignment,"
+                                  "userEnteredFormat.horizontalAlignment"}},
                 ]},
             )
         elif count < len(COLUMNS):
