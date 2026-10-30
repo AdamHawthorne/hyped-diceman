@@ -694,11 +694,11 @@ class RaidPosterView(discord.ui.LayoutView):
                 return
             lines = [f"**{i}. {discord.utils.escape_markdown(entry[1])}** — {discord.utils.escape_markdown(entry[2])}"
                      for i, entry in enumerate(selected, 1)]
-            preview = f"**Raid #{event['raid_id']} · Confirm roster?**\\n" + "\\n".join(lines)
+            preview = f"**Raid #{event['raid_id']} · Confirm roster?**\n" + "\n".join(lines)
             if len(preview) > 1900:
-                preview = preview[:1850] + "\\n…"
+                preview = preview[:1850] + "\n…"
             await interaction.followup.send(
-                preview + "\\n\\nConfirm to lock the Sheet selection and publish the roster.",
+                preview + "\n\nConfirm to lock the Sheet selection and publish the roster.",
                 view=RaidRosterPreview(self.cog, self.owner_id, event["raid_id"], selected),
                 ephemeral=True)
 
