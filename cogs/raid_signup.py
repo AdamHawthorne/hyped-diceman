@@ -1616,18 +1616,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 message = "Ogre stop raid reminder."
             await interaction.response.send_message(message, ephemeral=True)
 
-        async def manage(interaction):
-            if not self.allowed(interaction):
-                await interaction.response.send_message('Officer-only in private #ogre.', ephemeral=True)
-                return
-            await interaction.response.send_message(
-                f'Raid #{event["raid_id"]} management', ephemeral=True,
-                view=RaidManageView(self, event['raid_id']))
-
         return RaidEventPanel(
             event, on_signup=signup, on_update=self.on_update,
             on_remind=remind,
-            on_gear=self.on_gear, on_absent=absent, on_manage=manage,
+            on_gear=self.on_gear, on_absent=absent,
             public_roster=read_public_roster(
                 RAID_DB, event["raid_id"], include_details=True
             ),
