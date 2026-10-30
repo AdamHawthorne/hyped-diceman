@@ -413,7 +413,7 @@ def confirmed_roster(path, number, unavailable=(), *, include_details=False):
 
 
 def read_public_roster(path, raid_id, *, include_details=False):
-    """Only selected, visible names; optional class/role metadata for emojis."""
+    """Confirmed team entries; optional class/role metadata for emojis."""
     with database(path) as con:
         columns = ("name, assignment, class_name, role, spec"
                    if include_details else "name, assignment")
@@ -421,6 +421,60 @@ def read_public_roster(path, raid_id, *, include_details=False):
             f"SELECT {columns} FROM raid_public_roster "
             "WHERE raid_id=? ORDER BY position", (raid_id,)
         ).fetchall()
+
+
+def read_signup_roster(path, raid_id):
+    """Read the live unconfirmed raider list directly from SQLite.
+
+    Leadership's Sheet selections, visibility flags and instance assignments
+    do not affect this list. An available signup appears immediately, and a
+    signed-off player disappears. One character per Discord member/night.
+    """
+    with database(path) as con:
+        return con.execute(
+            "SELECT c.name, '' AS assignment, "
+            "COALESCE(c.class_name, ''), COALESCE(c.role, ''), "
+            "COALESCE(c.spec, '') "
+            "FROM signups AS s JOIN characters AS c "
+            "ON c.character_id=s.character_id AND c.discord_id=s.discord_id "
+            "WHERE s.raid_id=? AND s.availability='Available' "
+            "AND NOT EXISTS (SELECT 1 FROM raid_absences AS a "
+            "WHERE a.raid_id=s.raid_id AND a.discord_id=s.discord_id) "
+            "ORDER BY s.submitted_at, LOWER(c.name)",
+            (raid_id,),
+        ).fetchall()
+
+
+def signup_role_group(klass, spec, role):
+    """Classify unassigned sign-ups using the same melee/ranged split as Sheets."""
+    role = (role or "").strip().casefold()
+    if role == "tank":
+        return "Tanks"
+    if role in ("healer", "heal"):
+        return "Healers"
+    klass = (klass or "").strip().casefold()
+    spec = (spec or "").strip().casefold()
+    if (klass in ("warrior", "rogue")
+            or (klass, spec) in {
+                ("paladin", "retribution"), ("druid", "feral"),
+                ("shaman", "enhancement")
+            }):
+        return "Melee"
+    return "Ranged"
+
+
+def signup_role_groups(public_roster, *, emoji_map=None):
+    """Four public sign-up categories; no instance or selection disclosure."""
+    groups = {label: [] for label in ("Tanks", "Melee", "Ranged", "Healers")}
+    for entry in public_roster:
+        name = entry[0]
+        klass, role, spec = (tuple(entry[2:5]) + ("", "", ""))[:3]
+        display = roster_name_with_emojis(
+            name, klass, role, spec, emoji_map=emoji_map
+        )
+        if display:
+            groups[signup_role_group(klass, spec, role)].append(display)
+    return [(name, members) for name, members in groups.items() if members]
 
 
 def record_panel(path, number, channel_id, message_id):
@@ -601,20 +655,41 @@ def _roster_group_text(title, players):
 
 
 def raid_panel_text(event, public_roster=(), *, emoji_map=None):
-    """Plain-text equivalent used for previews and roster layout tests."""
+    """Plain-text preview for each roster lifecycle stage."""
+    if not public_roster:
+        return raid_panel_intro(event) + "\n\n" + raid_roster_status(event)
+    if not event.get("roster_published"):
+        groups = signup_role_groups(public_roster, emoji_map=emoji_map)
+        lines = ["### Sign-ups (" + str(len(public_roster)) + ")"]
+        for role, players in groups:
+            lines.append("**" + role + " (" + str(len(players)) + ")**\n" +
+                         "\n".join(players))
+        return raid_panel_intro(event) + "\n\n" + "\n\n".join(lines) + (
+            "\n\n" + raid_roster_status(event))
     groups = roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
-    return raid_panel_intro(event) + ("\n### Roster" if public_roster else "") + "".join(
+    return raid_panel_intro(event) + "\n### Roster" + "".join(
         "\n\n" + _roster_group_text(title, players)
         for title, players in groups
-    ) * bool(public_roster) + "\n\n" + raid_roster_status(event)
+    ) + "\n\n" + raid_roster_status(event)
 
 
 def roster_components(event, public_roster, *, emoji_map=None):
-    """Text-only roster groups, with no voice-link buttons."""
+    """Role-grouped live sign-ups before confirmation; team rosters afterwards."""
+    if not public_roster:
+        return []
+    if not event.get("roster_published"):
+        return [
+            discord.ui.TextDisplay(
+                "**" + role + " (" + str(len(players)) + ")**\n" +
+                "\n".join(players))
+            for role, players in signup_role_groups(
+                public_roster, emoji_map=emoji_map)
+        ]
     return [
         discord.ui.TextDisplay(_roster_group_text(title, players))
-        for title, players in roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
-    ] if public_roster else []
+        for title, players in roster_groups(
+            event, public_roster, emoji_map=emoji_map, by_role=True)
+    ]
 
 
 class RaidEventPanel(discord.ui.LayoutView):
@@ -631,7 +706,11 @@ class RaidEventPanel(discord.ui.LayoutView):
                     RAID_PANEL_IMAGE, description="Hyped raid image"
                 ),
             ),
-            *( [discord.ui.TextDisplay("### Roster")] + roster_components(event, public_roster, emoji_map=emoji_map) if public_roster else [] ),
+            *( [discord.ui.TextDisplay(
+                   "### Roster" if event.get("roster_published") else
+                   f"### Sign-ups ({len(public_roster)})"
+               )] + roster_components(event, public_roster, emoji_map=emoji_map)
+               if public_roster else [] ),
             discord.ui.TextDisplay(raid_roster_status(event)),
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(
