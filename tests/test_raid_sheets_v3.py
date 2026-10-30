@@ -98,14 +98,14 @@ class RaidTabsTests(unittest.TestCase):
             self.assertNotIn("42", [x[0] for x in sheet._approved(
                 sheet._header(event, absent, sheet.tab_title(event)), event
             )])
-            # Signing again is not automatically reapproved for Discord.
+            # Signing back on resets old instance assignments but restores signup defaults.
             raid.save_signup(1, 42, raid.member_characters(42, path)[0][0], path)
             restored = sheet._rows(path, event, {}, old_rows=sheet._header(
                 event, absent, sheet.tab_title(event)
             ))
             row = next(row for row in restored if row[16] == "42")
             self.assertEqual(row[8], "Signed")
-            self.assertEqual(row[9:14], ["Pending", "No", "No", "No", "No"])
+            self.assertEqual(row[9:14], ["Selected", "Yes", "No", "No", "No"])
 
     def test_legacy_selections_are_migrated_once(self):
         with tempfile.TemporaryDirectory() as tmp:
