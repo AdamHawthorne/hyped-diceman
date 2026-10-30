@@ -448,13 +448,24 @@ def _one(session, db_path, event, names, titles):
             )
             titles[title] = titles.pop(original)
             titles[title]["title"] = title
-    if not new and titles[title].get("gridProperties", {}).get("columnCount", 0) < len(COLUMNS):
-        missing = len(COLUMNS) - titles[title]["gridProperties"]["columnCount"]
-        raid_sheets._json(
-            session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
-            json={"requests": [{"appendDimension": {
-                "sheetId": sid, "dimension": "COLUMNS", "length": missing}}]},
-        )
+    if not new:
+        count = titles[title].get("gridProperties", {}).get("columnCount", len(COLUMNS))
+        if count == 18:
+            # Migrate the old R Signed At into S without losing any timestamps.
+            # Appending alone would wrongly read the old signed timestamp as Absent At.
+            raid_sheets._json(
+                session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                json={"requests": [
+                    {"appendDimension": {
+                        "sheetId": sid, "dimension": "COLUMNS", "length": 1}},
+                    {"moveDimension": {
+                        "source": {"sheetId": sid, "dimension": "COLUMNS",
+                                   "startIndex": 17, "endIndex": 18},
+                        "destinationIndex": 19}},
+                ]},
+            )
+        elif count < len(COLUMNS):
+            raise RuntimeError("Raid tab has an unexpected number of columns.")
     existing = [] if new else _read(session, title)
     # Also recover a sheet created just before an interrupted first write.
     legacy = _legacy_choices(session, event) if new or not existing else None
