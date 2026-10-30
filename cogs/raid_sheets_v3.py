@@ -363,15 +363,6 @@ def _make_tab(session, title):
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
-    # Reapply a restrained palette on each sync; avoid inherited stripes/borders.
-    requests.append({"repeatCell": {"range": {
-        "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
-        "startColumnIndex": 0, "endColumnIndex": 19},
-        "cell": {"userEnteredFormat": {
-            "backgroundColor": {"red": 1, "green": 1, "blue": 1},
-            "borders": {"top": {"style": "NONE"}, "bottom": {"style": "NONE"},
-                        "left": {"style": "NONE"}, "right": {"style": "NONE"}}}},
-        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.borders"}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 200), (7, 95),
                        (8, 110), (9, 135), (10, 75), (11, 95),
@@ -412,14 +403,6 @@ def _paint_sections(session, sid, rows):
                        "values": [{"userEnteredValue": v} for v in options]},
                      "strict": True, "showCustomUi": True}}})
     for i, row in enumerate(rows[7:], start=7):
-        if row[0].strip() in SECTIONS:
-            requests.append({"repeatCell": {"range": {
-                "sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
-                "startColumnIndex": 0, "endColumnIndex": 19},
-                "cell": {"userEnteredFormat": {"backgroundColor": TITLE_COLOR,
-                    "textFormat": {"bold": True, "foregroundColor": {
-                        "red": 1, "green": 1, "blue": 1}}}},
-                "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"}})
         if not row[1].strip():
             requests.append({"setDataValidation": {"range": {
                 "sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
