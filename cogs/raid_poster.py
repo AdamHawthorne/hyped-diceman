@@ -208,6 +208,51 @@ class RaidDeleteConfirmation(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(confirm, cancel))
 
 
+class RaidRosterPreview(discord.ui.View):
+    """Officer-only two-step confirmation of the live Sheet selection."""
+    def __init__(self, cog, owner_id, raid_id, entries):
+        super().__init__(timeout=300)
+        self.cog, self.owner_id, self.raid_id = cog, owner_id, raid_id
+        self.snapshot = tuple(tuple(x) for x in entries)
+
+    @discord.ui.button(label="Confirm roster & publish", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id or not self.cog.allowed(interaction):
+            await interaction.response.send_message("Only the poster owner can confirm.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        from cogs import raid_sheets_v3
+        from cogs.raid_schedule import raid_status
+        try:
+            current = await __import__("asyncio").to_thread(
+                raid_sheets_v3.read_selected, self.cog.raid_db_path(), self.raid_id)
+            if tuple(tuple(x) for x in current) != self.snapshot:
+                await interaction.followup.send(
+                    "The Sheet selection changed. Open a fresh preview before confirming.",
+                    ephemeral=True)
+                return
+            raid_status(self.cog.raid_db_path(), self.raid_id, "confirm",
+                        confirmed_entries=current)
+            await self.cog.sync_raid_sheets()
+            await self.cog.refresh_saved_panel(self.raid_id)
+        except (ValueError, RuntimeError, sqlite3.Error, discord.HTTPException) as exc:
+            await interaction.followup.send(f"Roster confirmation: {exc}", ephemeral=True)
+            return
+        for item in self.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=self)
+        await interaction.followup.send(
+            f"Raid #{self.raid_id} roster confirmed and published. Sign-ups locked.",
+            ephemeral=True)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the poster owner.", ephemeral=True)
+            return
+        await interaction.response.edit_message(content="Roster confirmation cancelled.", view=None)
+
+
 class RaidPosterView(discord.ui.LayoutView):
     """Owner-controlled non-ephemeral setup card; published raid is a separate message."""
     def __init__(self, cog, owner_id, draft=None):
@@ -520,6 +565,9 @@ class RaidPosterView(discord.ui.LayoutView):
                                         style=discord.ButtonStyle.secondary,
                                         disabled=not bool(self.draft.get("check_message_url")))
         publish = discord.ui.Button(label="Post / Update Raid", style=discord.ButtonStyle.success)
+        confirm_roster = discord.ui.Button(label="Preview / Confirm Roster",
+                                           style=discord.ButtonStyle.primary,
+                                           disabled=self.draft["number"] not in self.saved_raid_ids)
         manage = discord.ui.Button(label="Manage Raid",
                                    style=discord.ButtonStyle.primary,
                                    disabled=self.draft["number"] not in self.saved_raid_ids)
@@ -620,6 +668,41 @@ class RaidPosterView(discord.ui.LayoutView):
                 self.cog, self.owner_id, self.draft["number"]
             ))
 
+        async def preview_roster(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            event = read_raid(self.cog.raid_db_path(), self.draft["number"])
+            if not event or event.get("roster_published") or event.get("archived_at"):
+                await interaction.response.send_message(
+                    "Choose an unconfirmed, active raid.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            from cogs import raid_sheets_v3
+            try:
+                await self.cog.sync_raid_sheets()
+                selected = await __import__("asyncio").to_thread(
+                    raid_sheets_v3.read_selected, self.cog.raid_db_path(),
+                    event["raid_id"])
+            except (ValueError, RuntimeError, sqlite3.Error, discord.HTTPException) as exc:
+                await interaction.followup.send(f"Roster preview: {exc}", ephemeral=True)
+                return
+            if not selected:
+                await interaction.followup.send(
+                    "No visible selected players found. Check Selection, Show on Discord and instance assignments in the Sheet.",
+                    ephemeral=True)
+                return
+            lines = [f"**{i}. {discord.utils.escape_markdown(entry[1])}** — {discord.utils.escape_markdown(entry[2])}"
+                     for i, entry in enumerate(selected, 1)]
+            preview = f"**Raid #{event['raid_id']} · Confirm roster?**\\n" + "\\n".join(lines)
+            if len(preview) > 1900:
+                preview = preview[:1850] + "\\n…"
+            await interaction.followup.send(
+                preview + "\\n\\nConfirm to lock the Sheet selection and publish the roster.",
+                view=RaidRosterPreview(self.cog, self.owner_id, event["raid_id"], selected),
+                ephemeral=True)
+
+        confirm_roster.callback = preview_roster
         async def open_manage(interaction):
             if not self.authorised(interaction):
                 await interaction.response.send_message("Only owner.", ephemeral=True)
@@ -652,4 +735,4 @@ class RaidPosterView(discord.ui.LayoutView):
         row.add_item(clear)
         self.add_item(row)
         self.add_item(discord.ui.ActionRow(check_link, clear_check))
-        self.add_item(discord.ui.ActionRow(publish, manage, delete))
+        self.add_item(discord.ui.ActionRow(publish, confirm_roster, manage, delete))
