@@ -457,7 +457,7 @@ def signup_role_group(klass, spec, role):
     if (klass in ("warrior", "rogue")
             or (klass, spec) in {
                 ("paladin", "retribution"), ("druid", "feral"),
-                ("shaman", "enhancement")
+                ("shaman", "enhancement"), ("hunter", "survival")
             }):
         return "Melee"
     return "Ranged"
