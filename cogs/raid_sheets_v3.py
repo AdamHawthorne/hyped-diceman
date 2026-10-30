@@ -9,6 +9,10 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from cogs import raid_sheets
+from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
+
+TITLE_COLOR = {key: ((LEADERSHIP_ACCENT >> shift) & 255) / 255
+               for key, shift in (("red", 16), ("green", 8), ("blue", 0))}
 from cogs.raid_schedule import confirmed_roster, database, read_raid
 
 UK = ZoneInfo("Europe/London")
@@ -315,10 +319,9 @@ def _header(event, body, tab):
         ["Instances", instances, "Confirmed",
          event.get("confirmed_at") or "", "Archived", event.get("archived_at") or ""],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
-         event.get("archive_notes") or ""],
+         event.get("archive_notes") or "", f"{signed} signed · {absent} absent"],
         ["", ""],
-        [f"{signed} signed · {absent} absent",
-         ""],
+        ["", ""],
         list(COLUMNS),
     ]
     return [(r + [""] * (len(COLUMNS) - len(r)))[:len(COLUMNS)]
@@ -342,10 +345,10 @@ def _make_tab(session, title):
             "sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
             "startColumnIndex": 0, "endColumnIndex": 19},
             "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 0.898, "green": 0.8, "blue": 0.502},
+                "backgroundColor": TITLE_COLOR,
                 "textFormat": {"bold": True, "fontSize": 18,
                                "fontFamily": "Roboto",
-                               "foregroundColor": {"red": 0, "green": 0, "blue": 0}}
+                               "foregroundColor": {"red": 1, "green": 1, "blue": 1}}
             }}, "fields": "userEnteredFormat"}},
         {"repeatCell": {"range": {
             "sheetId": sid, "startRowIndex": 6, "endRowIndex": 7,
@@ -360,6 +363,15 @@ def _make_tab(session, title):
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
+    # Reapply a restrained palette on each sync; avoid inherited stripes/borders.
+    requests.append({"repeatCell": {"range": {
+        "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
+        "startColumnIndex": 0, "endColumnIndex": 19},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+            "borders": {"top": {"style": "NONE"}, "bottom": {"style": "NONE"},
+                        "left": {"style": "NONE"}, "right": {"style": "NONE"}}}},
+        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.borders"}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 200), (7, 95),
                        (8, 110), (9, 135), (10, 75), (11, 95),
@@ -400,6 +412,14 @@ def _paint_sections(session, sid, rows):
                        "values": [{"userEnteredValue": v} for v in options]},
                      "strict": True, "showCustomUi": True}}})
     for i, row in enumerate(rows[7:], start=7):
+        if row[0].strip() in SECTIONS:
+            requests.append({"repeatCell": {"range": {
+                "sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
+                "startColumnIndex": 0, "endColumnIndex": 19},
+                "cell": {"userEnteredFormat": {"backgroundColor": TITLE_COLOR,
+                    "textFormat": {"bold": True, "foregroundColor": {
+                        "red": 1, "green": 1, "blue": 1}}}},
+                "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"}})
         if not row[1].strip():
             requests.append({"setDataValidation": {"range": {
                 "sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
