@@ -1158,6 +1158,151 @@ async def apply_profile_update(interaction, owner_id, character_id,
     )
 
 
+
+class RaidAttendanceSelect(discord.ui.View):
+    """Private player picker for late, no-show and excused results."""
+    def __init__(self, cog, raid_id, outcome, candidates):
+        super().__init__(timeout=300)
+        self.cog, self.raid_id, self.outcome = cog, raid_id, outcome
+        choices = [discord.SelectOption(label=r[1][:100], value=r[16],
+                   description=(r[9] + " · " + r[0])[:100])
+                   for r in candidates[:25]]
+        picker = discord.ui.Select(placeholder="Select player", options=choices)
+        async def picked(interaction):
+            if not cog.allowed(interaction):
+                await interaction.response.send_message("Officer-only.", ephemeral=True)
+                return
+            member_id = picker.values[0]
+            if outcome == "Late":
+                await interaction.response.send_modal(RaidLateModal(cog, raid_id, member_id))
+                return
+            await interaction.response.defer(ephemeral=True)
+            try:
+                name = await asyncio.to_thread(raid_sheets_v3.attendance_set,
+                    RAID_DB, raid_id, member_id,
+                    "Absent" if outcome == "No Show" else "Excused")
+            except Exception as exc:
+                await interaction.followup.send(f"Attendance update failed: {exc}", ephemeral=True)
+                return
+            await interaction.followup.send(f"{name}: {outcome} saved.", ephemeral=True)
+        picker.callback = picked
+        self.add_item(picker)
+
+
+class RaidLateModal(discord.ui.Modal, title="Mark player late"):
+    minutes = discord.ui.TextInput(label="Minutes late", placeholder="e.g. 15", max_length=3)
+    def __init__(self, cog, raid_id, member_id):
+        super().__init__()
+        self.cog, self.raid_id, self.member_id = cog, raid_id, member_id
+
+    async def on_submit(self, interaction):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        try:
+            minutes = int(str(self.minutes))
+            if not 1 <= minutes <= 999:
+                raise ValueError("Enter 1–999 minutes.")
+        except ValueError:
+            await interaction.response.send_message("Enter a valid number of minutes.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            name = await asyncio.to_thread(raid_sheets_v3.attendance_set,
+                RAID_DB, self.raid_id, self.member_id, "Attended", minutes)
+            await interaction.followup.send(f"{name}: attended, {minutes} minutes late.", ephemeral=True)
+        except Exception as exc:
+            await interaction.followup.send(f"Attendance update failed: {exc}", ephemeral=True)
+
+
+class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
+    wcl = discord.ui.TextInput(label="Warcraft Logs URL (optional)", required=False,
+                               max_length=500)
+    loot = discord.ui.TextInput(label="Loot log / link (optional)", required=False,
+                                max_length=800, style=discord.TextStyle.paragraph)
+    notes = discord.ui.TextInput(label="Raid notes (optional)", required=False,
+                                 max_length=600, style=discord.TextStyle.paragraph)
+    def __init__(self, cog, raid_id):
+        super().__init__()
+        self.cog, self.raid_id = cog, raid_id
+
+    async def on_submit(self, interaction):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        url = str(self.wcl).strip()
+        if url:
+            parts = urlsplit(url)
+            if (parts.scheme != "https" or parts.hostname not in
+                    ("www.warcraftlogs.com", "warcraftlogs.com") or
+                    not parts.path.startswith("/reports/") or parts.username or parts.password):
+                await interaction.response.send_message("Invalid Warcraft Logs URL.", ephemeral=True)
+                return
+        event = read_raid(RAID_DB, self.raid_id)
+        if not event or not event.get("roster_published") or event.get("archived_at"):
+            await interaction.response.send_message("Raid must be confirmed and not archived.", ephemeral=True)
+            return
+        notes = str(self.notes).strip()
+        loot = str(self.loot).strip()
+        combined = notes + ("\nLoot: " + loot if loot else "")
+        await interaction.response.defer(ephemeral=True)
+        try:
+            count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
+                                            RAID_DB, self.raid_id)
+            raid_status(RAID_DB, self.raid_id, "archive",
+                        notes=combined, wcl_url=url)
+            await self.cog.sync_raid_sheets()
+            await self.cog.refresh_saved_panel(self.raid_id)
+        except Exception as exc:
+            await interaction.followup.send(f"Completion failed: {exc}", ephemeral=True)
+            return
+        await interaction.followup.send(
+            f"Raid #{self.raid_id} completed. {count} selected/bench players recorded. "
+            "Attendance and WCL saved.", ephemeral=True)
+
+
+class RaidManageView(discord.ui.View):
+    def __init__(self, cog, raid_id):
+        super().__init__(timeout=300)
+        self.cog, self.raid_id = cog, raid_id
+
+    async def _choose(self, interaction, outcome):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        try:
+            candidates = await asyncio.to_thread(raid_sheets_v3.attendance_candidates,
+                                                 RAID_DB, self.raid_id)
+        except Exception as exc:
+            await interaction.response.send_message(f"Cannot load roster: {exc}", ephemeral=True)
+            return
+        if not candidates:
+            await interaction.response.send_message("No confirmed selected/bench players.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Raid #{self.raid_id}: {outcome}", ephemeral=True,
+            view=RaidAttendanceSelect(self.cog, self.raid_id, outcome, candidates))
+
+    @discord.ui.button(label="Mark Late", style=discord.ButtonStyle.secondary)
+    async def late(self, interaction, button):
+        await self._choose(interaction, "Late")
+
+    @discord.ui.button(label="No Show", style=discord.ButtonStyle.danger)
+    async def no_show(self, interaction, button):
+        await self._choose(interaction, "No Show")
+
+    @discord.ui.button(label="Excused", style=discord.ButtonStyle.secondary)
+    async def excused(self, interaction, button):
+        await self._choose(interaction, "Excused")
+
+    @discord.ui.button(label="Complete Raid", style=discord.ButtonStyle.success)
+    async def complete(self, interaction, button):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        await interaction.response.send_modal(RaidCompleteModal(self.cog, self.raid_id))
+
+
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @app_commands.guild_only()
 @app_commands.default_permissions(manage_guild=True)
@@ -1437,10 +1582,18 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 message = "Ogre stop raid reminder."
             await interaction.response.send_message(message, ephemeral=True)
 
+        async def manage(interaction):
+            if not self.allowed(interaction):
+                await interaction.response.send_message('Officer-only in private #ogre.', ephemeral=True)
+                return
+            await interaction.response.send_message(
+                f'Raid #{event["raid_id"]} management', ephemeral=True,
+                view=RaidManageView(self, event['raid_id']))
+
         return RaidEventPanel(
             event, on_signup=signup, on_update=self.on_update,
             on_remind=remind,
-            on_gear=self.on_gear, on_absent=absent,
+            on_gear=self.on_gear, on_absent=absent, on_manage=manage,
             public_roster=read_public_roster(
                 RAID_DB, event["raid_id"], include_details=True
             ),
