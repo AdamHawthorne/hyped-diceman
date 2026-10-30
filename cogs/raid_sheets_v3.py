@@ -13,7 +13,7 @@ from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 TITLE_COLOR = {key: ((LEADERSHIP_ACCENT >> shift) & 255) / 255
                for key, shift in (("red", 16), ("green", 8), ("blue", 0))}
-from cogs.raid_schedule import confirmed_roster, database, read_raid
+from cogs.raid_schedule import confirmed_roster, database, read_raid, read_signup_roster
 
 UK = ZoneInfo("Europe/London")
 COLUMNS = (
@@ -767,14 +767,10 @@ def sync_once(db_path, discord_names=None):
                     include_details=True
                 )
             else:
-                # Live preview: show a signed and Selected raider as soon as
-                # leadership enables Show on Discord and assigns an active
-                # raid instance/group. Confirmation only locks the roster.
-                published[raid_id] = [
-                    (entry[1], entry[2], *entry[3:6])
-                    for entry in _approved(rows, event, include_details=True)
-                    if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
-                ]
+                # The collecting roster is sourced only from the actual raid
+                # sign-ups. Sheet selection, Show on Discord and background
+                # raid assignments remain private until leadership confirms.
+                published[raid_id] = read_signup_roster(db_path, raid_id)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
         # Archived raids retain their most recent public roster and history.
         # Once an active raid tab exists, hide (never delete) old management tabs.
