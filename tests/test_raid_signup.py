@@ -159,7 +159,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 ("Ony · 40-player", ["Snore Mon", "Pug Main"]),
                 ("Selected · group pending", ["Gamer TBC"]),
             ])
-            text = raid_schedule.raid_panel_text(event, members)
+            # A confirmed event switches from role signups to instance teams.
+            confirmed_event = {**event, "roster_published": 1}
+            text = raid_schedule.raid_panel_text(confirmed_event, members)
             self.assertIn("**Hyjal**", text)
             self.assertEqual(text.count("**Hyjal**"), 1)
             self.assertIn("**Barrows**", text)
@@ -177,7 +179,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Collecting gamers", text)
 
             panel = raid_schedule.RaidEventPanel(
-                event, on_signup=AsyncMock(), on_update=AsyncMock(),
+                confirmed_event, on_signup=AsyncMock(), on_update=AsyncMock(),
                 on_gear=AsyncMock(), on_absent=AsyncMock(),
                 public_roster=members,
             )
@@ -221,7 +223,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 3, "2026-12-11 20:00", "Barrows (10m)"
             )
             barrows_text = raid_schedule.raid_panel_text(
-                barrows_only, [("Split Two", "Barrows 🔹")]
+                {**barrows_only, "roster_published": 1},
+                [("Split Two", "Barrows 🔹")]
             )
             self.assertIn("**Barrows** 🔸\n-# **Tanks**", barrows_text)
             self.assertIn("-# **DPS**\nSplit Two", barrows_text)
