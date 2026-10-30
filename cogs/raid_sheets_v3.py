@@ -409,7 +409,7 @@ def _make_tab(session, title):
                             "red": .84313726, "green": .9372549,
                             "blue": .84313726},
                             "textFormat": {"foregroundColor": {
-                                "red": .08, "green": .25, "blue": .12}}}}}})
+                                "red": .08, "green": .25, "blue": .12}}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 200), (7, 95),
                        (8, 110), (9, 95), (10, 95), (11, 75),
