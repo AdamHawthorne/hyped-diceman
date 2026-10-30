@@ -1626,7 +1626,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             emoji_map=self.raid_emoji_map(),
         )
 
-    async def post_panel(self, interaction, event, destination_id=None):
+    async def post_panel(self, interaction, event, destination_id=None, ping_role_ids=None):
         """Publish to the poster-selected text channel; edit existing panel in place."""
         channel_id = destination_id or interaction.channel_id
         channel = self.bot.get_channel(channel_id)
@@ -1666,11 +1666,20 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                     "Ogre couldn't update the existing raid panel.", ephemeral=True)
                 return
 
+        # Only ping on a newly published panel, never when editing or refreshing.
+        role_ids = set(ping_role_ids or [])
+        roles = [role for role in channel.guild.roles
+                 if role.id in role_ids and role.id != channel.guild.id]
+        if roles and not perms.mention_everyone:
+            roles = [role for role in roles if role.mentionable]
+        mentions = " ".join(role.mention for role in roles)
         await interaction.response.defer(ephemeral=True)
         try:
             message = await channel.send(
+                content=mentions or None,
                 view=self.make_panel(event),
-                allowed_mentions=discord.AllowedMentions.none(),
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, users=False, roles=roles),
             )
         except (discord.Forbidden, discord.HTTPException) as exc:
             await interaction.followup.send(
