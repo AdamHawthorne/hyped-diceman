@@ -251,15 +251,19 @@ async def refresh_player_signup_panel(interaction, raid_id):
 
 async def refresh_character_signups(interaction, owner_id, character_id):
     """Class/role edits immediately re-sort the collecting roster, if signed."""
-    with database(RAID_DB) as con:
-        raids = con.execute(
-            "SELECT s.raid_id FROM signups s JOIN raids r ON r.raid_id=s.raid_id "
-            "WHERE s.discord_id=? AND s.character_id=? "
-            "AND s.availability='Available' AND r.roster_published=0 "
-            "AND NOT EXISTS (SELECT 1 FROM raid_absences a "
-            "WHERE a.raid_id=s.raid_id AND a.discord_id=s.discord_id)",
-            (owner_id, character_id),
-        ).fetchall()
+    try:
+        with database(RAID_DB) as con:
+            raids = con.execute(
+                "SELECT s.raid_id FROM signups s JOIN raids r ON r.raid_id=s.raid_id "
+                "WHERE s.discord_id=? AND s.character_id=? "
+                "AND s.availability='Available' AND r.roster_published=0 "
+                "AND NOT EXISTS (SELECT 1 FROM raid_absences a "
+                "WHERE a.raid_id=s.raid_id AND a.discord_id=s.discord_id)",
+                (owner_id, character_id),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        LOGGER.warning("Could not find active sign-ups to refresh: %s", exc)
+        return
     for (raid_id,) in raids:
         await refresh_player_signup_panel(interaction, raid_id)
 
