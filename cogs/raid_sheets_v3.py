@@ -398,6 +398,18 @@ def _make_tab(session, title):
             "booleanRule": {"condition": {"type": "TEXT_CONTAINS",
                            "values": [{"userEnteredValue": name}]},
                             "format": {"backgroundColor": colour}}}}})
+    # Selected players have a light-green selection cell, not a green row.
+    requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
+        "ranges": [{"sheetId": sid, "startRowIndex": 7,
+                    "endRowIndex": 500, "startColumnIndex": 8,
+                    "endColumnIndex": 9}],
+        "booleanRule": {"condition": {"type": "TEXT_EQ",
+                       "values": [{"userEnteredValue": "Selected"}]},
+                        "format": {"backgroundColor": {
+                            "red": .84313726, "green": .9372549,
+                            "blue": .84313726},
+                            "textFormat": {"foregroundColor": {
+                                "red": .08, "green": .25, "blue": .12}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 200), (7, 95),
                        (8, 110), (9, 135), (10, 75), (11, 95),
