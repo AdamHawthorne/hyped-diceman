@@ -26,6 +26,7 @@ SECTIONS = ("Tanks", "Healers", "Melee", "Ranged", "Absent")
 MELEE = {
     ("warrior", "*"), ("rogue", "*"), ("paladin", "retribution"),
     ("druid", "feral"), ("shaman", "enhancement"),
+    ("hunter", "survival"),
 }
 VALUES = {
     9: ("Pending", "Selected", "Bench", "Not selected"),
