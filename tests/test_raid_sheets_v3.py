@@ -46,10 +46,10 @@ class RaidTabsTests(unittest.TestCase):
             self.assertTrue(by_character["Snore Mon"][16].isdigit())
             self.assertEqual(sheet._group(
                 {"role": "DPS", "class_name": "Rogue", "spec": "Combat"}, False
-            ), "MELEE")
+            ), "Melee")
             self.assertEqual(sheet._group(
                 {"role": "DPS", "class_name": "Mage", "spec": "Frost"}, False
-            ), "DPS")
+            ), "Ranged")
             header = sheet._header(event, body, sheet.tab_title(event))
             self.assertEqual(header[6][:9], list(sheet.COLUMNS[:9]))
             self.assertEqual(header[1][3], "Forming")
