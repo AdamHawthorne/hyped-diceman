@@ -1381,24 +1381,25 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             return
         channel_id = event.get("panel_channel_id")
         message_id = event.get("panel_message_id")
-        # Never delete a message outside the private test channel.
-        if message_id and channel_id != TEST_CHANNEL_ID:
-            await interaction.response.send_message(
-                "Ogre won't delete a raid card outside private #ogre.",
-                ephemeral=True,
-            )
-            return
         await interaction.response.defer(ephemeral=True)
-        if message_id:
+        if message_id and channel_id:
             try:
-                message = await interaction.channel.fetch_message(message_id)
+                # Only remove the exact bot-authored panel recorded for this raid.
+                channel = self.bot.get_channel(channel_id)
+                if channel is None:
+                    channel = await self.bot.fetch_channel(channel_id)
+                if not isinstance(channel, discord.TextChannel) or channel.guild.id != interaction.guild_id:
+                    raise ValueError("The saved raid panel channel is not in this server.")
+                message = await channel.fetch_message(message_id)
+                if message.author.id != self.bot.user.id:
+                    raise ValueError("The saved panel message is not authored by Ogre.")
                 await message.delete()
             except discord.NotFound:
                 # Already deleted from Discord; still allow database cleanup.
                 pass
-            except (discord.Forbidden, discord.HTTPException):
+            except (discord.Forbidden, discord.HTTPException, ValueError) as exc:
                 await interaction.followup.send(
-                    "Ogre couldn't remove the Discord raid card. "
+                    f"Ogre couldn't remove the saved Discord raid panel: {exc}. "
                     "Raid data was preserved; please retry.",
                     ephemeral=True,
                 )
