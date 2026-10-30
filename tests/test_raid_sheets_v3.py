@@ -35,6 +35,8 @@ class RaidTabsTests(unittest.TestCase):
                              list(sheet.SECTIONS))
             by_character = {row[1]: row for row in body if row[16]}
             self.assertEqual(by_character["Snore Mon"][0], "Snore")
+            self.assertFalse(any(row[0].strip() == "WARRIOR" for row in body))
+            self.assertEqual(len(body[0]), len(sheet.COLUMNS))
             self.assertEqual(by_character["Snore Mon"][8], "Signed")
             self.assertEqual(by_character["Snore Mon"][9:14],
                              ["Selected", "Yes", "No", "No", "No"])
@@ -51,6 +53,25 @@ class RaidTabsTests(unittest.TestCase):
             header = sheet._header(event, body, sheet.tab_title(event))
             self.assertEqual(header[6][:9], list(sheet.COLUMNS[:9]))
             self.assertEqual(header[1][3], "Forming")
+
+    def test_display_order_and_absence_timestamp(self):
+        """Date fields are readable, and manual IDs retain their stable positions."""
+        self.assertEqual(sheet.DISPLAY_ORDER[-2:], (18, 7))
+        source = [""] * len(sheet.COLUMNS)
+        source[7] = "2026-10-29T23:25:08+00:00"
+        source[8] = "Absent"
+        source[16] = "119863153411489793"
+        source[17] = "1"
+        source[18] = "2026-10-30T11:10:00+00:00"
+        displayed = sheet._display(source)
+        self.assertEqual(displayed[-1], "29 Oct 2026, 23:25")
+        self.assertEqual(displayed[-2], "30 Oct 2026, 11:10")
+        self.assertEqual(displayed[15:17], ["119863153411489793", "1"])
+        restored = sheet._internal(displayed)
+        self.assertEqual(restored[16], source[16])
+        self.assertEqual(restored[17], source[17])
+        self.assertEqual(restored[18], displayed[-2])
+        self.assertEqual(sheet._display(restored), displayed)
 
     def test_manual_selections_follow_id_after_sort_and_absence_moves_to_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,6 +91,7 @@ class RaidTabsTests(unittest.TestCase):
             row = next(row for row in absent if row[16] == "42")
             self.assertEqual(row[8], "Absent")
             self.assertIn("Signed off:", row[6])
+            self.assertTrue(row[18])
             self.assertEqual(row[9:14], ["Not selected", "No", "No", "No", "No"])
             self.assertNotIn("Snore Mon", [r[1] for r in sheet._header(
                 event, absent, sheet.tab_title(event)) if r[8] == "Signed" and r[9] == "Selected"])
