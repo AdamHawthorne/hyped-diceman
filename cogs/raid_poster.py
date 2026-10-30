@@ -477,6 +477,9 @@ class RaidPosterView(discord.ui.LayoutView):
                                         style=discord.ButtonStyle.secondary,
                                         disabled=not bool(self.draft.get("check_message_url")))
         publish = discord.ui.Button(label="Post / Update Raid", style=discord.ButtonStyle.success)
+        manage = discord.ui.Button(label="Manage Raid",
+                                   style=discord.ButtonStyle.primary,
+                                   disabled=self.draft["number"] not in self.saved_raid_ids)
         delete = discord.ui.Button(label="Delete Raid", style=discord.ButtonStyle.danger,
                                   disabled=self.draft["number"] not in self.saved_raid_ids)
 
@@ -569,6 +572,24 @@ class RaidPosterView(discord.ui.LayoutView):
                 self.cog, self.owner_id, self.draft["number"]
             ))
 
+        async def open_manage(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            event = read_raid(self.cog.raid_db_path(), self.draft["number"])
+            if not event:
+                await interaction.response.send_message("Save the raid first.", ephemeral=True)
+                return
+            if not event.get("roster_published"):
+                await interaction.response.send_message(
+                    "Confirm the roster before managing attendance.", ephemeral=True)
+                return
+            from cogs.raid_signup import RaidManageView
+            await interaction.response.send_message(
+                f"Raid #{event['raid_id']} management", ephemeral=True,
+                view=RaidManageView(self.cog, event["raid_id"]))
+
+        manage.callback = open_manage
         title.callback = set_title
         banner.callback = set_banner
         softres.callback = set_link
@@ -583,4 +604,4 @@ class RaidPosterView(discord.ui.LayoutView):
         row.add_item(clear)
         self.add_item(row)
         self.add_item(discord.ui.ActionRow(check_link, clear_check))
-        self.add_item(discord.ui.ActionRow(publish, delete))
+        self.add_item(discord.ui.ActionRow(publish, manage, delete))
