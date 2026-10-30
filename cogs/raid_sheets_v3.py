@@ -16,7 +16,7 @@ COLUMNS = (
     "Discord Name", "Character", "Class", "Spec", "Role", "Main / Alt",
     "Sign-up Notes", "Signed At", "Status", "Selection", "Show on Discord",
     "Hyjal", "Barrows", "Ony", "Leadership Notes", "Gear / SimC",
-    "Discord ID (internal)", "Character ID (internal)"
+    "Discord ID (internal)", "Character ID (internal)", "Absent At"
 )
 SECTIONS = ("TANKS", "HEALERS", "MELEE", "DPS", "ABSENT")
 MELEE = {
@@ -32,16 +32,34 @@ VALUES = {
 }
 MAX_BODY_ROWS = 460
 
-# Display order: move Signed At (legacy H) to the far right (R).
-DISPLAY_ORDER = tuple(i for i in range(18) if i != 7) + (7,)
+# Absent At is displayed in R; Signed At remains the far-right column S.
+DISPLAY_ORDER = tuple(i for i in range(len(COLUMNS)) if i not in (7, 18)) + (18, 7)
+
+
+def _uk_timestamp(value):
+    """Friendly UK time display; SQLite retains original event timestamps."""
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UK)
+        return dt.astimezone(UK).strftime("%d %b %Y, %H:%M")
+    except (ValueError, TypeError):
+        return str(value)
+
 
 def _display(row):
-    padded = (list(row) + [""] * 18)[:18]
+    padded = (list(row) + [""] * len(COLUMNS))[:len(COLUMNS)]
+    for index, label in ((7, "Signed At"), (18, "Absent At")):
+        if padded[index] != label:
+            padded[index] = _uk_timestamp(padded[index])
     return [padded[i] for i in DISPLAY_ORDER]
 
+
 def _internal(row):
-    padded = (list(row) + [""] * 18)[:18]
-    restored = [""] * 18
+    padded = (list(row) + [""] * len(COLUMNS))[:len(COLUMNS)]
+    restored = [""] * len(COLUMNS)
     for display_index, internal_index in enumerate(DISPLAY_ORDER):
         restored[internal_index] = padded[display_index]
     return restored
@@ -54,7 +72,7 @@ def tab_title(event):
 
 
 def _q(tab):
-    return quote(f"'{tab}'!A1:R500", safe="'!:")
+    return quote(f"'{tab}'!A1:S500", safe="'!:")
 
 
 def _read(session, tab):
@@ -68,7 +86,7 @@ def _read(session, tab):
 def _list_tabs(session):
     result = raid_sheets._json(
         session, "GET", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}",
-        params={"fields": "sheets(properties(sheetId,title,hidden))"},
+        params={"fields": "sheets(properties(sheetId,title,hidden,gridProperties(columnCount)))"},
     )
     return {
         sheet["properties"]["title"]: sheet["properties"]
