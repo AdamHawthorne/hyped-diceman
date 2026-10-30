@@ -710,7 +710,7 @@ def sync_once(db_path, discord_names=None):
             changes, rows = _one(session, db_path, event, discord_names, titles)
             counts["raid_tabs"] += changes
             raid_rosters[raid_id] = [r for r in rows[7:]
-                if len(r) >= 18 and r[16].isdigit() and r[9] == "Selected"
+                if len(r) >= 18 and r[16].isdigit() and r[9] in ("Selected", "Bench")
                 and r[8] == "Signed"]
             if event.get("roster_published"):
                 published[raid_id] = confirmed_roster(
@@ -734,6 +734,70 @@ def sync_once(db_path, discord_names=None):
         return counts, changed
     finally:
         session.close()
+
+
+def attendance_candidates(db_path, raid_id):
+    """Confirmed raid's selected and bench sign-ups, keyed by Discord ID."""
+    event = read_raid(db_path, raid_id)
+    if not event or not event.get("roster_published"):
+        raise ValueError("Confirm the roster before recording attendance.")
+    session = raid_sheets._session()
+    try:
+        rows = _read(session, tab_title(event))
+        return [row for row in rows[7:] if len(row) >= 18
+                and row[16].isdigit() and row[8] == "Signed"
+                and row[9] in ("Selected", "Bench")]
+    finally:
+        session.close()
+
+
+def attendance_set(db_path, raid_id, member_id, outcome, minutes=0):
+    """Upsert one raid attendance result without duplicating or clearing notes."""
+    if outcome not in ("Attended", "Absent", "Excused", "Pending"):
+        raise ValueError("Invalid attendance outcome.")
+    candidates = attendance_candidates(db_path, raid_id)
+    member = next((r for r in candidates if r[16] == str(member_id)), None)
+    if not member:
+        raise ValueError("Player is not selected or benched for this raid.")
+    session = raid_sheets._session()
+    try:
+        existing = _permanent_read(session, "Forever Attendance")
+        matched = next(((i + 6, row) for i, row in enumerate(existing[1:])
+                        if len(row) > 2 and row[0] == str(raid_id)
+                        and row[2] == str(member_id)), None)
+        row_number = matched[0] if matched else len(existing) + 5
+        old = matched[1] if matched else []
+        event = read_raid(db_path, raid_id)
+        date = datetime.fromisoformat(event["raid_at"]).astimezone(UK).strftime("%Y-%m-%d")
+        now = datetime.now(UK).isoformat(timespec="seconds")
+        values = [str(raid_id), date, str(member_id), member[0], member[17],
+                  member[1], member[2], member[4], member[9], outcome,
+                  str(minutes) if outcome == "Attended" and minutes else
+                  (old[10] if len(old) > 10 and outcome == "Attended" else ""),
+                  old[11] if len(old) > 11 else "",
+                  "Yes" if outcome == "Excused" else "No",
+                  old[13] if len(old) > 13 else "", now]
+        _permanent_write(session, "Forever Attendance", row_number, values)
+        return member[1]
+    finally:
+        session.close()
+
+
+def attendance_complete(db_path, raid_id):
+    """Fill only Pending/empty records; preserve officer-entered exceptions."""
+    candidates = attendance_candidates(db_path, raid_id)
+    session = raid_sheets._session()
+    try:
+        existing = _permanent_read(session, "Forever Attendance")
+        keyed = {(r[0], r[2]): r for r in existing[1:]
+                 if len(r) > 2}
+    finally:
+        session.close()
+    for member in candidates:
+        old = keyed.get((str(raid_id), member[16]), [])
+        if len(old) <= 9 or old[9] in ("", "Pending"):
+            attendance_set(db_path, raid_id, member[16], "Attended")
+    return len(candidates)
 
 
 def _save_public_for_one(db_path, raid_id, selected):
