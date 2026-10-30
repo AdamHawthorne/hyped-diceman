@@ -40,6 +40,7 @@ def draft_from_event(event):
     start = datetime.fromisoformat(event["raid_at"]).astimezone(UK)
     return {
         "number": event["raid_id"], "channel_id": event.get("panel_channel_id"), "ping_role_ids": [],
+        "default_show_discord": bool(event.get("default_show_discord", 1)),
         "day": start.date().isoformat(),
         "time": start.strftime("%H:%M"),
         "end_time": (datetime.fromisoformat(event["end_at"]).astimezone(UK).strftime("%H:%M")
