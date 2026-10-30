@@ -231,6 +231,81 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("**Hyjal**", barrows_text)
             self.assertNotIn("**Ony**", barrows_text)
 
+    async def test_collecting_roster_shows_role_groups_then_confirmed_teams(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")):
+            raid.create_schema(raid.RAID_DB)
+            raid_schedule.ensure_raid_fields(raid.RAID_DB)
+            event = raid_schedule.save_raid(
+                raid.RAID_DB, 5, "2026-12-09 21:00", "Hyjal (20m)",
+                "Barrows (10m)", "Ony (40m)")
+            players = [
+                (101, "Tank Test", "Warrior", "Protection", "Tank"),
+                (102, "Melee Test", "Rogue", "Combat", "DPS"),
+                (103, "Ranged Test", "Mage", "Frost", "DPS"),
+                (104, "Healer Test", "Druid", "Restoration", "Healer"),
+            ]
+            for member_id, name, klass, spec, role in players:
+                raid.save_character(member_id, name, klass, spec, role, raid.RAID_DB)
+                character_id = raid.member_characters(member_id, raid.RAID_DB)[0][0]
+                raid.save_signup(5, member_id, character_id, raid.RAID_DB)
+
+            roster = raid_schedule.read_signup_roster(raid.RAID_DB, 5)
+            self.assertEqual([entry[0] for entry in roster],
+                             [entry[1] for entry in players])
+            groups = raid_schedule.signup_role_groups(roster)
+            self.assertEqual([name for name, _ in groups],
+                             ["Tanks", "Melee", "Ranged", "Healers"])
+            for role, members in groups:
+                self.assertEqual(len(members), 1)
+                self.assertIn("<:", members[0])  # Existing class icon markup.
+            collecting = raid_schedule.raid_panel_text(event, roster)
+            self.assertIn("### Sign-ups (4)", collecting)
+            self.assertIn("**Tanks (1)**", collecting)
+            self.assertIn("**Melee (1)**", collecting)
+            self.assertIn("**Ranged (1)**", collecting)
+            self.assertIn("**Healers (1)**", collecting)
+            self.assertNotIn("**Hyjal**", collecting)
+            self.assertNotIn("**Barrows**", collecting)
+            self.assertNotIn("**Ony**", collecting)
+            cog = raid.RaidPrototype(SimpleNamespace())
+            pre_panel = json.dumps(cog.make_panel(event).to_components())
+            self.assertIn("Sign-ups (4)", pre_panel)
+            self.assertNotIn("**Barrows**", pre_panel)
+            # Private assignment edits must never turn on team display early.
+            from cogs import raid_sheets_v3
+            raid_sheets_v3._save_public_for_one(
+                raid.RAID_DB, 5, [("Tank Test", "Barrows 🔸", "Warrior", "Tank", "Protection")])
+            pre_panel = json.dumps(cog.make_panel(event).to_components())
+            self.assertIn("Sign-ups (4)", pre_panel)
+            self.assertNotIn("**Barrows**", pre_panel)
+
+            confirmed_entries = [
+                (str(member_id), name, assignment, klass, role, spec)
+                for (member_id, name, klass, spec, role), assignment in zip(
+                    players, ("Hyjal, Barrows 🔸", "Barrows 🔹",
+                              "Ony", "Hyjal"))
+            ]
+            confirmed_event = raid_schedule.raid_status(
+                raid.RAID_DB, 5, "confirm", confirmed_entries=confirmed_entries)
+            raid_sheets_v3._save_public_for_one(
+                raid.RAID_DB, 5, [(x[1], x[2], x[3], x[4], x[5])
+                                  for x in confirmed_entries])
+            confirmed_panel = json.dumps(cog.make_panel(confirmed_event).to_components())
+            self.assertIn("### Roster", confirmed_panel)
+            self.assertIn("**Hyjal**", confirmed_panel)
+            self.assertIn("**Barrows**", confirmed_panel)
+            self.assertIn("**Ony**", confirmed_panel)
+            self.assertNotIn("Sign-ups (4)", confirmed_panel)
+            self.assertEqual(confirmed_event["signup_open"], 0)
+
+            # Signing off while still collecting removes that name immediately.
+            raid_schedule.raid_status(raid.RAID_DB, 5, "reopen")
+            raid.save_absence(5, 102, "Not available", raid.RAID_DB)
+            self.assertEqual([r[0] for r in raid_schedule.read_signup_roster(
+                raid.RAID_DB, 5)],
+                ["Tank Test", "Ranged Test", "Healer Test"])
+
     async def test_optional_raid_title_round_trip_edit_preserve_and_clear(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
