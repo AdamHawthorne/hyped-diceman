@@ -216,7 +216,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             signup["role"], "Main" if profile.get("is_main", 1) else "Alt",
             sign_note, signup["submitted_at"], "Absent" if absent else "Signed",
             choice(9, "selection", "Selected"),
-            "No" if absent else choice(10, "show", "Yes"),
+            "No" if absent else choice(10, "show", "Yes" if event.get("default_show_discord", 1) else "No"),
             choice(11, "hyjal", "No"),
             choice(12, "barrows", "No"),
             choice(13, "ony", "No"),
