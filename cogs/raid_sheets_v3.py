@@ -22,7 +22,7 @@ COLUMNS = (
     "Hyjal", "Barrows", "Ony", "Leadership Notes", "Gear / SimC",
     "Discord ID (internal)", "Character ID (internal)", "Absent At"
 )
-SECTIONS = ("TANKS", "HEALERS", "MELEE", "DPS", "ABSENT")
+SECTIONS = ("TANKS", "HEALERS", "MELEE", "RANGED", "ABSENT")
 MELEE = {
     ("warrior", "*"), ("rogue", "*"), ("paladin", "retribution"),
     ("druid", "feral"), ("shaman", "enhancement"),
