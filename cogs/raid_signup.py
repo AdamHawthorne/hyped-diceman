@@ -1245,20 +1245,54 @@ class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
         notes = str(self.notes).strip()
         loot = str(self.loot).strip()
         combined = notes + ("\nLoot: " + loot if loot else "")
+        try:
+            candidates = await asyncio.to_thread(raid_sheets_v3.attendance_candidates,
+                                                 RAID_DB, self.raid_id)
+        except Exception as exc:
+            await interaction.response.send_message(f"Roster check failed: {exc}", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"**Complete Raid #{self.raid_id}?**\\n"
+            f"Selected and bench players: **{len(candidates)}**. "
+            "Pending attendance will become Attended; existing no-shows, late "
+            "and excused results will be preserved. The raid will be archived.\\n"
+            f"WCL: {url or 'Not provided'}\\n"
+            f"Loot: {'Provided' if loot else 'Not provided'}",
+            view=RaidCompletionConfirm(self.cog, self.raid_id, url, combined),
+            ephemeral=True)
+
+
+class RaidCompletionConfirm(discord.ui.View):
+    def __init__(self, cog, raid_id, url, notes):
+        super().__init__(timeout=180)
+        self.cog, self.raid_id, self.url, self.notes = cog, raid_id, url, notes
+
+    @discord.ui.button(label="Confirm completion", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction, button):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         try:
             count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
                                             RAID_DB, self.raid_id)
             raid_status(RAID_DB, self.raid_id, "archive",
-                        notes=combined, wcl_url=url)
+                        notes=self.notes, wcl_url=self.url)
             await self.cog.sync_raid_sheets()
             await self.cog.refresh_saved_panel(self.raid_id)
         except Exception as exc:
             await interaction.followup.send(f"Completion failed: {exc}", ephemeral=True)
             return
+        for item in self.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=self)
         await interaction.followup.send(
             f"Raid #{self.raid_id} completed. {count} selected/bench players recorded. "
             "Attendance and WCL saved.", ephemeral=True)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        await interaction.response.edit_message(content="Raid completion cancelled.", view=None)
 
 
 class RaidManageView(discord.ui.View):
