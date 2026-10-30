@@ -180,8 +180,8 @@ class RaidTabsTests(unittest.TestCase):
             self.assertIn(("42", "Snore Mon", "Hyjal, Barrows 🔹"),
                           sheet._approved(sheet._header(event, rows, ""), event))
 
-    def test_live_barrows_roster_follows_sheet_visibility_before_confirmation(self):
-        """Selected + Show Yes + an active Barrows group displays immediately."""
+    def test_live_signup_roster_ignores_private_sheet_selections(self):
+        """Public roster stays role-based while leadership edits assignments."""
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             self.setup_raid(path)
@@ -209,22 +209,31 @@ class RaidTabsTests(unittest.TestCase):
                  patch.object(sheet, "_hide_legacy"):
                 _, changed = sheet.sync_once(path)
                 self.assertEqual(changed, {1})
-                self.assertEqual(
-                    raid_schedule.read_public_roster(path, 1, include_details=True),
-                    [("Snore Mon", "Barrows 🔸", "Warrior", "Tank", "Protection")])
+                public = raid_schedule.read_public_roster(path, 1, include_details=True)
+                self.assertEqual(public, [
+                    ("Snore Mon", "", "Warrior", "Tank", "Protection"),
+                    ("Fast Rogue", "", "Rogue", "DPS", "Combat"),
+                    ("Mage Player", "", "Mage", "DPS", "Frost"),
+                ])
                 self.assertEqual(raid_schedule.read_raid(path, 1)["roster_published"], 0)
                 self.assertEqual(raid_schedule.read_raid(path, 1)["signup_open"], 1)
+                self.assertEqual(sheet._approved(rows, event), [
+                    ("42", "Snore Mon", "Barrows 🔸")
+                ])
+                # Changes to assigned team or Show on Discord are not shown
+                # while we're still collecting sign-ups.
                 rogue[10] = "Yes"
-                _, changed = sheet.sync_once(path)
-                self.assertEqual(changed, {1})
-                self.assertEqual(
-                    [name for name, *_ in raid_schedule.read_public_roster(path, 1)],
-                    ["Snore Mon", "Fast Rogue"])
                 tank[10] = "No"
+                rogue[12] = "🔸"
                 _, changed = sheet.sync_once(path)
-                self.assertEqual(changed, {1})
-                self.assertEqual(raid_schedule.read_public_roster(path, 1),
-                                 [("Fast Rogue", "Barrows 🔹")])
+                self.assertEqual(changed, set())
+                self.assertEqual(
+                    raid_schedule.read_public_roster(path, 1, include_details=True),
+                    public,
+                )
+                self.assertEqual(sheet._approved(rows, event), [
+                    ("43", "Fast Rogue", "Barrows 🔸")
+                ])
 
     def test_confirm_lock_absences_and_archive_keep_history(self):
         with tempfile.TemporaryDirectory() as tmp:
