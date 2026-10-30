@@ -54,6 +54,65 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(header[6][:9], list(sheet.COLUMNS[:9]))
             self.assertEqual(header[1][3], "Forming")
 
+    def test_more_than_two_tanks_repositions_headings_and_repairs_styles(self):
+        """A third tank must not retain the former Healers heading's dark style."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            for member_id in (45, 46):
+                raid.save_character(member_id, f"Tank {member_id}",
+                                    "Warrior", "Protection", "Tank", path)
+                character = raid.member_characters(member_id, path)[0][0]
+                raid.save_signup(1, member_id, character, path)
+
+            first = sheet._header(event, sheet._rows(path, event, {}), sheet.tab_title(event))
+            original = next(row for row in first if row[16] == "42")
+            original[9:14] = ["Selected", "Yes", "No", "🔸", "No"]
+            original[14] = "Keep me in Barrows"
+            full = sheet._header(
+                event, sheet._rows(path, event, {}, old_rows=first), sheet.tab_title(event))
+            self.assertEqual(
+                [row[1] for row in full[8:11]],
+                ["Snore Mon", "Tank 45", "Tank 46"])
+            self.assertEqual(full[7][0], "Tanks")
+            self.assertEqual(full[12][0], "Healers")
+            self.assertEqual(full[10][4], "Tank")
+            self.assertEqual(full[11][0], "")
+            original_after = next(row for row in full if row[16] == "42")
+            self.assertEqual(original_after[9:14], ["Selected", "Yes", "No", "🔸", "No"])
+            self.assertEqual(original_after[14], "Keep me in Barrows")
+
+            sid = 6543210
+            sheet._FORMATTED_SECTION_LAYOUTS.pop(sid, None)
+            with patch.object(sheet.raid_sheets, "_json", return_value={}) as api:
+                # Existing tabs must be repaired even when the cell data is unchanged.
+                self.assertEqual(
+                    sheet._write(object(), sheet.tab_title(event), sid, full, full), 0)
+                api.assert_called_once()
+                self.assertEqual(api.call_args.args[1], "POST")
+                requests = api.call_args.kwargs["json"]["requests"]
+                fills = [req["repeatCell"] for req in requests if "repeatCell" in req]
+                self.assertEqual(fills[0]["range"]["startRowIndex"], 7)
+                self.assertEqual(fills[0]["range"]["endRowIndex"], 500)
+                self.assertEqual(fills[0]["cell"]["userEnteredFormat"]
+                                 ["textFormat"]["bold"], False)
+                headers = [
+                    req["range"]["startRowIndex"] for req in fills[1:]
+                    if req["cell"]["userEnteredFormat"]["textFormat"]["bold"]
+                ]
+                self.assertEqual(headers, [7, 12, 14, 16, 22])
+                self.assertNotIn(10, headers)
+                self.assertNotIn(11, headers)
+                self.assertEqual(
+                    fills[1]["cell"]["userEnteredFormat"]["backgroundColor"],
+                    {"red": 0, "green": 0, "blue": 0},
+                )
+                api.reset_mock()
+                self.assertEqual(
+                    sheet._write(object(), sheet.tab_title(event), sid, full, full), 0)
+                api.assert_not_called()
+            sheet._FORMATTED_SECTION_LAYOUTS.pop(sid, None)
+
     def test_display_order_and_absence_timestamp(self):
         """Date fields are readable, and manual IDs retain their stable positions."""
         self.assertEqual(sheet.DISPLAY_ORDER[-2:], (18, 7))
