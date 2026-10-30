@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from unittest.mock import patch
 
 from cogs import raid_schedule, raid_poster
@@ -261,7 +261,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(controls, [
                 "Optional Raid Title", "Bottom Banner", "Optional SoftRes",
                 "Remove SoftRes", "Check Message Link", "Remove Check Link",
-                "Post / Update Raid", "Delete Raid",
+                "Post / Update Raid", "Preview / Confirm Roster",
+                "Manage Raid", "Delete Raid",
             ])
             # Old /raid setup commands must preserve an existing subtitle.
             updated = raid_schedule.save_raid(
@@ -853,14 +854,19 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             raid_schedule.save_raid(
                 raid.RAID_DB, 1, "2026-11-05 20:00", "Hyjal (20m)"
             )
-            raid_schedule.record_panel(raid.RAID_DB, 1, raid.TEST_CHANNEL_ID, 7654)
-            cog = raid.RaidPrototype(SimpleNamespace())
-            posted = SimpleNamespace(delete=AsyncMock())
+            raid_schedule.record_panel(raid.RAID_DB, 1, raid.RAID_CHANNEL_ID, 7654)
+            posted = SimpleNamespace(delete=AsyncMock(),
+                                     author=SimpleNamespace(id=4444))
+            destination = Mock(spec=discord.TextChannel)
+            destination.guild = SimpleNamespace(id=77)
+            destination.fetch_message = AsyncMock(return_value=posted)
+            bot = SimpleNamespace(
+                get_channel=lambda cid: destination, user=SimpleNamespace(id=4444))
+            cog = raid.RaidPrototype(bot)
             poster_message = SimpleNamespace(edit=AsyncMock())
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=42), guild_id=77,
                 channel_id=raid.TEST_CHANNEL_ID,
-                channel=SimpleNamespace(fetch_message=AsyncMock(return_value=posted)),
                 message=poster_message,
                 response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
                 followup=SimpleNamespace(send=AsyncMock()),
@@ -927,34 +933,45 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 raid_schedule.save_raid(path, 1, "2026-11-05 20:00", "MC", roster_announce="2026-11-06 20:00")
 
     async def test_live_panel_posts_normal_message_then_edits_same_message(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(raid, "RAID_DB", str(Path(tmp) / "raid.db")), \
              patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
             raid.create_schema(raid.RAID_DB)
             raid_schedule.ensure_raid_fields(raid.RAID_DB)
-            cog = raid.RaidPrototype(SimpleNamespace())
             response = SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock())
-            message = SimpleNamespace(id=7654, jump_url="https://discord.com/channels/77/55/7654", edit=AsyncMock())
-            channel = SimpleNamespace(send=AsyncMock(return_value=message),
-                                      fetch_message=AsyncMock(return_value=message))
+            message = SimpleNamespace(id=7654,
+                jump_url="https://discord.com/channels/77/55/7654", edit=AsyncMock())
+            channel = Mock(spec=discord.TextChannel)
+            channel.id = raid.TEST_CHANNEL_ID
+            channel.guild = SimpleNamespace(id=77, me=SimpleNamespace())
+            channel.permissions_for.return_value = SimpleNamespace(
+                view_channel=True, send_messages=True, mention_everyone=False)
+            channel.send = AsyncMock(return_value=message)
+            channel.fetch_message = AsyncMock(return_value=message)
+            bot = SimpleNamespace(get_channel=lambda cid: channel)
+            cog = raid.RaidPrototype(bot)
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=42), guild_id=77,
                 channel_id=raid.TEST_CHANNEL_ID, response=response,
                 channel=channel, followup=SimpleNamespace(send=AsyncMock()),
             )
-            await cog.raid_setup.callback(cog, interaction, 2, "2026-11-05 20:00", "Molten Core")
+            await cog.raid_setup.callback(cog, interaction, 2,
+                                          "2026-11-05 20:00", "Molten Core")
             response.defer.assert_awaited_once_with(ephemeral=True)
             kwargs = channel.send.await_args.kwargs
             self.assertIsInstance(kwargs["view"], raid_schedule.RaidEventPanel)
             self.assertTrue(kwargs["view"].is_persistent())
             self.assertEqual(raid_schedule.read_raid(raid.RAID_DB, 2)["panel_message_id"], 7654)
             self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
-            await cog.raid_setup.callback(cog, interaction, 2, "2026-11-05 20:00", "Onyxia")
+            await cog.raid_setup.callback(cog, interaction, 2,
+                                          "2026-11-05 20:00", "Onyxia")
             channel.send.assert_awaited_once()
             message.edit.assert_awaited_once()
             self.assertIn("Onyxia", json.dumps(message.edit.await_args.kwargs["view"].to_components()))
             response.send_message.reset_mock()
             interaction.channel_id = raid.RAID_CHANNEL_ID
-            await cog.raid_setup.callback(cog, interaction, 3, "2026-11-06 20:00", "Onyxia")
+            await cog.raid_setup.callback(cog, interaction, 3,
+                                          "2026-11-06 20:00", "Onyxia")
             self.assertNotIn("view", response.send_message.await_args.kwargs)
             self.assertIsNone(raid_schedule.read_raid(raid.RAID_DB, 3))
 
@@ -1105,7 +1122,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                                        ("Tank", "DPS"), signup_raid_id=9)
             self.assertEqual(role.signup_raid_id, 9)
 
-    async def test_guild_member_can_signup_in_private_channel_but_not_post(self):
+    async def test_guild_member_can_use_raid_controls_in_public_channel(self):
         with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
              patch.object(raid, "read_raid", return_value={
                  "raid_id": 9, "signup_open": 1, "roster_published": 0,
@@ -1113,7 +1130,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             cog = raid.RaidPrototype(SimpleNamespace())
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=99), guild_id=77,
-                channel_id=raid.TEST_CHANNEL_ID,
+                channel_id=raid.RAID_CHANNEL_ID,
                 response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
                 followup=SimpleNamespace(send=AsyncMock()),
             )
@@ -1124,7 +1141,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 interaction.followup.send.await_args.kwargs["view"],
                 raid.ClassPickerView,
             )
-            interaction.channel_id = raid.RAID_CHANNEL_ID
+            interaction.guild_id = 999
             self.assertFalse(raid.is_test_member(interaction))
             interaction.response.defer.reset_mock()
             interaction.response.send_message.reset_mock()
@@ -1158,22 +1175,21 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                           interaction.response.send_message.await_args.args[0])
             self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
-    async def test_character_lookup_command_is_private(self):
-        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77):
+    async def test_character_lookup_is_ephemeral_in_any_guild_channel(self):
+        with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "character_list_text", return_value="Snore Mon"):
             cog = raid.RaidPrototype(SimpleNamespace())
             response = SimpleNamespace(send_message=AsyncMock())
             interaction = SimpleNamespace(
                 user=SimpleNamespace(id=42), guild_id=77,
                 channel_id=raid.TEST_CHANNEL_ID, response=response,
             )
-            with patch.object(raid, "character_list_text", return_value="Snore Mon"):
+            for channel_id in (raid.TEST_CHANNEL_ID, raid.RAID_CHANNEL_ID):
+                interaction.channel_id = channel_id
                 await cog.characters.callback(cog, interaction)
-            self.assertTrue(response.send_message.await_args.kwargs["ephemeral"])
-            self.assertIn("Snore Mon", response.send_message.await_args.args[0])
-            response.send_message.reset_mock()
-            interaction.channel_id = raid.RAID_CHANNEL_ID
-            await cog.characters.callback(cog, interaction)
-            self.assertNotIn("Snore Mon", response.send_message.await_args.args[0])
+                self.assertTrue(response.send_message.await_args.kwargs["ephemeral"])
+                self.assertIn("Snore Mon", response.send_message.await_args.args[0])
+                response.send_message.reset_mock()
 
     async def test_loaded_but_public_channel_not_posted(self):
         source = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
