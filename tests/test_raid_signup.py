@@ -943,7 +943,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 jump_url="https://discord.com/channels/77/55/7654", edit=AsyncMock())
             channel = Mock(spec=discord.TextChannel)
             channel.id = raid.TEST_CHANNEL_ID
-            channel.guild = SimpleNamespace(id=77, me=SimpleNamespace())
+            channel.guild = SimpleNamespace(id=77, me=SimpleNamespace(), roles=[])
             channel.permissions_for.return_value = SimpleNamespace(
                 view_channel=True, send_messages=True, mention_everyone=False)
             channel.send = AsyncMock(return_value=message)
