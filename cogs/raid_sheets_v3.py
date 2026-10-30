@@ -371,8 +371,16 @@ def _make_tab(session, title):
     ]
     # Role headings retain AMOLED black while player rows stay light grey.
     # The sync only changes values and dropdowns, never formatting.
-    for section_row in (7, 10, 12, 14, 16):
-        requests.append(fill(section_row, section_row + 1, black, white, True, 11))
+    requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
+        "ranges": [{"sheetId": sid, "startRowIndex": 7,
+                    "endRowIndex": 500, "startColumnIndex": 0,
+                    "endColumnIndex": 19}],
+        "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
+                       "values": [{"userEnteredValue":
+                           '=REGEXMATCH($A8,"^(TANKS|HEALERS|MELEE|RANGED|ABSENT)$")'}]},
+                        "format": {"backgroundColor": black,
+                                   "textFormat": {"foregroundColor": white,
+                                                  "bold": True}}}}}})
     class_colours = {
         "Warrior": "C79C6E", "Warlock": "8787ED", "Shaman": "0070DD",
         "Rogue": "FFF569", "Priest": "FFFFFF", "Paladin": "F58CBA",
