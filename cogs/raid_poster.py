@@ -31,7 +31,7 @@ def draft_from_event(event):
     """Existing raid loads without losing optional instance or SoftRes values."""
     if not event:
         return {
-            "number": None, "day": None, "time": "20:00",
+            "number": None, "day": None, "time": "20:00", "channel_id": None,
             "end_time": None, "check_message_url": None,
             "instance_1": None, "instance_2": None, "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
@@ -39,7 +39,7 @@ def draft_from_event(event):
         }
     start = datetime.fromisoformat(event["raid_at"]).astimezone(UK)
     return {
-        "number": event["raid_id"],
+        "number": event["raid_id"], "channel_id": event.get("panel_channel_id"),
         "day": start.date().isoformat(),
         "time": start.strftime("%H:%M"),
         "end_time": (datetime.fromisoformat(event["end_at"]).astimezone(UK).strftime("%H:%M")
@@ -225,6 +225,7 @@ class RaidPosterView(discord.ui.LayoutView):
         ))
         self.saved_raid_ids = {r["raid_id"] for r in raids}
         self.add_raid_picker(raids)
+        self.add_destination_picker()
         self.add_date_picker()
         self.add_time_picker()
         self.add_end_time_picker()
@@ -270,7 +271,7 @@ class RaidPosterView(discord.ui.LayoutView):
             f"**Confirmation:** {announce_date}\n"
             f"**SoftRes:** {softres}\n"
             f"**Bottom banner:** {banner}\n"
-            "**Post destination:** private #ogre (testing)\n\n"
+            f"**Post destination:** {'<#' + str(d['channel_id']) + '>' if d.get('channel_id') else 'Current channel (private #ogre)'}\n\n"
             "Applicant list will never be shown on the raid panel."
         )
 
@@ -314,6 +315,20 @@ class RaidPosterView(discord.ui.LayoutView):
                 view=RaidPosterView(self.cog, self.owner_id, d)
             )
         picker = self._select("Choose new or existing raid", options, choose)
+
+    def add_destination_picker(self):
+        picker = discord.ui.ChannelSelect(
+            placeholder="Choose destination channel",
+            channel_types=[discord.ChannelType.text],
+            min_values=1, max_values=1,
+        )
+        async def choose(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message("Only owner.", ephemeral=True)
+                return
+            await self.changed(interaction, channel_id=picker.values[0].id)
+        picker.callback = choose
+        self.add_item(discord.ui.ActionRow(picker))
 
     def add_date_picker(self):
         today = datetime.now(UK).date()
@@ -557,7 +572,7 @@ class RaidPosterView(discord.ui.LayoutView):
                     f"Check raid details before posting: {exc}", ephemeral=True
                 )
                 return
-            await self.cog.post_panel(interaction, event)
+            await self.cog.post_panel(interaction, event, destination_id=self.draft.get("channel_id"))
 
         async def ask_delete(interaction):
             if not self.authorised(interaction):
