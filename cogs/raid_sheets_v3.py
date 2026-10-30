@@ -340,7 +340,7 @@ def _make_tab(session, title):
     requests = [
         {"repeatCell": {"range": {
             "sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
-            "startColumnIndex": 0, "endColumnIndex": 16},
+            "startColumnIndex": 0, "endColumnIndex": 19},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 0.898, "green": 0.8, "blue": 0.502},
                 "textFormat": {"bold": True, "fontSize": 18,
@@ -360,10 +360,11 @@ def _make_tab(session, title):
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
-    for col, width in ((0, 150), (1, 160), (2, 120), (3, 130),
-                       (4, 90), (5, 90), (6, 240), (7, 190),
-                       (8, 90), (9, 125), (10, 145), (11, 95),
-                       (12, 95), (13, 95), (14, 250), (15, 145)):
+    for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
+                       (4, 90), (5, 90), (6, 200), (7, 95),
+                       (8, 110), (9, 135), (10, 75), (11, 95),
+                       (12, 75), (13, 205), (14, 145),
+                       (17, 195), (18, 195)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": col, "endIndex": col + 1},
@@ -372,7 +373,7 @@ def _make_tab(session, title):
     for old_col, options in VALUES.items():
         col = DISPLAY_ORDER.index(old_col)
         requests.append({"setDataValidation": {
-            "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
+            "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
                       "startColumnIndex": col, "endColumnIndex": col + 1},
             "rule": {"condition": {"type": "ONE_OF_LIST",
                        "values": [{"userEnteredValue": value} for value in options]},
@@ -387,13 +388,13 @@ def _paint_sections(session, sid, rows):
     """Keep dropdowns only on player rows without changing the Roster theme."""
     requests = [
         {"setDataValidation": {"range": {
-            "sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
+            "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
             "startColumnIndex": 7, "endColumnIndex": 8}}}
     ]
     for old_col, options in VALUES.items():
         col = DISPLAY_ORDER.index(old_col)
         requests.append({"setDataValidation": {
-            "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 501,
+            "range": {"sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
                       "startColumnIndex": col, "endColumnIndex": col + 1},
             "rule": {"condition": {"type": "ONE_OF_LIST",
                        "values": [{"userEnteredValue": v} for v in options]},
