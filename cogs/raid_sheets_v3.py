@@ -603,22 +603,21 @@ def _hide_legacy(session, titles):
 
 def _permanent_read(session, tab):
     url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
-        f"'{tab}'!A5:O1000", safe="'!:")
+        f"'{tab}'!A5:O{500 if tab == 'Forever Roster' else 1000}", safe="'!:")
     return raid_sheets._json(session, "GET", url).get("values", [])
 
 
 def _permanent_write(session, tab, row_number, values):
     url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
         f"'{tab}'!A{row_number}:O{row_number}", safe="'!:")
-    raid_sheets._json(session, "PUT", url, params={"valueInputOption": "USER_ENTERED"},
+    raid_sheets._json(session, "PUT", url, params={"valueInputOption": "RAW"},
                       json={"values": [values]})
 
 
-def _attendance_formula(discord_id, column, status):
-    # COUNTIFS compares the ISO date strings against the last 90 days.
-    return (f'=COUNTIFS(\'Forever Attendance\'!$C$6:$C,$B{column},'
-            f'\'Forever Attendance\'!$B$6:$B,">="&TEXT(TODAY()-90,"yyyy-mm-dd"),'
-            f'\'Forever Attendance\'!$J$6:$J,"{status}")')
+def _attendance_formula(row_number, status):
+    return (f'=SUMPRODUCT((\'Forever Attendance\'!$C$6:$C$1000=$B{row_number})*'
+            f'(IFERROR(DATEVALUE(\'Forever Attendance\'!$B$6:$B$1000),0)>=TODAY()-90)*'
+            f'(\'Forever Attendance\'!$J$6:$J$1000="{status}"))')
 
 
 def _sync_permanent(session, db_path, discord_names, raid_rosters):
@@ -647,9 +646,9 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
         gear = gear_by_id.get(cid, {})
         gear_date = max(gear.get("simc_latest") or "", gear.get("image_latest") or "")
         counts = [
-            _attendance_formula(did, row_number, "Attended"),
-            _attendance_formula(did, row_number, "Absent"),
-            _attendance_formula(did, row_number, "Excused"),
+            _attendance_formula(row_number, "Attended"),
+            _attendance_formula(row_number, "Absent"),
+            _attendance_formula(row_number, "Excused"),
         ]
         ratio = (f'=IFERROR(L{row_number}/(L{row_number}+M{row_number}),"—")')
         values = [cid, did, name, character["name"], character["class_name"],
@@ -659,7 +658,13 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
                   old[14] if len(old) > 14 else ""]
         # Formulas recalculate in Sheets; avoid rewriting unchanged profiles.
         if not previous or old[:10] != [str(v) for v in values[:10]]:
-            _permanent_write(session, "Forever Roster", row_number, values)
+            _permanent_write(session, "Forever Roster", row_number,
+                             values[:10] + [""] * 4 + values[14:])
+            url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
+                f"'Forever Roster'!K{row_number}:N{row_number}", safe="'!:")
+            raid_sheets._json(session, "PUT", url,
+                params={"valueInputOption": "USER_ENTERED"},
+                json={"values": [[ratio, *counts]]})
     for raid_id, players in raid_rosters.items():
         event = raids.get(raid_id)
         if not event or not (event.get("roster_published") or event.get("archived_at")):
