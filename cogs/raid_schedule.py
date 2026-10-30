@@ -620,7 +620,7 @@ class RaidEventPanel(discord.ui.LayoutView):
     """Real Discord V2 message, persistent across bot restarts."""
     def __init__(self, event, *, on_register=None, on_characters=None, on_signup=None,
                  on_gear=None, on_update=None, on_absent=None,
-                 public_roster=(), emoji_map=None, on_remind=None, on_manage=None):
+                 public_roster=(), emoji_map=None, on_remind=None):
         super().__init__(timeout=None)
         event_id = event["raid_id"]
         self.add_item(discord.ui.Container(
@@ -683,10 +683,3 @@ class RaidEventPanel(discord.ui.LayoutView):
         for control in (sign_up, reminder, update, gear, absent):
             controls.add_item(control)
         self.add_item(controls)
-        if on_manage is not None:
-            manage = discord.ui.Button(
-                label="Manage Raid", custom_id=f"hyped_raid_{event_id}_manage",
-                style=discord.ButtonStyle.secondary,
-            )
-            manage.callback = on_manage
-            self.add_item(discord.ui.ActionRow(manage))
