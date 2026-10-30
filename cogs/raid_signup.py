@@ -20,7 +20,7 @@ from cogs.countdown import toggle_raid_dm
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
-    read_raid, read_public_roster, record_panel, save_raid, set_softres_url, delete_raid,
+    read_raid, read_public_roster, read_signup_roster, record_panel, save_raid, set_softres_url, delete_raid,
     raid_status,
 )
 
@@ -229,6 +229,39 @@ def is_test_member(interaction):
     Officer management still uses the separate owner-only allowed() guard.
     """
     return interaction.guild_id == GUILD_ID
+
+
+async def refresh_player_signup_panel(interaction, raid_id):
+    """Refresh a public sign-up list after a player edits their attendance.
+
+    The Discord interaction is acknowledged first; a missing panel, temporary
+    permission error or unavailable bot client never discards the saved signup.
+    """
+    client = getattr(interaction, "client", None)
+    getter = getattr(client, "get_cog", None)
+    cog = getter("RaidPrototype") if callable(getter) else None
+    if cog is None:
+        return
+    try:
+        await cog.refresh_saved_panel(raid_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException,
+            sqlite3.Error) as exc:
+        LOGGER.warning("Unable to refresh sign-ups for Raid #%s: %s", raid_id, exc)
+
+
+async def refresh_character_signups(interaction, owner_id, character_id):
+    """Class/role edits immediately re-sort the collecting roster, if signed."""
+    with database(RAID_DB) as con:
+        raids = con.execute(
+            "SELECT s.raid_id FROM signups s JOIN raids r ON r.raid_id=s.raid_id "
+            "WHERE s.discord_id=? AND s.character_id=? "
+            "AND s.availability='Available' AND r.roster_published=0 "
+            "AND NOT EXISTS (SELECT 1 FROM raid_absences a "
+            "WHERE a.raid_id=s.raid_id AND a.discord_id=s.discord_id)",
+            (owner_id, character_id),
+        ).fetchall()
+    for (raid_id,) in raids:
+        await refresh_player_signup_panel(interaction, raid_id)
 
 
 def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
@@ -600,6 +633,7 @@ class AbsenceNoteModal(discord.ui.Modal):
             f"Ogre mark you absent for Raid #{self.raid_id}. "
             f"Signed off <t:{unix}:F>.", ephemeral=True,
         )
+        await refresh_player_signup_panel(interaction, self.raid_id)
 
 
 class SignupNoteModal(discord.ui.Modal):
@@ -638,9 +672,11 @@ class SignupNoteModal(discord.ui.Modal):
         await interaction.response.send_message(
             f"{guild_emoji('MoveTo')} **Attendance {'updated' if already else 'registered'}** for Raid #{self.raid_id}.\n"
             f"**{discord.utils.escape_markdown(self.name)}** is marked Available.\n"
-            "Ogre says: If plans change, hit **Absent** as soon as you know.",
+            "Your character now appears on the public sign-up list. "
+            "If plans change, hit **Absent** as soon as you know.",
             ephemeral=True,
         )
+        await refresh_player_signup_panel(interaction, self.raid_id)
 
 
 
@@ -981,10 +1017,11 @@ class CharacterNameModal(discord.ui.Modal):
             await interaction.response.send_message(
                 f"**{name}** registered and signed up for Raid "
                 f"#{self.signup_raid_id}! {guild_emoji('MoveTo')}\n"
-                "Nobody else can see your sign-up. "
-                "Ogre says: If plans change, hit **Absent** as soon as you know.",
+                "Your character appears on the public sign-up list. "
+                "If plans change, hit **Absent** as soon as you know.",
                 ephemeral=True,
             )
+            await refresh_player_signup_panel(interaction, self.signup_raid_id)
             return
         character = next(
             (row for row in member_characters(interaction.user.id)
@@ -1158,6 +1195,7 @@ async def apply_profile_update(interaction, owner_id, character_id,
     await interaction.response.edit_message(
         view=ProfileUpdatedView(name, class_name, spec, role)
     )
+    await refresh_character_signups(interaction, owner_id, character_id)
 
 
 
@@ -1625,8 +1663,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             event, on_signup=signup, on_update=self.on_update,
             on_remind=remind,
             on_gear=self.on_gear, on_absent=absent,
-            public_roster=read_public_roster(
-                RAID_DB, event["raid_id"], include_details=True
+            public_roster=(
+                read_public_roster(RAID_DB, event["raid_id"], include_details=True)
+                if event.get("roster_published") else
+                read_signup_roster(RAID_DB, event["raid_id"])
             ),
             emoji_map=self.raid_emoji_map(),
         )
