@@ -718,11 +718,9 @@ def sync_once(db_path, discord_names=None):
                     include_details=True
                 )
             else:
-                published[raid_id] = [
-                    (entry[1], entry[2], *entry[3:6])
-                    for entry in _approved(rows, event, include_details=True)
-                    if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
-                ]
+                # Keep all unconfirmed Sheet selections leadership-only.
+                # Only Preview / Confirm Roster publishes a public snapshot.
+                published[raid_id] = []
         _sync_permanent(session, db_path, discord_names, raid_rosters)
         # Archived raids retain their most recent public roster and history.
         # Once an active raid tab exists, hide (never delete) old management tabs.
