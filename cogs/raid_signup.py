@@ -1626,16 +1626,33 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             emoji_map=self.raid_emoji_map(),
         )
 
-    async def post_panel(self, interaction, event):
-        # Update an existing message rather than creating duplicate live panels.
-        if (event.get("panel_message_id")
-                and event.get("panel_channel_id") == interaction.channel_id):
+    async def post_panel(self, interaction, event, destination_id=None):
+        """Publish to the poster-selected text channel; edit existing panel in place."""
+        channel_id = destination_id or interaction.channel_id
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
             try:
-                message = await interaction.channel.fetch_message(event["panel_message_id"])
+                channel = await self.bot.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                channel = None
+        if not isinstance(channel, discord.TextChannel) or channel.guild.id != interaction.guild_id:
+            await interaction.response.send_message(
+                "Choose a text channel in this server that Ogre can access.", ephemeral=True)
+            return
+        perms = channel.permissions_for(channel.guild.me)
+        if not (perms.view_channel and perms.send_messages):
+            await interaction.response.send_message(
+                f"Ogre needs View Channel and Send Messages in {channel.mention}.", ephemeral=True)
+            return
+
+        old_channel_id = event.get("panel_channel_id")
+        old_message_id = event.get("panel_message_id")
+        if old_message_id and old_channel_id == channel.id:
+            try:
+                message = await channel.fetch_message(old_message_id)
                 await message.edit(view=self.make_panel(event))
                 await interaction.response.send_message(
-                    f"Ogre updated raid panel: {message.jump_url}", ephemeral=True
-                )
+                    f"Ogre updated raid panel: {message.jump_url}", ephemeral=True)
                 if raid_sheets.configured():
                     try:
                         await self.sync_raid_sheets()
@@ -1646,27 +1663,30 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 pass
             except (discord.Forbidden, discord.HTTPException):
                 await interaction.response.send_message(
-                    "Ogre couldn't update the existing raid panel.", ephemeral=True
-                )
+                    "Ogre couldn't update the existing raid panel.", ephemeral=True)
                 return
 
-        # Post as a normal bot message. Avoid an interaction-response header
-        # attached to the public-facing panel; only the setup ACK is private.
         await interaction.response.defer(ephemeral=True)
         try:
-            message = await interaction.channel.send(
+            message = await channel.send(
                 view=self.make_panel(event),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
-        except (discord.Forbidden, discord.HTTPException):
+        except (discord.Forbidden, discord.HTTPException) as exc:
             await interaction.followup.send(
-                "Ogre couldn't post the raid panel in this channel.", ephemeral=True
-            )
+                f"Ogre couldn't post in {channel.mention}: {exc}", ephemeral=True)
             return
-        record_panel(RAID_DB, event["raid_id"], interaction.channel_id, message.id)
+        record_panel(RAID_DB, event["raid_id"], channel.id, message.id)
+        if old_message_id and old_channel_id and old_channel_id != channel.id:
+            try:
+                old_channel = self.bot.get_channel(old_channel_id) or await self.bot.fetch_channel(old_channel_id)
+                old_message = await old_channel.fetch_message(old_message_id)
+                await old_message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                LOGGER.warning("Old raid panel could not be removed after moving Raid #%s",
+                               event["raid_id"])
         await interaction.followup.send(
-            f"Ogre posted raid panel: {message.jump_url}", ephemeral=True
-        )
+            f"Ogre posted raid panel: {message.jump_url}", ephemeral=True)
         if raid_sheets.configured():
             try:
                 await self.sync_raid_sheets()
@@ -1675,11 +1695,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def refresh_saved_panel(self, number):
         event = read_raid(RAID_DB, number)
-        if not event or event.get("panel_channel_id") != TEST_CHANNEL_ID:
+        if not event or not event.get("panel_channel_id") or not event.get("panel_message_id"):
             return
-        channel = self.bot.get_channel(TEST_CHANNEL_ID)
-        if channel is None:
-            return
+        channel_id = event["panel_channel_id"]
+        channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
         message = await channel.fetch_message(event["panel_message_id"])
         await message.edit(view=self.make_panel(event))
 
