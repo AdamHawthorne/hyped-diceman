@@ -37,7 +37,7 @@ VALUES = {
 MAX_BODY_ROWS = 460
 
 # Absent At is displayed in R; Signed At remains the far-right column S.
-DISPLAY_ORDER = tuple(i for i in range(len(COLUMNS)) if i not in (7, 18)) + (18, 7)
+DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 10, 15, 14, 16, 17, 18, 7)
 
 
 def _uk_timestamp(value):
@@ -412,8 +412,8 @@ def _make_tab(session, title):
                                 "red": .08, "green": .25, "blue": .12}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
                        (4, 90), (5, 90), (6, 200), (7, 95),
-                       (8, 110), (9, 135), (10, 75), (11, 95),
-                       (12, 75), (13, 205), (14, 145),
+                       (8, 110), (9, 95), (10, 95), (11, 75),
+                       (12, 135), (13, 145), (14, 205),
                        (17, 195), (18, 195)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
@@ -441,10 +441,10 @@ def _paint_sections(session, sid, rows):
             "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
             "startColumnIndex": 7, "endColumnIndex": 8}}}
     ]
-    # Leadership Notes (display column N) is free text, not a dropdown.
+    # Leadership Notes (display column O) is free text, not a dropdown.
     requests.append({"setDataValidation": {"range": {
         "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
-        "startColumnIndex": 13, "endColumnIndex": 14}}})
+        "startColumnIndex": 14, "endColumnIndex": 15}}})
     for old_col, options in VALUES.items():
         col = DISPLAY_ORDER.index(old_col)
         requests.append({"setDataValidation": {
