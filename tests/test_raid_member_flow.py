@@ -71,6 +71,64 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             self.assertTrue(panel.is_persistent())
 
+    async def test_player_buttons_remain_available_after_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            event = raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+            event["signup_open"] = 0
+            event["roster_published"] = 1
+            callbacks = dict(on_signup=AsyncMock(), on_update=AsyncMock(),
+                             on_gear=AsyncMock(), on_absent=AsyncMock(),
+                             on_remind=AsyncMock())
+            def status(e):
+                panel = raid_schedule.RaidEventPanel(e, **callbacks)
+                return {b.label or "Remind": b.disabled for b in panel.walk_children()
+                        if isinstance(b, discord.ui.Button)}
+            locked = status(event)
+            self.assertTrue(locked["Attend"])
+            self.assertFalse(locked["Characters"])
+            self.assertFalse(locked["SimC"])
+            self.assertFalse(locked["Absent"])
+            self.assertFalse(locked["Remind"])
+            event["archived_at"] = "2026-12-10T01:00:00+00:00"
+            archived = status(event)
+            self.assertFalse(archived["Characters"])
+            self.assertFalse(archived["SimC"])
+            self.assertTrue(archived["Absent"])
+            self.assertTrue(archived["Remind"])
+
+    async def test_public_raid_panel_controls_rebind_after_restart(self):
+        with patch.object(raid, "active_panels", return_value=[
+                {"raid_id": 1, "panel_message_id": 12345,
+                 "panel_channel_id": raid.RAID_CHANNEL_ID}
+             ]), patch.object(raid_sheets, "configured", return_value=False):
+            bot = SimpleNamespace(add_view=Mock())
+            cog = raid.RaidPrototype(bot)
+            view = object()
+            with patch.object(cog, "make_panel", return_value=view):
+                await cog.cog_load()
+            bot.add_view.assert_called_once_with(view, message_id=12345)
+
+    async def test_sheet_sync_refreshes_public_destination(self):
+        bot_message = SimpleNamespace(edit=AsyncMock())
+        channel = SimpleNamespace(fetch_message=AsyncMock(return_value=bot_message))
+        bot = SimpleNamespace(get_channel=Mock(return_value=channel))
+        cog = raid.RaidPrototype(bot)
+        event = {"raid_id": 1, "panel_message_id": 12345,
+                 "panel_channel_id": raid.RAID_CHANNEL_ID}
+        with patch.object(cog, "raid_discord_names", new_callable=AsyncMock,
+                          return_value={}), \
+             patch.object(raid_sheets_v3, "sync_once", return_value=({}, {1})), \
+             patch.object(raid, "read_raid", return_value=event), \
+             patch.object(cog, "make_panel", return_value="updated"):
+            await cog.sync_raid_sheets()
+        bot.get_channel.assert_called_once_with(raid.RAID_CHANNEL_ID)
+        channel.fetch_message.assert_awaited_once_with(12345)
+        bot_message.edit.assert_awaited_once_with(view="updated")
+
     async def test_signup_notes_optional_and_one_signup_per_raid(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
