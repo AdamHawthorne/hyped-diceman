@@ -600,6 +600,86 @@ def _hide_legacy(session, titles):
             details["hidden"] = True
 
 
+
+def _permanent_read(session, tab):
+    url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
+        f"'{tab}'!A5:O1000", safe="'!:")
+    return raid_sheets._json(session, "GET", url).get("values", [])
+
+
+def _permanent_write(session, tab, row_number, values):
+    url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
+        f"'{tab}'!A{row_number}:O{row_number}", safe="'!:")
+    raid_sheets._json(session, "PUT", url, params={"valueInputOption": "USER_ENTERED"},
+                      json={"values": [values]})
+
+
+def _attendance_formula(discord_id, column, status):
+    # COUNTIFS compares the ISO date strings against the last 90 days.
+    return (f'=COUNTIFS(\'Forever Attendance\'!$C$6:$C,$B{column},'
+            f'\'Forever Attendance\'!$B$6:$B,">="&TEXT(TODAY()-90,"yyyy-mm-dd"),'
+            f'\'Forever Attendance\'!$J$6:$J,"{status}")')
+
+
+def _sync_permanent(session, db_path, discord_names, raid_rosters):
+    """Mirror characters and selected raid members; never overwrite manual attendance."""
+    characters, raids, _, _, gear = raid_sheets._raid_snapshot(db_path)
+    discord_names = discord_names or {}
+    gear_by_id = {str(g["character_id"]): g for g in gear}
+    old_roster = _permanent_read(session, "Forever Roster")
+    old_attendance = _permanent_read(session, "Forever Attendance")
+    roster_map = {str(row[0]): (i + 6, row) for i, row in enumerate(old_roster[1:])
+                  if row and str(row[0]).isdigit()}
+    attendance_map = {(str(row[0]), str(row[2])): (i + 6, row)
+                      for i, row in enumerate(old_attendance[1:])
+                      if len(row) > 2 and str(row[0]).isdigit() and str(row[2]).isdigit()}
+    roster_next = len(old_roster) + 5
+    attendance_next = len(old_attendance) + 5
+    for character in characters:
+        cid = str(character["character_id"])
+        did = str(character["discord_id"])
+        previous = roster_map.get(cid)
+        row_number = previous[0] if previous else roster_next
+        if not previous:
+            roster_next += 1
+        old = previous[1] if previous else []
+        name = discord_names.get(int(did), "") or (old[2] if len(old) > 2 else "")
+        gear = gear_by_id.get(cid, {})
+        gear_date = max(gear.get("simc_latest") or "", gear.get("image_latest") or "")
+        counts = [
+            _attendance_formula(did, row_number, "Attended"),
+            _attendance_formula(did, row_number, "Absent"),
+            _attendance_formula(did, row_number, "Excused"),
+        ]
+        ratio = (f'=IFERROR(L{row_number}/(L{row_number}+M{row_number}),"—")')
+        values = [cid, did, name, character["name"], character["class_name"],
+                  character["spec"], character["role"],
+                  "Main" if character["is_main"] else "Alt",
+                  "", gear_date, ratio, *counts,
+                  old[14] if len(old) > 14 else ""]
+        # Formulas recalculate in Sheets; avoid rewriting unchanged profiles.
+        if not previous or old[:10] != [str(v) for v in values[:10]]:
+            _permanent_write(session, "Forever Roster", row_number, values)
+    for raid_id, players in raid_rosters.items():
+        event = raids.get(raid_id)
+        if not event or not (event.get("roster_published") or event.get("archived_at")):
+            continue
+        date = datetime.fromisoformat(event["raid_at"]).astimezone(UK).strftime("%Y-%m-%d")
+        for row in players:
+            did, cid = str(row[16]), str(row[17])
+            if not did.isdigit():
+                continue
+            key = (str(raid_id), did)
+            old_entry = attendance_map.get(key)
+            if old_entry:
+                # Attendance, late/AFK, excused and notes belong to leadership.
+                continue
+            values = [str(raid_id), date, did, row[0], cid, row[1],
+                      row[2], row[4], row[9], "Pending", "", "", "No", "", ""]
+            _permanent_write(session, "Forever Attendance", attendance_next, values)
+            attendance_map[key] = (attendance_next, values)
+            attendance_next += 1
+
 def sync_once(db_path, discord_names=None):
     """Synchronise only posted raids into one private tab each."""
     if not raid_sheets.configured():
@@ -609,6 +689,7 @@ def sync_once(db_path, discord_names=None):
         _, raids, _, absences, _ = raid_sheets._raid_snapshot(db_path)
         titles = _list_tabs(session)
         counts, published = {"raid_tabs": 0}, {}
+        raid_rosters = {}
         unavailable = {}
         for absence in absences:
             unavailable.setdefault(absence["raid_id"], set()).add(
@@ -623,6 +704,9 @@ def sync_once(db_path, discord_names=None):
                 continue
             changes, rows = _one(session, db_path, event, discord_names, titles)
             counts["raid_tabs"] += changes
+            raid_rosters[raid_id] = [r for r in rows[7:]
+                if len(r) >= 18 and r[16].isdigit() and r[9] == "Selected"
+                and r[8] == "Signed"]
             if event.get("roster_published"):
                 published[raid_id] = confirmed_roster(
                     db_path, raid_id, unavailable.get(raid_id, ()),
@@ -634,6 +718,7 @@ def sync_once(db_path, discord_names=None):
                     for entry in _approved(rows, event, include_details=True)
                     if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
                 ]
+        _sync_permanent(session, db_path, discord_names, raid_rosters)
         # Archived raids retain their most recent public roster and history.
         # Once an active raid tab exists, hide (never delete) old management tabs.
         if any(name.startswith("Raid #") for name in titles):
