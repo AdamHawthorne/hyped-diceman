@@ -1676,15 +1676,29 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.response.defer(ephemeral=True)
         try:
             message = await channel.send(
-                content=mentions or None,
                 view=self.make_panel(event),
-                allowed_mentions=discord.AllowedMentions(
-                    everyone=False, users=False, roles=roles),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
         except (discord.Forbidden, discord.HTTPException) as exc:
             await interaction.followup.send(
                 f"Ogre couldn't post in {channel.mention}: {exc}", ephemeral=True)
             return
+        # Components V2 messages cannot have content. Send the optional role
+        # notification separately, only after the panel has posted successfully.
+        if mentions:
+            try:
+                await channel.send(
+                    content=f"{mentions} Raid sign-ups: {message.jump_url}",
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, users=False, roles=roles),
+                )
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                LOGGER.warning("Raid #%s posted, but role ping failed: %s",
+                               event["raid_id"], exc)
+                await interaction.followup.send(
+                    "Raid panel posted, but Ogre couldn't send the role pings.",
+                    ephemeral=True,
+                )
         record_panel(RAID_DB, event["raid_id"], channel.id, message.id)
         if old_message_id and old_channel_id and old_channel_id != channel.id:
             try:
