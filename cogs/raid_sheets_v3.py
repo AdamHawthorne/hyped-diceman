@@ -218,6 +218,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             choice(13, "ony", "No"),
             previous[14] or migrated.get("notes") or "",
             gear_status, member_id, char_id,
+            (absence.get("signed_off_at") or "") if absence else "",
         ]
         groups[_group(signup, absent)].append(row)
 
@@ -231,11 +232,13 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             previous[5], ("Absent: " + (absence.get("note") or "")
                           + " | Signed off: " + absence["signed_off_at"]),
             previous[7], "Absent", "Not selected", "No", "No", "No", "No",
-            previous[14], previous[15], member_id, previous[17]
+            previous[14], previous[15], member_id, previous[17],
+            absence.get("signed_off_at") or "",
         ])
 
     for guest in guests:
         guest[8] = guest[8] or "Signed"
+        guest = (guest + [""] * len(COLUMNS))[:len(COLUMNS)]
         groups[_group({"role": guest[4], "class_name": guest[2],
                        "spec": guest[3]}, guest[8] == "Absent")].append(guest)
 
@@ -245,13 +248,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         ordered = sorted(
             groups[section], key=lambda row: (row[2].casefold(), row[1].casefold())
         )
-        last_class = None
-        for row in ordered:
-            klass = row[2].strip()
-            if klass and klass != last_class:
-                section_rows.append(["  " + klass.upper()] + [""] * (len(COLUMNS) - 1))
-                last_class = klass
-            section_rows.append(row)
+        section_rows.extend(ordered)
         if section != SECTIONS[-1]:
             section_rows.append([""] * len(COLUMNS))
     if len(section_rows) > MAX_BODY_ROWS:
@@ -334,7 +331,7 @@ def _make_tab(session, title):
         json={"requests": [{"addSheet": {"properties": {
             "title": title, "gridProperties": {
                 "rowCount": 501, "columnCount": len(COLUMNS),
-                "frozenRowCount": 7, "frozenColumnCount": 2,
+                "frozenRowCount": 0, "frozenColumnCount": 0,
                 "hideGridlines": True
             }
         }}}]},
@@ -345,16 +342,17 @@ def _make_tab(session, title):
             "sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
             "startColumnIndex": 0, "endColumnIndex": 16},
             "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 0.55, "green": 0.35, "blue": 0.24},
-                "textFormat": {"bold": True, "foregroundColor": {
-                    "red": 1, "green": 1, "blue": 1}}
+                "backgroundColor": {"red": 0.898, "green": 0.8, "blue": 0.502},
+                "textFormat": {"bold": True, "fontSize": 18,
+                               "fontFamily": "Roboto",
+                               "foregroundColor": {"red": 0, "green": 0, "blue": 0}}
             }}, "fields": "userEnteredFormat"}},
         {"repeatCell": {"range": {
             "sheetId": sid, "startRowIndex": 6, "endRowIndex": 7,
             "startColumnIndex": 0, "endColumnIndex": 16},
             "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 0.87, "green": 0.88, "blue": 0.90},
-                "textFormat": {"bold": True}
+                "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                "textFormat": {"bold": True, "fontSize": 12, "fontFamily": "Roboto"}
             }}, "fields": "userEnteredFormat"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
