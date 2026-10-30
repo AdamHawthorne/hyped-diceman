@@ -50,6 +50,14 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(sheet._group(
                 {"role": "DPS", "class_name": "Mage", "spec": "Frost"}, False
             ), "Ranged")
+            for spec, expected in (
+                ("Survival", "Melee"),
+                ("Beast Mastery", "Ranged"),
+                ("Marksmanship", "Ranged"),
+            ):
+                self.assertEqual(sheet._group(
+                    {"role": "DPS", "class_name": "Hunter", "spec": spec}, False
+                ), expected)
             header = sheet._header(event, body, sheet.tab_title(event))
             self.assertEqual(header[6][:9], list(sheet.COLUMNS[:9]))
             self.assertEqual(header[1][3], "Forming")
