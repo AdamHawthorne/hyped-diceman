@@ -31,7 +31,7 @@ def draft_from_event(event):
     """Existing raid loads without losing optional instance or SoftRes values."""
     if not event:
         return {
-            "number": None, "day": None, "time": "20:00", "channel_id": None, "ping_role_ids": [],
+            "number": None, "day": None, "time": "20:00", "channel_id": None, "ping_role_ids": [], "default_show_discord": True,
             "end_time": None, "check_message_url": None,
             "instance_1": None, "instance_2": None, "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
@@ -227,6 +227,7 @@ class RaidPosterView(discord.ui.LayoutView):
         self.add_raid_picker(raids)
         self.add_destination_picker()
         self.add_ping_role_picker()
+        self.add_visibility_picker()
         self.add_date_picker()
         self.add_time_picker()
         self.add_end_time_picker()
@@ -274,6 +275,7 @@ class RaidPosterView(discord.ui.LayoutView):
             f"**Bottom banner:** {banner}\n"
             f"**Post destination:** {'<#' + str(d['channel_id']) + '>' if d.get('channel_id') else 'Current channel (private #ogre)'}\n\n"
             f"**Ping roles on new post:** {', '.join('<@&' + str(r) + '>' for r in d.get('ping_role_ids', [])) or 'None'}\n\n"
+            f"**Default Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n\n"
             "Applicant list will never be shown on the raid panel."
         )
 
@@ -344,6 +346,16 @@ class RaidPosterView(discord.ui.LayoutView):
             await self.changed(interaction, ping_role_ids=[role.id for role in picker.values])
         picker.callback = choose
         self.add_item(discord.ui.ActionRow(picker))
+
+    def add_visibility_picker(self):
+        async def choose(interaction):
+            await self.changed(interaction, default_show_discord=(picker.values[0] == "yes"))
+        picker = self._select("Default Show on Discord", [
+            discord.SelectOption(label="Yes - show selected players", value="yes",
+                                 default=bool(self.draft.get("default_show_discord", True))),
+            discord.SelectOption(label="No - hide until individually enabled", value="no",
+                                 default=not bool(self.draft.get("default_show_discord", True))),
+        ], choose)
 
     def add_date_picker(self):
         today = datetime.now(UK).date()
@@ -577,6 +589,11 @@ class RaidPosterView(discord.ui.LayoutView):
                     end_at=end_at,
                     check_message_url=self.draft.get("check_message_url"),
                 )
+                from cogs.raid_schedule import database
+                with database(self.cog.raid_db_path()) as con:
+                    con.execute("UPDATE raids SET default_show_discord=? WHERE raid_id=?",
+                                (int(self.draft.get("default_show_discord", True)), event["raid_id"]))
+                event = read_raid(self.cog.raid_db_path(), event["raid_id"])
                 if self.draft["softres_url"] is None:
                     event = set_softres_url(
                         self.cog.raid_db_path(), self.draft["number"], None
