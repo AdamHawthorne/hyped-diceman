@@ -1370,6 +1370,32 @@ class DungeonButton(discord.ui.Button):
         )
 
 
+class RemoveDungeonButton(discord.ui.Button):
+    """Remove only the player's dungeon request, not their launch plan."""
+
+    def __init__(self, cog, channel_id):
+        super().__init__(
+            label="Remove Dungeon", style=discord.ButtonStyle.secondary,
+            custom_id="hyped_lfg_remove_dungeon_v1",
+        )
+        self.cog, self.channel_id = cog, channel_id
+
+    async def callback(self, interaction):
+        state = DungeonState(self.cog, self.channel_id, interaction.user.id)
+        if state.current is None:
+            await interaction.response.send_message(
+                "You don't have a dungeon request on this board.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            content="Remove your dungeon request? "
+                    "Your launch plan and characters will stay.",
+            view=DungeonRemoveView(state),
+            ephemeral=True,
+        )
+
+
 class RemoveButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
         super().__init__(
@@ -1486,13 +1512,15 @@ class BoardLayout(discord.ui.LayoutView):
                 *[discord.ui.Button(
                     label=label, style=discord.ButtonStyle.secondary,
                     disabled=True,
-                ) for label in ("Add / Update", "Characters", "LF Dungeons", "Remove Plan")]
+                ) for label in ("Add / Update", "Characters", "LF Dungeons",
+                               "Remove Dungeon", "Remove Plan")]
             ))
         else:
             self.add_item(discord.ui.ActionRow(
                 AddUpdateButton(cog, channel_id),
                 CharactersButton(),
                 DungeonButton(cog, channel_id),
+                RemoveDungeonButton(cog, channel_id),
                 RemoveButton(cog, channel_id),
             ))
 
