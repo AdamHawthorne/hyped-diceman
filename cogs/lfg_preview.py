@@ -213,11 +213,16 @@ def launch_profile(row):
 
 
 def launch_race(row):
-    """Read race from shared character, falling back to preserved launch data."""
+    """Read shared race, retaining valid legacy launch-race data."""
     char_id = row.get("character_id") if isinstance(row, dict) else None
-    race = (raid_signup.character_race(row["user_id"], char_id)
-            if char_id else "")
-    return race or row["race"]
+    character = shared_character(row["user_id"], char_id) if char_id else None
+    if character:
+        shared = raid_signup.character_race(row["user_id"], char_id)
+        if shared:
+            return shared
+        legacy = row["race"]
+        return legacy if character[2] in RACE_CLASSES.get(legacy, ()) else ""
+    return row["race"]
 
 
 def safe(value):
