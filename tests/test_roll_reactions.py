@@ -8,7 +8,7 @@ class Message:
     def __init__(self, user):
         self.id = user
         self.author = SimpleNamespace(id=999)
-        self.content = f'<@{user}> rolled **50** 🎲'
+        self.content = f'<@{user}> rolled **50** <:ogredice:1566126699043880992>'
         self.reactions = []
 
     async def add_reaction(self, emoji):
@@ -154,6 +154,14 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.con.execute("INSERT INTO rolls VALUES (0, 14, 'bot', 3)")
         await self.tracker.sync()
         self.assertFalse(self.has(low, '💩'))
+
+    async def test_legacy_unicode_dice_remains_eligible(self):
+        old = self.add(1, 11, 1)
+        old.content = '<@1> rolled **11** 🎲'
+        higher = self.add(2, 92, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(old, '💩'))
+        self.assertTrue(self.has(higher, '<:ogrecoin:1564336079430099035>'))
 
     async def test_permission_failure_is_contained(self):
         self.add(1, 50)
