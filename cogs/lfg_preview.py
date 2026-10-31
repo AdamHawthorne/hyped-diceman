@@ -243,7 +243,7 @@ def format_roles(value, *, icons=False):
     roles = [part.strip() for part in value.split(",") if part.strip()]
     if icons:
         return " / ".join(
-            f"{role} {guild_emoji(combat_role(role))}" if guild_emoji(combat_role(role)) else role
+            f"{guild_emoji(combat_role(role))} {role}" if guild_emoji(combat_role(role)) else role
             for role in roles
         )
     return " / ".join(roles)
@@ -627,16 +627,16 @@ class WizardStepView(discord.ui.View):
         self.state = state
         self.stage = stage
         self.add_item(selector(state))
-        back = discord.ui.Button(
-            label="‹ Back", style=discord.ButtonStyle.secondary, row=1,
-        )
-        back.callback = self.back
-        self.add_item(back)
         forward = discord.ui.Button(
             label="Next ›", style=discord.ButtonStyle.secondary, row=1,
         )
         forward.callback = self.forward
         self.add_item(forward)
+        back = discord.ui.Button(
+            label="‹ Back", style=discord.ButtonStyle.secondary, row=1,
+        )
+        back.callback = self.back
+        self.add_item(back)
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
@@ -1135,7 +1135,7 @@ class DungeonState:
         self.dungeons = tuple(
             d.strip() for d in current["dungeons"].split(", ")
         ) if current else ()
-        self.item_ids = current["item_ids"] if current else ""
+        self.wanted_items = current["wanted_items"] if current else ""
         self.availability = current["availability"] if current else ""
         self.notes = current["notes"] if current else ""
 
@@ -1272,10 +1272,11 @@ class DungeonDetailsModal(discord.ui.Modal, title="LF Dungeons · Farming detail
         super().__init__(timeout=600)
         self.state = state
         self.items = discord.ui.TextInput(
-            label="Wowhead item ID(s), optional",
-            placeholder="e.g. 11815, 12590 or Forever item URL",
-            default=state.item_ids or None, required=False,
-            max_length=500,
+            label="Items needed (optional)",
+            placeholder="List items you're hoping to farm",
+            default=state.wanted_items or None, required=False,
+            max_length=lfg_dungeons.MAX_ITEMS_TEXT,
+            style=discord.TextStyle.paragraph,
         )
         self.availability = discord.ui.TextInput(
             label="Availability",
@@ -1302,12 +1303,12 @@ class DungeonDetailsModal(discord.ui.Modal, title="LF Dungeons · Farming detail
             character = shared_character(state.owner_id, state.character_id)
             if character is None:
                 raise ValueError("Your selected character no longer exists.")
-            ids = lfg_dungeons.parse_item_ids(self.items.value)
+            wanted_items = lfg_dungeons.normalise_wanted_items(self.items.value)
             chosen = lfg_dungeons.validate_dungeons(state.dungeons)
             with connect() as db:
                 lfg_dungeons.save_request(
                     db, state.channel_id, state.owner_id, character[0],
-                    chosen, ids, self.availability.value, self.notes.value,
+                    chosen, wanted_items, self.availability.value, self.notes.value,
                     str(interaction.user.display_avatar.url),
                 )
         except (ValueError, sqlite3.Error) as exc:
@@ -1469,7 +1470,7 @@ class BoardLayout(discord.ui.LayoutView):
         heading = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> LFG-LFM Board\n"
-                "**Find launch groups and level 45+ dungeon farms.**"
+                "**Ogre help find launch groups and dungeon runs (45+).**"
                 + ("\n-# DEMO PREVIEW · 20 fictional players · nothing saved"
                    if preview else "")
             ),
@@ -1514,15 +1515,11 @@ class BoardLayout(discord.ui.LayoutView):
                 else:
                     _, name, klass, spec, role, _ = character
                     title = (f"{safe(name)} · {guild_emoji(klass)} {klass} · "
-                             f"{role} {guild_emoji(combat_role(role, klass, spec))}")
-                items = tuple(
-                    int(raw) for raw in row["item_ids"].split(",")
-                    if raw.isdecimal()
-                )
+                             f"{guild_emoji(combat_role(role, klass, spec))} {role}")
                 lines = [
                     f"**LF Dungeons · {title}**",
                     f"-# **Dungeons:** {safe(row['dungeons'])}",
-                    f"-# **Items:** {lfg_dungeons.item_links(items) if items else 'Not specified'}",
+                    f"-# **Items needed:** {safe(row['wanted_items']) if row['wanted_items'] else 'Not specified'}",
                     f"-# **Available:** {safe(row['availability'])}",
                 ]
                 if row["notes"]:
@@ -1548,7 +1545,7 @@ class BoardLayout(discord.ui.LayoutView):
                 else (row["character"], row["class_name"], "", row["role"])
             )
             roles = " / ".join(
-                f"{part.strip()} {guild_emoji(combat_role(part.strip(), profile_class, profile_spec))}"
+                f"{guild_emoji(combat_role(part.strip(), profile_class, profile_spec))} {part.strip()}"
                 for part in profile_role.split(",") if part.strip()
             ) or "Role not set"
             days = row["days_off"] or "Not set"
