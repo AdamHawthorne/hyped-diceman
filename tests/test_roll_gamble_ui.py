@@ -146,7 +146,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([button.label for button in buttons],
                          ["Roll", "Gamble", "Leaderboard", "My stats"])
         self.assertEqual(buttons[1].style, discord.ButtonStyle.danger)
-        self.assertEqual(str(buttons[0].emoji), "<:ogredice:1566126699043880992>")
+        self.assertEqual(str(buttons[0].emoji), "<:ogredice:1565477510651846767>")
         self.assertEqual(str(buttons[1].emoji), "<:ogrecoin:1565481626488807434>")
         self.assertEqual(buttons[1].custom_id, "hyped_ogre_coin_gamble_v1")
         self.assertTrue(panel.is_persistent())
@@ -202,7 +202,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.send.await_count, 1)
         self.assertIn("19", self.channel.send.await_args.args[0])
         self.assertIn("91", self.channel.send.await_args.args[0])
-        self.assertIn("<:ogredice:1566126699043880992>", self.channel.send.await_args.args[0])
+        self.assertIn("<:ogredice:1565477510651846767>", self.channel.send.await_args.args[0])
         self.assertIn("Gamer risked a coin to roll again:", self.channel.send.await_args.args[0])
         self.assertIn("Ogre say good roll. Have coin back!", self.channel.send.await_args.args[0])
         self.ns["roll_reactions"].sync.assert_awaited_once()
