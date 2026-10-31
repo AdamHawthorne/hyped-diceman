@@ -61,7 +61,7 @@ class LFGVisualTests(unittest.TestCase):
         self.assertIn('OPEN_LFM_MARKER = guild_emoji("MoveTo")', source)
         self.assertEqual(guild_emoji("MoveTo"), "<:MoveTo:1565477356326617183>")
         self.assertIn(
-            'f"{part.strip()} {guild_emoji(combat_role(part.strip(), row[\'class_name\']))}"',
+            'f"{part.strip()} {guild_emoji(combat_role(part.strip(), profile_class, profile_spec))}"',
             source,
         )
         self.assertIn('f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""', source)
