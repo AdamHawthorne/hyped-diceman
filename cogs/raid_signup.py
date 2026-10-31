@@ -419,6 +419,23 @@ def delete_character(discord_id, character_id, path=RAID_DB):
                     "This character has raid sign-up or attendance history. "
                     "Ogre won't delete that history. Ask leadership to archive it."
                 )
+        # The LFG board stores only this canonical character ID. Refuse to
+        # orphan public dungeon or launch requests when someone deletes it.
+        lfg_path = os.getenv(
+            "LFG_DB_PATH",
+            "/data/lfg_board.db" if os.path.isdir("/data") else "lfg_board.db")
+        if path == RAID_DB and os.path.isfile(lfg_path):
+            with sqlite3.connect(lfg_path, timeout=10) as lfg_db:
+                for table in ("lfg_dungeon_requests", "lfg_listings"):
+                    exists = lfg_db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                        (table,)).fetchone()
+                    if exists and lfg_db.execute(
+                            f"SELECT 1 FROM {table} WHERE user_id=? AND character_id=? "
+                            "LIMIT 1", (discord_id, character_id)).fetchone():
+                        raise ValueError(
+                            "This character is used on the LFG board. "
+                            "Remove its dungeon request or update its launch plan first.")
         # Gear belongs exclusively to this character, unlike raid history.
         for table in ("gear_exports", "gear_images"):
             con.execute(f"DELETE FROM {table} WHERE character_id=?", (character_id,))
