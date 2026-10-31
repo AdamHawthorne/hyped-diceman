@@ -99,7 +99,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("**Playing:**", source)
         self.assertIn("**Notes:**", source)
         self.assertIn("**Plan:**", source)
-        self.assertIn("WGNGdr.png", source)
+        self.assertNotIn("WGNGdr.png", source)
         self.assertIn("compact_days", source)
         self.assertIn("Sun 15 Nov", source)
         self.assertIn("50 hours +", source)
