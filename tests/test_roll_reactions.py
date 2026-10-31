@@ -94,6 +94,34 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.has(top, "<:ogrecoin:1564336079430099035>"))
         self.assertTrue(self.has(extra, "<:ogrecoin:1564336079430099035>"))
 
+    async def test_gamble_keeps_lowest_individual_roll_on_original_post(self):
+        kaja = self.add(1, 15, 1)
+        tom_free = self.add(2, 3, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(tom_free, '💩'))
+        self.assertFalse(self.has(kaja, '💩'))
+        self.con.execute("INSERT INTO rolls VALUES (2, 35, 'gamble', 3)")
+        tom_gamble = Message(2)
+        tom_gamble.id = 3
+        self.messages.append(tom_gamble)
+        await self.tracker.sync()
+        self.assertTrue(self.has(tom_free, '💩'))
+        self.assertFalse(self.has(tom_gamble, '💩'))
+        self.assertFalse(self.has(kaja, '💩'))
+        self.assertEqual(self.errors, [])
+
+    async def test_low_gamble_is_tagged_on_its_own_message(self):
+        base = self.add(1, 90, 1)
+        other = self.add(2, 30, 2)
+        self.con.execute("INSERT INTO rolls VALUES (1, 2, 'gamble', 3)")
+        extra = Message(1)
+        extra.id = 3
+        self.messages.append(extra)
+        await self.tracker.sync()
+        self.assertTrue(self.has(extra, '💩'))
+        self.assertFalse(self.has(base, '💩'))
+        self.assertFalse(self.has(other, '💩'))
+
     async def test_ignore_old_rolls_and_other_channels(self):
         a = self.add(1, 50)
         self.con.execute("INSERT INTO rolls VALUES (2, 100, 'user', 2)")
