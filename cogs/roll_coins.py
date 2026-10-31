@@ -26,7 +26,43 @@ def ensure_coin_schema(con):
     """)
     con.execute("""CREATE INDEX IF NOT EXISTS idx_coin_awards_user
                    ON roll_coin_awards(guild_id, user_id)""")
+    # Durable UK-day gate shared by the leaderboard button and /leaderboard.
+    # A single successful INSERT reserves the day's one public display.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS roll_public_leaderboards (
+            guild_id INTEGER NOT NULL,
+            roll_date TEXT NOT NULL,
+            requested_by INTEGER NOT NULL,
+            claimed_at INTEGER NOT NULL,
+            PRIMARY KEY(guild_id, roll_date)
+        )
+    """)
 
+
+
+
+def claim_public_coin_leaderboard(con, guild_id, roll_date, user_id, now=None):
+    """Reserve at most one public Ledger display per guild per UK calendar day.
+
+    SQLite's unique key also serialises near-simultaneous button and slash
+    requests. Other requests can still receive a private ephemeral copy.
+    The reservation survives bot restarts on the existing persistent DB.
+    """
+    now = now or datetime.now(UK)
+    result = con.execute("""
+        INSERT OR IGNORE INTO roll_public_leaderboards
+            (guild_id, roll_date, requested_by, claimed_at)
+        VALUES (?, ?, ?, ?)
+    """, (guild_id, roll_date, user_id, int(now.timestamp())))
+    return result.rowcount == 1
+
+
+def release_public_coin_leaderboard(con, guild_id, roll_date, user_id):
+    """Release a failed reservation only if the same requester claimed it."""
+    return con.execute("""
+        DELETE FROM roll_public_leaderboards
+        WHERE guild_id=? AND roll_date=? AND requested_by=?
+    """, (guild_id, roll_date, user_id)).rowcount == 1
 
 def settle_completed_days(con, guild_id, now=None):
     """Backfill missing awards only. Safe to rerun after restarts or failures."""
