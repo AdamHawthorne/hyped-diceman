@@ -1447,6 +1447,9 @@ async def post_daily_reset_message(*, refresh_existing=False):
                 await posted.edit(content=None, embeds=[], attachments=[],
                                   view=build_daily_roll_panel(day=now.date()),
                                   allowed_mentions=discord.AllowedMentions.none())
+                # Preserve the midnight winner catch-up when the bot restarts
+                # during 00:00-00:10 and refreshes the existing panel.
+                await announce_coin_winner(channel, now.date())
                 return True
             except discord.NotFound:
                 pass
