@@ -27,11 +27,14 @@ class RollReactions:
         start, end = self.today_range()
         with self.db() as con:
             rows = con.execute(
-                "SELECT user_id, value FROM rolls WHERE actor_type IN ('user', 'bot') "
+                "SELECT user_id, value FROM rolls WHERE actor_type IN ('user', 'gamble', 'bot') "
                 "AND rolled_at >= ? AND rolled_at < ? ORDER BY rolled_at ASC, rowid ASC",
                 (start, end),
             ).fetchall()
-        all_scores = {row[0]: row[1] for row in rows}
+        # A lower gamble roll must never replace the member's existing best.
+        all_scores = {}
+        for user_id, value in rows:
+            all_scores[user_id] = max(value, all_scores.get(user_id, 0))
         scores = {uid: value for uid, value in all_scores.items() if uid != 0}
         if not scores:
             return
@@ -42,7 +45,7 @@ class RollReactions:
         # Read real messages instead of persisting webhook response objects.
         # This also recovers today's rolls posted before this feature was deployed.
         messages = []
-        seen = set()
+        latest_by_user = {}
         async for message in channel.history(
             limit=None, after=datetime.fromtimestamp(start, timezone.utc),
             before=datetime.fromtimestamp(end + 1, timezone.utc), oldest_first=True,
@@ -53,16 +56,16 @@ class RollReactions:
             if not match:
                 continue
             user_id = int(match.group(1))
-            if user_id in scores and user_id not in seen:
+            if user_id in scores:
                 messages.append((user_id, message))
-                seen.add(user_id)
+                latest_by_user[user_id] = message.id
 
         # Only visible human roll messages count for reaction ranking.
         # Keep Ogre's saved roll even though his message has no user mention.
         all_scores = {user_id: value for user_id, value in all_scores.items()
-                      if user_id == 0 or user_id in seen}
+                      if user_id == 0 or user_id in latest_by_user}
         # Rank by stored values, never by April Fools' display values.
-        scores = {user_id: value for user_id, value in scores.items() if user_id in seen}
+        scores = {user_id: value for user_id, value in scores.items() if user_id in latest_by_user}
         if not scores:
             return
         high = max(scores, key=scores.get)
@@ -85,8 +88,10 @@ class RollReactions:
                     except Exception as exc:
                         self.log_error(f"ROLL REACTION CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
-                (high_emoji, user_id == high),
-                ("💩", low is not None and user_id == low and scores[low] < max(all_scores.values())),
+                (high_emoji, user_id == high and message.id == latest_by_user[user_id]),
+                ("💩", low is not None and user_id == low
+                 and scores[low] < max(all_scores.values())
+                 and message.id == latest_by_user[user_id]),
             ):
                 present = any(str(r.emoji) == str(emoji) and r.me for r in message.reactions)
                 try:
