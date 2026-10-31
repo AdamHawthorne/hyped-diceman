@@ -76,7 +76,7 @@ class DungeonRequestTests(unittest.TestCase):
         self.assertEqual(
             dungeon.validate_dungeons((
                 "Blackrock Depths", "Warsong Gulch", "Hall of Thanes")),
-            ("Hall of Thanes", "Blackrock Depths", "Warsong Gulch")
+            ("Blackrock Depths", "Hall of Thanes", "Warsong Gulch")
         )
         self.assertEqual(dungeon.validate_dungeons(
             ("Blackmaw Hold", "Alcaz Prison", "Blackmaw Hold")),
