@@ -97,8 +97,8 @@ LAUNCH_DAYS = (
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
 BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
-# Native Unicode emoji stays sharp and requires no guild emoji permissions.
-OPEN_LFM_MARKER = "🟢"
+# Use the guild's fixed custom emojis for LFM and combat roles.
+OPEN_LFM_MARKER = guild_emoji("MoveTo")
 ROLE_EMOJIS = {role: guild_emoji(role) for role in ("Tank", "Healer", "Melee", "Ranged", "Caster")}
 ACCENT = 0x8C5A3C
 
