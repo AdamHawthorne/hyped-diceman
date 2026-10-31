@@ -37,6 +37,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
     def add(self, user, score, stamp=1):
         self.con.execute('INSERT INTO rolls VALUES (?, ?, ?, ?)', (user, score, 'user', stamp))
         m = Message(user)
+        m.id = len(self.messages) + 1
         self.messages.append(m)
         return m
 
@@ -65,6 +66,33 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         await self.tracker.sync()
         self.assertEqual(len(d.reactions), 1)
         self.assertEqual(self.errors, [])
+
+    async def test_gamble_higher_moves_highest_icon_to_latest_message(self):
+        base = self.add(1, 30, 1)
+        contender = self.add(2, 80, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(contender, "<:ogrecoin:1564336079430099035>"))
+        self.con.execute(
+            "INSERT INTO rolls VALUES (1, 96, 'gamble', 3)")
+        extra = Message(1)
+        extra.id = 3
+        self.messages.append(extra)
+        await self.tracker.sync()
+        self.assertTrue(self.has(extra, "<:ogrecoin:1564336079430099035>"))
+        self.assertFalse(self.has(base, "<:ogrecoin:1564336079430099035>"))
+        self.assertFalse(self.has(contender, "<:ogrecoin:1564336079430099035>"))
+
+    async def test_gamble_lower_does_not_replace_original_best(self):
+        top = self.add(1, 93, 1)
+        self.add(2, 80, 2)
+        self.con.execute(
+            "INSERT INTO rolls VALUES (1, 10, 'gamble', 3)")
+        extra = Message(1)
+        extra.id = 3
+        self.messages.append(extra)
+        await self.tracker.sync()
+        self.assertFalse(self.has(top, "<:ogrecoin:1564336079430099035>"))
+        self.assertTrue(self.has(extra, "<:ogrecoin:1564336079430099035>"))
 
     async def test_ignore_old_rolls_and_other_channels(self):
         a = self.add(1, 50)
