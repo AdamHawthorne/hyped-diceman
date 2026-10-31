@@ -12,14 +12,12 @@ from urllib.parse import urlsplit
 
 import discord
 from cogs.emojis import markup as guild_emoji, combat_role
-from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 UK = ZoneInfo("Europe/London")
 RAID_IMAGE = "https://i.vgy.me/XIszIH.png"  # Poster thumbnail stays unchanged.
 RAID_PANEL_IMAGE = "https://i.vgy.me/asI88C.png"
-RAID_PANEL_BANNER = "https://i.vgy.me/y6bCxy.png"
 ACCENT = 0xA87535  # Keep the private raid poster setup colour.
-RAID_PANEL_ACCENT = LEADERSHIP_ACCENT
+RAID_PANEL_ACCENT = 0xB84A3A  # Public raid panel side colour.
 DEFAULT_CHECK_CHANNEL_ID = 1563663258047619123
 _UNCHANGED = object()  # Older /raid setup calls must keep poster-specific settings.
 RAID_COLUMNS = {
@@ -145,7 +143,7 @@ def validate_softres_url(value):
 
 
 def validate_banner_url(value):
-    """Allow an optional public HTTPS direct image link; blank uses default art."""
+    """Allow an optional public HTTPS direct image link; blank means no image."""
     if not value or not value.strip():
         return None
     url = value.strip()
@@ -712,11 +710,14 @@ class RaidEventPanel(discord.ui.LayoutView):
                )] + roster_components(event, public_roster, emoji_map=emoji_map)
                if public_roster else [] ),
             discord.ui.TextDisplay(raid_roster_status(event)),
-            discord.ui.MediaGallery(
-                discord.MediaGalleryItem(
-                    media=event.get("banner_url") or RAID_PANEL_BANNER,
-                    description="Hyped raid bottom banner",
-                ),
+            *(
+                [discord.ui.MediaGallery(
+                    discord.MediaGalleryItem(
+                        media=event["banner_url"],
+                        description="Hyped raid bottom banner",
+                    ),
+                )]
+                if event.get("banner_url") else []
             ),
             accent_color=RAID_PANEL_ACCENT,
         ))
