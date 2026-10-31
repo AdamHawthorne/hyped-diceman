@@ -9,7 +9,8 @@ PAGE_SIZE = 15
 
 class DailyRollPanel(discord.ui.LayoutView):
     def __init__(self, *, day, winner_text, tagline, on_roll, on_leaderboard,
-                 on_stats, top_five=(), coin_emoji="gold coin", ogre_id=0, preview=False):
+                 on_stats, top_five=(), coin_emoji="gold coin", ogre_id=0,
+                 preview=False, on_gamble=None):
         super().__init__(timeout=60 if preview else None)
         self.add_item(discord.ui.Container(
             discord.ui.Section(
@@ -31,15 +32,20 @@ class DailyRollPanel(discord.ui.LayoutView):
             accent_color=GOLD,
         ))
         controls = discord.ui.ActionRow()
-        for label, custom_id, callback in (
+        actions = [
             ("Roll", "hyped_ogre_daily_roll_v2", on_roll),
             ("Leaderboard", "hyped_ogre_coin_leaderboard", on_leaderboard),
             ("My stats", "hyped_ogre_roll_stats", on_stats),
-        ):
+        ]
+        if on_gamble is not None:
+            actions.insert(1, ("Gamble", "hyped_ogre_coin_gamble_v1", on_gamble))
+        for label, custom_id, callback in actions:
             button = discord.ui.Button(
                 label=label, custom_id=custom_id,
                 emoji="🎲" if label == "Roll" else None,
-                style=(discord.ButtonStyle.success if label == "Roll" else discord.ButtonStyle.secondary),
+                style=(discord.ButtonStyle.success if label == "Roll" else
+                       discord.ButtonStyle.danger if label == "Gamble" else
+                       discord.ButtonStyle.secondary),
                 disabled=preview,
             )
             button.callback = callback
@@ -62,8 +68,8 @@ class CoinLeaderboard(discord.ui.LayoutView):
             discord.ui.TextDisplay(
                 "## Ogre\' Ledger\n"
                 + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
-                + f"\n\n-# Ogre give out {sum(r['coins'] for r in rows)} "
-                  f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'}."
+                + f"\n\n-# Ogre count {sum(r['coins'] for r in rows)} "
+                  f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'} still held."
             ), accent_color=GOLD,
         ))
         if pages > 1:
