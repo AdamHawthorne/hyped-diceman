@@ -85,7 +85,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("class LaunchDaysView", source)
         self.assertIn("Group Questing + Dungeons (LFM)", source)
         self.assertIn("Grinding (Dungeons, grind spots etc)", source)
-        self.assertIn("Find launch groups and level 45+ dungeon farms.", source)
+        self.assertIn("Ogre help find launch groups and dungeon runs (45+).", source)
         self.assertIn('label="Character name"', source)
         self.assertIn('placeholder="Forename Surname"', source)
         self.assertIn("START_TIMES", source)
