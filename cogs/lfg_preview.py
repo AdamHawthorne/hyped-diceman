@@ -212,6 +212,14 @@ def launch_profile(row):
     return row["character"], row["class_name"], "", row["role"]
 
 
+def launch_race(row):
+    """Read race from shared character, falling back to preserved launch data."""
+    char_id = row.get("character_id") if isinstance(row, dict) else None
+    race = (raid_signup.character_race(row["user_id"], char_id)
+            if char_id else "")
+    return race or row["race"]
+
+
 def safe(value):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(value)))
 
@@ -774,6 +782,14 @@ class ReviewView(discord.ui.View):
             )
             return
 
+        try:
+            # Commit the race through the same character profile used by raids.
+            raid_signup.set_character_race(
+                self.state.owner_id, self.state.character_id, draft.race)
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't save race: {exc}", ephemeral=True)
+            return
         await interaction.response.defer()
         with connect() as db:
             db.execute(
@@ -874,6 +890,10 @@ class LaunchCharacterPicker(discord.ui.View):
                 state.draft.character = row[1]
                 state.draft.class_name = row[2]
                 state.draft.role = row[4]
+                shared_race = raid_signup.character_race(state.owner_id, row[0])
+                if shared_race:
+                    state.draft.race = shared_race
+                    state.draft.starting_zone = STARTING_ZONES[shared_race]
                 if state.draft.race not in RACE_CLASSES or (
                         state.draft.class_name not in
                         RACE_CLASSES.get(state.draft.race, ())):
@@ -1511,7 +1531,8 @@ class BoardLayout(discord.ui.LayoutView):
                 self.add_item(container)
                 continue
 
-            race = row["race"] or "Race not set"
+            race = launch_race(row) if not preview else row["race"]
+            race = race or "Race not set"
             zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
             profile_name, profile_class, profile_spec, profile_role = (
                 launch_profile(row) if isinstance(row, dict) and not preview
@@ -1585,6 +1606,23 @@ class LFGPreview(commands.Cog):
                 ),
                 message_id=board["message_id"],
             )
+
+    async def refresh_member_boards(self, member_id):
+        """Refresh every board referencing this member's shared profile."""
+        with connect() as db:
+            ids = {
+                row[0] for row in db.execute(
+                    "SELECT channel_id FROM lfg_listings WHERE user_id=? "
+                    "UNION SELECT channel_id FROM lfg_dungeon_requests WHERE user_id=?",
+                    (member_id, member_id),
+                )
+            }
+        for channel_id in ids:
+            try:
+                await self.refresh(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException,
+                    sqlite3.Error) as exc:
+                print(f"LFG SHARED CHARACTER REFRESH FAILED {channel_id}: {exc!r}")
 
     async def refresh(self, channel_id):
         """Update the original message only; never create public player posts."""
