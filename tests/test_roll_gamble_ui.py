@@ -146,6 +146,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([button.label for button in buttons],
                          ["Roll", "Gamble", "Leaderboard", "My stats"])
         self.assertEqual(buttons[1].style, discord.ButtonStyle.danger)
+        self.assertEqual(str(buttons[1].emoji), "<:ogrecoin:1565481626488807434>")
         self.assertEqual(buttons[1].custom_id, "hyped_ogre_coin_gamble_v1")
         self.assertTrue(panel.is_persistent())
 
