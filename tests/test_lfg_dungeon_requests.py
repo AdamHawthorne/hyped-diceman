@@ -43,10 +43,11 @@ class DungeonRequestTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def save(self, user_id=123, dungeons=("Alcaz Prison", "Blackrock Depths"),
-             item_ids=(11815, 12590), availability="Evenings 19:00 onwards"):
+             wanted_items="Hand of Justice, a better shield",
+             availability="Evenings 19:00 onwards"):
         with lfg.connect() as db:
             dungeon.save_request(
-                db, 111, user_id, self.character_id, dungeons, item_ids,
+                db, 111, user_id, self.character_id, dungeons, wanted_items,
                 availability, "Farm until drop", "https://i.vgy.me/XIszIH.png")
 
     def test_all_forever_new_endgame_dungeons_and_classic_45_plus(self):
@@ -65,17 +66,41 @@ class DungeonRequestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dungeon.validate_dungeons(())
 
-    def test_item_links_are_canonical_and_sanitised(self):
-        parsed = dungeon.parse_item_ids(
-            "11815, https://www.wowhead.com/forever/item=12590; 11815")
-        self.assertEqual(parsed, (11815, 12590))
-        self.assertIn("[Item #12590](https://www.wowhead.com/forever/item=12590)",
-                      dungeon.item_links(parsed))
-        for bad in ("https://example.com/forever/item=42",
-                    "https://www.wowhead.com/retail/item=42",
-                    "1](https://bad.example)", "0", "-5", "1,2,3,4,5,6"):
-            with self.subTest(bad=bad), self.assertRaises(ValueError):
-                dungeon.parse_item_ids(bad)
+    def test_items_are_plain_text_without_url_parsing(self):
+        self.assertEqual(
+            dungeon.normalise_wanted_items("  Hand of Justice,  staff  "),
+            "Hand of Justice, staff",
+        )
+        self.assertEqual(
+            dungeon.normalise_wanted_items("Need HoJ and a weapon"),
+            "Need HoJ and a weapon",
+        )
+        with self.assertRaises(ValueError):
+            dungeon.normalise_wanted_items("x" * 251)
+
+    def test_existing_item_ids_are_preserved_as_plain_text(self):
+        with lfg.connect() as db:
+            db.execute(
+                "INSERT INTO lfg_dungeon_requests "
+                "(channel_id,user_id,character_id,dungeons,item_ids,availability) "
+                "VALUES (111,123,?,'Blackrock Depths','11815,12590','Evenings')",
+                (self.character_id,),
+            )
+            db.execute("UPDATE lfg_dungeon_requests SET wanted_items='11815, 12590'")
+        lfg.init_db()
+        with lfg.connect() as db:
+            self.assertEqual(
+                dungeon.get_request(db, 111, 123)["wanted_items"],
+                "11815, 12590",
+            )
+        self.save(wanted_items="Justice, shield")
+        lfg.init_db()
+        with lfg.connect() as db:
+            self.assertEqual(
+                dungeon.get_request(db, 111, 123)["wanted_items"],
+                "Justice, shield",
+            )
+            self.assertEqual(dungeon.get_request(db, 111, 123)["item_ids"], "")
 
     def test_dungeon_request_updates_remove_without_touching_launch_plan(self):
         with lfg.connect() as db:
@@ -84,20 +109,20 @@ class DungeonRequestTests(unittest.TestCase):
                 "(channel_id,user_id,character,class_name,role,availability,activity) "
                 "VALUES (111,123,'Legacy Name','Warrior','Tank','Later','Open / Flexible')")
         self.save()
-        self.save(dungeons=("Shaper's Terrace",), item_ids=(1234,),
+        self.save(dungeons=("Shaper's Terrace",), wanted_items="New staff",
                   availability="Sunday afternoon")
         with lfg.connect() as db:
             requests = dungeon.list_requests(db, 111)
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0]["character_id"], self.character_id)
             self.assertEqual(requests[0]["dungeons"], "Shaper's Terrace")
-            self.assertEqual(requests[0]["item_ids"], "1234")
+            self.assertEqual(requests[0]["wanted_items"], "New staff")
             self.assertEqual(dungeon.delete_request(db, 111, 999), 0)
             self.assertEqual(dungeon.delete_request(db, 111, 123), 1)
             self.assertIsNotNone(db.execute(
                 "SELECT 1 FROM lfg_listings WHERE user_id=123").fetchone())
 
-    def test_board_uses_latest_canonical_character_data_and_paginates(self):
+    def test_board_uses_latest_canonical_character_and_plain_text_items(self):
         self.save()
         board = lfg.BoardLayout(SimpleNamespace(), 111, guild=None)
         payload = json.dumps(board.to_components())
@@ -106,7 +131,9 @@ class DungeonRequestTests(unittest.TestCase):
         self.assertIn("Add / Update", payload)
         self.assertIn("Alcaz Prison", payload)
         self.assertIn("Blackrock Depths", payload)
-        self.assertIn("wowhead.com/forever/item=11815", payload)
+        self.assertIn("Hand of Justice, a better shield", payload)
+        self.assertNotIn("wowhead.com", payload)
+        self.assertIn("Remove Dungeon", payload)
         self.assertIn("Evenings 19:00 onwards", payload)
         self.assertIn("Snore", payload)
         self.assertIn("Warrior", payload)
