@@ -68,7 +68,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Instances:** Molten Core", text)
             self.assertNotIn("Raid instance #1:", text)
             self.assertIn("asI88C.png", text)
-            self.assertIn("y6bCxy.png", text)
+            self.assertNotIn("y6bCxy.png", text)
             self.assertNotIn("XIszIH.png", text)
             self.assertIn("Roster confirmation:", text)
             self.assertNotIn("**Check:**", text)
@@ -98,17 +98,16 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("SoftRes sign-up", text)
             self.assertFalse(any(isinstance(c, raid_schedule.discord.ui.MediaGallery)
                                  for c in panel.children))
-            # The banner belongs inside the same gold-bordered container,
-            # after the roster text and before the independent button row.
+            # A new raid should have no decorative bottom image.
+            # The headline, roster status and action buttons stay in place.
             components = panel.to_components()
             self.assertEqual(len(components), 2)
             self.assertEqual(components[0]["type"], 17)  # Container
             self.assertEqual(components[1]["type"], 1)   # Action row of buttons
             self.assertEqual(components[0]["components"][0]["type"], 9)  # Section
-            self.assertEqual(components[0]["components"][-1]["type"], 12) # Media gallery
-            self.assertIn("y6bCxy.png", json.dumps(components[0]["components"][-1]))
-            self.assertLess(text.index("Roster confirmation:"), text.index("y6bCxy.png"))
-            self.assertLess(text.index("y6bCxy.png"), text.index('"label": "Attend"'))
+            self.assertFalse(any(item["type"] == 12
+                                 for item in components[0]["components"]))
+            self.assertLess(text.index("Roster confirmation:"), text.index('"label": "Attend"'))
             self.assertIn("<t:", text)
             self.assertNotIn("Snore Mon", text)
             self.assertTrue(panel.is_persistent())
@@ -187,9 +186,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             main = rendered[0]["components"]
             self.assertEqual(main[0]["type"], 9)   # Intro + thumbnail
             self.assertEqual(rendered[0]["accent_color"], raid_schedule.RAID_PANEL_ACCENT)
-            self.assertEqual(raid_schedule.RAID_PANEL_ACCENT, 0x8C5A3C)
+            self.assertEqual(raid_schedule.RAID_PANEL_ACCENT, 0xB84A3A)
             self.assertNotEqual(raid_schedule.ACCENT, raid_schedule.RAID_PANEL_ACCENT)
-            self.assertEqual(main[-1]["type"], 12) # Bottom banner
+            self.assertNotIn(12, [item["type"] for item in main])  # No default banner
             self.assertLess(len(main), 11) # Discord container component budget
             self.assertNotIn("discord.com/channels/", json.dumps(rendered))
             self.assertFalse(any(
@@ -394,9 +393,11 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 8, "2026-12-09 21:00", "Hyjal (20m)",
             )
             self.assertIsNone(event["banner_url"])
-            self.assertIn("y6bCxy.png", json.dumps(
+            self.assertNotIn("y6bCxy.png", json.dumps(
                 raid_schedule.RaidEventPanel(event).to_components()
             ))
+            self.assertFalse(any(item["type"] == 12 for item in
+                raid_schedule.RaidEventPanel(event).to_components()[0]["components"]))
             selected = "https://i.vgy.me/example.png"
             event = raid_schedule.save_raid(
                 path, 8, "2026-12-09 21:00", "Hyjal (20m)",
@@ -431,9 +432,11 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 banner_url="",
             )
             self.assertIsNone(event["banner_url"])
-            self.assertIn("y6bCxy.png", json.dumps(
+            self.assertNotIn("y6bCxy.png", json.dumps(
                 raid_schedule.RaidEventPanel(event).to_components()
             ))
+            self.assertFalse(any(item["type"] == 12 for item in
+                raid_schedule.RaidEventPanel(event).to_components()[0]["components"]))
             for unsafe in ("http://example.com/art.png",
                            "https://localhost/art.png",
                            "https://example.com/art.txt"):
