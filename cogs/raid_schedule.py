@@ -660,10 +660,10 @@ def raid_panel_text(event, public_roster=(), *, emoji_map=None):
         return raid_panel_intro(event) + "\n\n" + raid_roster_status(event)
     if not event.get("roster_published"):
         groups = signup_role_groups(public_roster, emoji_map=emoji_map)
-        lines = ["### Sign-ups (" + str(len(public_roster)) + ")"]
+        lines = ["**Sign-ups (" + str(len(public_roster)) + ")**"]
         for role, players in groups:
-            lines.append("**" + role + " (" + str(len(players)) + ")**\n" +
-                         "\n".join(players))
+            lines.append("-# **" + role + " (" + str(len(players)) + ")**\n" +
+                         "\n".join("-# " + player for player in players))
         return raid_panel_intro(event) + "\n\n" + "\n\n".join(lines) + (
             "\n\n" + raid_roster_status(event))
     groups = roster_groups(event, public_roster, emoji_map=emoji_map, by_role=True)
@@ -680,8 +680,8 @@ def roster_components(event, public_roster, *, emoji_map=None):
     if not event.get("roster_published"):
         return [
             discord.ui.TextDisplay(
-                "**" + role + " (" + str(len(players)) + ")**\n" +
-                "\n".join(players))
+                "-# **" + role + " (" + str(len(players)) + ")**\n" +
+                "\n".join("-# " + player for player in players))
             for role, players in signup_role_groups(
                 public_roster, emoji_map=emoji_map)
         ]
@@ -708,7 +708,7 @@ class RaidEventPanel(discord.ui.LayoutView):
             ),
             *( [discord.ui.TextDisplay(
                    "### Roster" if event.get("roster_published") else
-                   f"### Sign-ups ({len(public_roster)})"
+                   f"**Sign-ups ({len(public_roster)})**"
                )] + roster_components(event, public_roster, emoji_map=emoji_map)
                if public_roster else [] ),
             discord.ui.TextDisplay(raid_roster_status(event)),
