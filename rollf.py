@@ -1593,6 +1593,33 @@ async def sunday_double_coin_loop():
             await asyncio.sleep(120)
 
 
+HISTORIC_DICE_REFRESH_STARTED = False
+
+
+async def refresh_historical_roll_dice():
+    """Update Ogre's existing roll posts throughout the roll channel in place."""
+    channel = bot.get_channel(ROLL_CHANNEL_ID)
+    if channel is None:
+        channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
+    changed = 0
+    async for message in channel.history(limit=None, oldest_first=True):
+        if message.author.id != bot.user.id or not message.content:
+            continue
+        # Touch only Ogre's roll announcements, not member conversations.
+        if not re.match(r"^(?:<@!?\\d+> rolled |Me rolled )", message.content):
+            continue
+        updated = message.content.replace("🎲", "<:ogredice:1566126699043880992>")
+        updated = updated.replace(":ogredice:", "<:ogredice:1566126699043880992>") if "<:ogredice:" not in updated else updated
+        if updated == message.content:
+            continue
+        try:
+            await message.edit(content=updated)
+            changed += 1
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"HISTORIC ROLL DICE UPDATE FAILED message={message.id}: {exc!r}")
+    log_event(f"HISTORIC ROLL DICE UPDATED count={changed}")
+
+
 async def daily_post_loop():
     """Post the Daily Roll panel at midnight Europe/London."""
     await bot.wait_until_ready()
@@ -2002,6 +2029,16 @@ async def on_ready():
 
     await roll_reactions.sync()
     await sync_high_roller_role()
+    # Run once per process, including older days. Do not block the bot startup.
+    global HISTORIC_DICE_REFRESH_STARTED
+    if not HISTORIC_DICE_REFRESH_STARTED:
+        HISTORIC_DICE_REFRESH_STARTED = True
+        async def historical_dice_job():
+            try:
+                await refresh_historical_roll_dice()
+            except Exception as exc:
+                log_error(f"HISTORIC ROLL DICE FAILED: {exc!r}")
+        asyncio.create_task(historical_dice_job())
 
     if os.getenv("ENABLE_WEBHOOK") == "true":
         await start_webhook()
