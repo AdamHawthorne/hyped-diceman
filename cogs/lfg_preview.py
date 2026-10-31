@@ -117,6 +117,14 @@ def init_db():
             message_id INTEGER NOT NULL,
             PRIMARY KEY(channel_id, position)
         )""")
+        # Scrollable continuation messages. Keep separate from tracked legacy
+        # parts so old cleanup never mistakes live continuation cards for junk.
+        db.execute("""CREATE TABLE IF NOT EXISTS lfg_board_overflow (
+            channel_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            PRIMARY KEY(channel_id, position)
+        )""")
         db.execute("""CREATE TABLE IF NOT EXISTS lfg_listings (
             channel_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -1613,7 +1621,13 @@ class LFGPreview(commands.Cog):
                 print(f"LFG SHARED CHARACTER REFRESH FAILED {channel_id}: {exc!r}")
 
     async def refresh(self, channel_id):
-        """Update the original message only; never create public player posts."""
+        """Update the anchor and all continuation cards, with no page controls.
+
+        Discord Components V2 enforces 40 total components per message.
+        Extra cards become consecutive follow-up messages, not hidden pages.
+        Only bot message IDs recorded in lfg_board_overflow may be replaced or
+        deleted. Existing launch plans and dungeon requests are never modified.
+        """
         async with self.lock:
             row = get_board(channel_id)
             if not row:
@@ -1623,42 +1637,97 @@ class LFGPreview(commands.Cog):
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
             guild = getattr(channel, "guild", None)
-            roster = board_entries(channel_id)
-            page = clamp_page(row["page_index"], len(roster))
+            chunks = board_chunks(board_entries(channel_id))
 
             anchor = channel.get_partial_message(row["message_id"])
             await anchor.edit(
                 content=None, embeds=[], attachments=[],
-                view=BoardLayout(self, channel_id, guild,
-                                 page_index=page, roster=roster),
+                view=BoardLayout(
+                    self, channel_id, guild, roster=chunks[0],
+                    show_footer=len(chunks) == 1,
+                ),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
 
             with connect() as db:
                 db.execute(
-                    "UPDATE lfg_boards SET page_index=? WHERE channel_id=?",
-                    (page, channel_id),
+                    "UPDATE lfg_boards SET page_index=0 WHERE channel_id=?",
+                    (channel_id,),
                 )
-                # Old code generated dozens of follow-up player messages.
-                # Remove only IDs tracked in its own isolated table.
+                existing = {
+                    record["position"]: record["message_id"]
+                    for record in db.execute(
+                        "SELECT position,message_id FROM lfg_board_overflow "
+                        "WHERE channel_id=? ORDER BY position", (channel_id,)
+                    )
+                }
+                # These old pre-V2 part messages are never used for overflow.
                 legacy_parts = [
-                    dict(r) for r in db.execute(
+                    dict(record) for record in db.execute(
                         "SELECT position,message_id FROM lfg_board_parts "
-                        "WHERE channel_id=? ORDER BY position",
-                        (channel_id,),
+                        "WHERE channel_id=? ORDER BY position", (channel_id,)
                     )
                 ]
+
+            for position, members in enumerate(chunks[1:], start=1):
+                view = BoardLayout(
+                    self, channel_id, guild, roster=members,
+                    continuation=True, show_footer=position == len(chunks) - 1,
+                )
+                message_id = existing.get(position)
+                if message_id:
+                    try:
+                        await channel.get_partial_message(message_id).edit(
+                            view=view,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                        continue
+                    except discord.NotFound:
+                        # A removed continuation needs a replacement.
+                        pass
+                    # Forbidden or transient HTTP errors propagate rather than
+                    # potentially creating duplicate public cards.
+                message = await channel.send(
+                    view=view, allowed_mentions=discord.AllowedMentions.none())
+                with connect() as db:
+                    db.execute(
+                        "INSERT INTO lfg_board_overflow "
+                        "(channel_id,position,message_id) VALUES(?,?,?) "
+                        "ON CONFLICT(channel_id,position) DO UPDATE SET "
+                        "message_id=excluded.message_id",
+                        (channel_id, position, message.id),
+                    )
+
+            # Retire overflow only after the live anchor and needed
+            # continuation posts have updated successfully.
+            for position, message_id in existing.items():
+                if position < len(chunks):
+                    continue
+                try:
+                    await channel.get_partial_message(message_id).delete()
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    print(f"LFG OVERFLOW DELETE FAILED {message_id}: {exc!r}")
+                    continue
+                with connect() as db:
+                    db.execute(
+                        "DELETE FROM lfg_board_overflow "
+                        "WHERE channel_id=? AND position=? AND message_id=?",
+                        (channel_id, position, message_id),
+                    )
+
             for part in legacy_parts:
                 try:
                     await channel.get_partial_message(part["message_id"]).delete()
                 except discord.NotFound:
-                    pass  # Already deleted; safe to remove its tracking row.
+                    pass
                 except (discord.Forbidden, discord.HTTPException) as exc:
                     print(
                         f"LFG OLD PART CLEANUP FAILED channel={channel_id} "
                         f"message={part['message_id']} error={exc!r}"
                     )
-                    continue  # Keep its ID so the next refresh can retry.
+                    continue
                 with connect() as db:
                     db.execute(
                         "DELETE FROM lfg_board_parts WHERE channel_id=? AND message_id=?",
