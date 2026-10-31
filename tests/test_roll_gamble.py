@@ -81,9 +81,14 @@ class GambleDatabaseTests(unittest.TestCase):
             VALUES (9, ?, ?, 'Gamer', 99, 'manual', 123456, ?)
         """, (day, user_id, coins))
 
-    def gamble(self, *, user_id=101, first=25, extra=85, now=NOW):
+    def free_roll(self, value, *, user_id=101, now=NOW):
+        return self.writer(
+            user_id, "Gamer", value, "user", timestamp=int(now.timestamp())
+        )
+
+    def gamble(self, *, user_id=101, extra=85, now=NOW):
         return gamble_once(
-            self.con, 9, user_id, "Gamer", first_value=first,
+            self.con, 9, user_id, "Gamer",
             extra_value=extra, roll_writer=self.writer, now=now,
         )
 
@@ -95,11 +100,25 @@ class GambleDatabaseTests(unittest.TestCase):
         self.assertEqual(
             self.con.execute("SELECT COUNT(*) FROM roll_coin_gambles").fetchone()[0], 0)
 
-    def test_no_free_roll_performs_two_rolls_and_returns_stake_if_higher(self):
+    def test_gamble_requires_free_roll_without_spending_coin_or_rolling(self):
         self.award()
-        result = self.gamble(first=20, extra=88)
+        original_awards = self.con.execute(
+            "SELECT * FROM roll_coin_awards").fetchall()
+        with self.assertRaisesRegex(GambleError, "roll first"):
+            self.gamble(extra=88)
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM rolls").fetchone()[0], 0)
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM roll_coin_gambles").fetchone()[0], 0)
+        self.assertEqual(self.con.execute(
+            "SELECT * FROM roll_coin_awards").fetchall(), original_awards)
+        self.assertEqual(coin_total(self.con, 9, 101), 1)
+
+    def test_member_chooses_free_roll_first_then_wins_stake_back(self):
+        self.award()
+        self.assertTrue(self.free_roll(20))
+        result = self.gamble(extra=88)
         self.assertEqual(result["best"], 88)
-        self.assertFalse(result["had_free_roll"])
         self.assertTrue(result["stake_returned"])
         self.assertEqual(result["balance"], 1)
         self.assertEqual(self.con.execute("""
@@ -115,10 +134,8 @@ class GambleDatabaseTests(unittest.TestCase):
 
     def test_existing_free_roll_only_gets_one_extra_roll(self):
         self.award()
-        self.assertTrue(self.writer(
-            101, "Gamer", 33, "user", timestamp=int(NOW.timestamp())))
-        outcome = self.gamble(first=99, extra=90)
-        self.assertTrue(outcome["had_free_roll"])
+        self.assertTrue(self.free_roll(33))
+        outcome = self.gamble(extra=90)
         self.assertEqual(outcome["base"], 33)
         self.assertEqual(outcome["best"], 90)
         self.assertEqual(
@@ -130,7 +147,8 @@ class GambleDatabaseTests(unittest.TestCase):
         self.award()
         original_awards = self.con.execute(
             "SELECT * FROM roll_coin_awards").fetchall()
-        outcome = self.gamble(first=94, extra=20)
+        self.assertTrue(self.free_roll(94))
+        outcome = self.gamble(extra=20)
         self.assertEqual(outcome["best"], 94)
         self.assertFalse(outcome["stake_returned"])
         self.assertEqual(outcome["balance"], 0)
@@ -140,19 +158,20 @@ class GambleDatabaseTests(unittest.TestCase):
             self.con.execute("SELECT * FROM roll_coin_awards").fetchall(),
             original_awards)
         with self.assertRaisesRegex(GambleError, "one gamble per day"):
-            self.gamble(first=1, extra=100)
+            self.gamble(extra=100)
         self.assertEqual(
             self.con.execute("SELECT COUNT(*) FROM rolls").fetchone()[0], 2)
 
     def test_tie_loses_stake_and_cannot_roll_more_than_twice(self):
         self.award()
-        result = self.gamble(first=55, extra=55)
+        self.assertTrue(self.free_roll(55))
+        result = self.gamble(extra=55)
         self.assertFalse(result["stake_returned"])
         self.assertEqual(result["balance"], 0)
         self.assertEqual(
             self.con.execute("SELECT stake_returned FROM roll_coin_gambles").fetchone()[0], 0)
         with self.assertRaises(GambleError):
-            self.gamble(first=2, extra=100)
+            self.gamble(extra=100)
 
     def test_failure_after_rolls_rolls_back_all_scores_and_coin_charge(self):
         self.award()
@@ -161,13 +180,20 @@ class GambleDatabaseTests(unittest.TestCase):
             BEFORE INSERT ON roll_coin_gambles
             BEGIN SELECT RAISE(ABORT, 'test transaction abort'); END
         """)
+        self.assertTrue(self.free_roll(44))
+        before = {
+            table: self.con.execute(f"SELECT * FROM {table}").fetchall()
+            for table in ("rolls", "user_scores", "daily_scores", "roll_coin_gambles")
+        }
         with self.assertRaises(sqlite3.IntegrityError):
-            self.gamble(first=44, extra=77)
+            self.gamble(extra=77)
         self.assertEqual(coin_total(self.con, 9, 101), 1)
-        for table in ("rolls", "user_scores", "daily_scores", "roll_coin_gambles"):
+        for table, expected in before.items():
             with self.subTest(table=table):
                 self.assertEqual(
-                    self.con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0)
+                    self.con.execute(f"SELECT * FROM {table}").fetchall(),
+                    expected,
+                )
 
     def test_sunday_double_coin_award_is_limited_to_daily_winner(self):
         self.con.execute("""
@@ -217,6 +243,10 @@ class ConcurrentGambleTests(unittest.TestCase):
                          source,awarded_at,coins_awarded)
                     VALUES (9,'2026-10-30',101,'Gamer',99,'manual',123456,1)
                 """)
+                writer = load_roll_writer(con)
+                self.assertTrue(writer(
+                    101, "Gamer", 25, "user", timestamp=int(NOW.timestamp())
+                ))
 
             def attempt(extra):
                 with closing(sqlite3.connect(
@@ -225,8 +255,8 @@ class ConcurrentGambleTests(unittest.TestCase):
                     try:
                         return gamble_once(
                             con, 9, 101, "Gamer",
-                            first_value=25, extra_value=extra,
-                            roll_writer=load_roll_writer(con), now=NOW)
+                            extra_value=extra, roll_writer=load_roll_writer(con),
+                            now=NOW)
                     except GambleError:
                         return None
 
