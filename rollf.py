@@ -1486,6 +1486,96 @@ async def post_daily_reset_message(*, refresh_existing=False):
         return True
 
 
+async def announce_sunday_double_coin():
+    """Post one weekly notice during Sunday 10:00–16:00 UK, not a reminder flood.
+
+    The two-coin daily prize applies to all Sunday's rolls, including rolls
+    made before 10:00 or after the announcement window.
+    """
+    now = datetime.now(TZ)
+    if now.weekday() != 6 or not 10 <= now.hour < 16:
+        return True
+    if daily_coin_prize(now.date()) != 2:
+        return True
+    day = now.date().isoformat()
+    con = db()
+    if con.execute(
+        "SELECT 1 FROM roll_sunday_bonus_notices WHERE guild_id=? AND roll_date=?",
+        (HYPED_GUILD_ID, day),
+    ).fetchone():
+        return True
+
+    channel = bot.get_channel(ROLL_CHANNEL_ID)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"SUNDAY BONUS CHANNEL LOOKUP FAILED: {exc!r}")
+            return False
+
+    marker = "Sunday double coin day!"
+    notice = (
+        f"**{marker}** {ogre_coin_emoji()}\n"
+        "**Ogre give 2 coins** to Sunday's highest roller, not 1. "
+        "Only one daily winner. Gamble give no extra coin."
+    )
+    try:
+        # Recover any notice sent immediately before a restart; never repost
+        # it just because the message ID was not saved.
+        async for message in channel.history(limit=150):
+            if (message.author.id == bot.user.id
+                    and marker in message.content
+                    and message.created_at.astimezone(TZ).date() == now.date()):
+                con.execute(
+                    "INSERT OR IGNORE INTO roll_sunday_bonus_notices "
+                    "(guild_id, roll_date, message_id) VALUES (?, ?, ?)",
+                    (HYPED_GUILD_ID, day, message.id),
+                )
+                return True
+        message = await channel.send(
+            notice, allowed_mentions=discord.AllowedMentions.none())
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log_error(f"SUNDAY DOUBLE COIN NOTICE FAILED: {exc!r}")
+        return False
+    con.execute(
+        "INSERT OR IGNORE INTO roll_sunday_bonus_notices "
+        "(guild_id, roll_date, message_id) VALUES (?, ?, ?)",
+        (HYPED_GUILD_ID, day, message.id),
+    )
+    log_event(f"SUNDAY DOUBLE COINS NOTICE date={day} message={message.id}")
+    return True
+
+
+async def sunday_double_coin_loop():
+    """Wake at 10:00 UK Sundays and retry until 16:00 only if needed."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            now = datetime.now(TZ)
+            if now.weekday() == 6 and 10 <= now.hour < 16:
+                if not await announce_sunday_double_coin():
+                    await asyncio.sleep(120)
+                    continue
+                now = datetime.now(TZ)
+
+            delta = (6 - now.weekday()) % 7
+            next_announcement = (now + timedelta(days=delta)).replace(
+                hour=10, minute=0, second=0, microsecond=0,
+            )
+            if next_announcement <= now:
+                next_announcement = (now + timedelta(days=7)).replace(
+                    hour=10, minute=0, second=0, microsecond=0,
+                )
+            await asyncio.sleep(
+                max(1, next_announcement.timestamp() - now.timestamp())
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log_error(f"SUNDAY DOUBLE COIN SCHEDULER ERROR: {exc!r}")
+            await asyncio.sleep(120)
+
+
 async def daily_post_loop():
     """Post the Daily Roll panel at midnight Europe/London."""
     await bot.wait_until_ready()
@@ -1795,7 +1885,7 @@ async def on_ready():
             f"BOT STARTED ({BOT_NAME})"
         )
 
-    global DAILY_ROLL_TASK, CROWN_RESET_TASK, DAILY_POST_TASK
+    global DAILY_ROLL_TASK, CROWN_RESET_TASK, DAILY_POST_TASK, SUNDAY_BONUS_TASK
 
     ensure_schema()
     ensure_indexes()
@@ -1817,6 +1907,9 @@ async def on_ready():
 
     if DAILY_POST_TASK is None or DAILY_POST_TASK.done():
         DAILY_POST_TASK = asyncio.create_task(daily_post_loop())
+
+    if SUNDAY_BONUS_TASK is None or SUNDAY_BONUS_TASK.done():
+        SUNDAY_BONUS_TASK = asyncio.create_task(sunday_double_coin_loop())
 
     await post_botlist_commands()
     await post_bot_stats()
