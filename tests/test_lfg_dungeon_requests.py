@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("HYPED_GUILD_ID", "123456789012345678")
 
@@ -57,7 +57,27 @@ class DungeonRequestTests(unittest.TestCase):
         self.assertIn("Zul'Farrak", dungeon.DUNGEONS)
         self.assertIn("Blackrock Depths", dungeon.DUNGEONS)
         self.assertIn("Scholomance", dungeon.DUNGEONS)
-        self.assertLessEqual(len(dungeon.DUNGEONS), 25)
+        self.assertEqual(len(dungeon.DUNGEONS), 35)
+        self.assertEqual(len(dungeon.ACTIVITY_GROUPS), 4)
+        self.assertTrue(all(1 <= len(group) <= 25
+                            for group in dungeon.ACTIVITY_GROUPS.values()))
+        self.assertTrue(all(len(set(group)) == len(group)
+                            for group in dungeon.ACTIVITY_GROUPS.values()))
+        for new_dungeon in (
+            "Hall of Thanes", "Ruins of Lordaeron", "Excavation Site",
+            "City of Dalaran", "The Drowned City", "Krol'dok Stronghold",
+        ):
+            self.assertIn(new_dungeon, dungeon.DUNGEONS)
+        for activity in (
+            "Warsong Gulch", "Arathi Basin", "Alterac Valley",
+            "World PvP", "Battleground Premades",
+        ):
+            self.assertIn(activity, dungeon.ACTIVITY_GROUPS["PvP"])
+        self.assertEqual(
+            dungeon.validate_dungeons((
+                "Blackrock Depths", "Warsong Gulch", "Hall of Thanes")),
+            ("Hall of Thanes", "Blackrock Depths", "Warsong Gulch")
+        )
         self.assertEqual(dungeon.validate_dungeons(
             ("Blackmaw Hold", "Alcaz Prison", "Blackmaw Hold")),
             ("Alcaz Prison", "Blackmaw Hold"))
@@ -65,6 +85,46 @@ class DungeonRequestTests(unittest.TestCase):
             dungeon.validate_dungeons(("Shadowfang Keep",))
         with self.assertRaises(ValueError):
             dungeon.validate_dungeons(())
+
+    def test_all_dungeon_pvp_groups_fit_discord_select_limits(self):
+        for group, options in dungeon.ACTIVITY_GROUPS.items():
+            with self.subTest(group=group):
+                self.assertGreaterEqual(len(options), 1)
+                self.assertLessEqual(len(options), 25)
+        self.assertEqual(
+            len(set(dungeon.ACTIVITIES)), len(dungeon.ACTIVITIES))
+        self.assertEqual(
+            set(dungeon.DUNGEONS),
+            set(dungeon.ACTIVITIES) - set(dungeon.ACTIVITY_GROUPS["PvP"]),
+        )
+
+    def test_selection_view_uses_category_and_activity_selects(self):
+        state = SimpleNamespace(
+            category="Classic: High-level", dungeons=("Blackrock Depths",),
+            check=AsyncMock(return_value=True))
+        view = lfg.DungeonSelectionView(state)
+        selects = [
+            child for child in view.children
+            if isinstance(child, lfg.discord.ui.Select)
+        ]
+        self.assertEqual(len(selects), 2)
+        self.assertEqual(len(selects[0].options), 4)
+        self.assertEqual(
+            len(selects[1].options),
+            len(dungeon.ACTIVITY_GROUPS["Classic: High-level"]))
+        self.assertTrue(any(
+            option.default and option.value == "Blackrock Depths"
+            for option in selects[1].options))
+        state.category = "PvP"
+        other = lfg.DungeonSelectionView(state)
+        self.assertTrue(any(
+            option.value == "Warsong Gulch"
+            for child in other.children
+            if isinstance(child, lfg.discord.ui.Select)
+            for option in child.options))
+        self.assertIn("Blackrock Depths", lfg.dungeon_selection_summary(state))
+        self.assertIn("Next", str([x.label for x in other.children
+                                    if isinstance(x, lfg.discord.ui.Button)]))
 
     def test_items_are_plain_text_without_url_parsing(self):
         self.assertEqual(
