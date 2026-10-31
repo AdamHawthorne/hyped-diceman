@@ -1177,15 +1177,14 @@ class GambleConfirmView(discord.ui.View):
                 "Gamble only in daily-roll channel.", ephemeral=True)
             return
 
-        # Acknowledge promptly. Coin check + both roll writes then happen in
-        # a single SQLite transaction with no Discord await in between.
+        # Acknowledge promptly. A free roll must already exist; the coin
+        # check, single extra roll and stake are atomic, with no Discord await.
         await interaction.response.defer(ephemeral=True)
-        first = secrets.randbelow(100) + 1
         second = secrets.randbelow(100) + 1
         try:
             result = gamble_once(
                 db(), HYPED_GUILD_ID, interaction.user.id, interaction.user.name,
-                first_value=first, extra_value=second, roll_writer=insert_roll,
+                extra_value=second, roll_writer=insert_roll,
                 now=datetime.now(TZ),
             )
         except GambleError as exc:
@@ -1203,11 +1202,9 @@ class GambleConfirmView(discord.ui.View):
         # outcome is final and will not be charged or rolled a second time.
         stake_text = ("Ogre give coin back." if result["stake_returned"]
                       else "Ogre keep one coin.")
-        opening = ("Ogre rolled twice" if not result["had_free_roll"]
-                   else "Ogre gave another roll")
         notice = (
             f"{interaction.user.mention} rolled **{result['best']}** 🎲\n"
-            f"-# {opening}: **{result['base']}** → **{result['extra']}**. "
+            f"-# Ogre gave another roll: **{result['base']}** → **{result['extra']}**. "
             f"{stake_text}"
         )
         try:
@@ -1269,12 +1266,29 @@ async def show_gamble_rules(interaction):
             ephemeral=True,
         )
         return
+    # Do not offer a gambling confirmation until their own first result
+    # exists. Let the player see that roll before deciding whether to wager.
+    start, end = today_range()
+    first_roll = con.execute("""
+        SELECT value FROM rolls
+        WHERE user_id=? AND actor_type='user'
+          AND rolled_at >= ? AND rolled_at < ?
+        ORDER BY rolled_at ASC, rowid ASC LIMIT 1
+    """, (interaction.user.id, start, end)).fetchone()
+    if first_roll is None:
+        await interaction.response.send_message(
+            "Ogre say roll first. See what number you get, then decide "
+            "if shiny coin worth risking. Come back to Gamble after.",
+            ephemeral=True,
+        )
+        return
+
     prize = daily_coin_prize(datetime.now(TZ).date())
     rules = (
         "**Ogre's Gamble**\n"
+        f"Your first roll: **{first_roll[0]}**.\n"
         f"Stake: **1 {ogre_coin_emoji()} coin**, once per UK day.\n"
-        "Already rolled? Ogre gives you **one extra roll**.\n"
-        "Not rolled? Ogre rolls **twice back to back**: free roll, then gamble.\n"
+        "Ogre gives you **one extra roll** if you choose to gamble.\n"
         "**Higher second roll:** Ogre return your coin. "
         "**Tie or lower:** Ogre keep it.\n"
         "Your best roll stays in today's competition. "
