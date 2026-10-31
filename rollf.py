@@ -1607,7 +1607,7 @@ async def refresh_historical_roll_dice():
         if message.author.id != bot.user.id or not message.content:
             continue
         # Touch only Ogre's roll announcements, not member conversations.
-        if not re.match(r"^(?:<@!?\\d+> rolled |Me rolled )", message.content):
+        if not re.match(r"^(?:<@!?\d+> rolled |Me rolled )", message.content):
             continue
         updated = message.content.replace("🎲", "<:ogredice:1566126699043880992>")
         updated = updated.replace(":ogredice:", "<:ogredice:1566126699043880992>") if "<:ogredice:" not in updated else updated
