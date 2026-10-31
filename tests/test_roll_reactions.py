@@ -165,7 +165,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         await self.tracker.sync()
         self.assertTrue(self.has(old, '💩'))
         self.assertTrue(self.has(higher, '<:ogrecoin:1564336079430099035>'))
-        self.assertIn('🎲', old.content)
+        self.assertIn('<:ogredice:1566126699043880992>', old.content)
         await self.tracker.sync()
         self.assertEqual(self.errors, [])
 
@@ -174,7 +174,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         message.content = '<@1> rolled **11** <:ogredice:1566126699043880992>'
         self.add(2, 92, 2)
         await self.tracker.sync()
-        self.assertEqual(message.content, '<@1> rolled **11** 🎲')
+        self.assertEqual(message.content, '<@1> rolled **11** <:ogredice:1566126699043880992>')
         self.assertTrue(self.has(message, '💩'))
         await self.tracker.sync()
         self.assertEqual(self.errors, [])
