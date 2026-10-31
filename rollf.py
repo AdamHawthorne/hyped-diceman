@@ -1580,12 +1580,15 @@ async def daily_post_loop():
     """Post the Daily Roll panel at midnight Europe/London."""
     await bot.wait_until_ready()
     log_event(f"DAILY POST LOOP ACTIVE timezone={TZ} channel={ROLL_CHANNEL_ID}")
+    startup_refresh = True
     while not bot.is_closed():
         try:
-            # Immediate startup catch-up; retry API failures without waiting a day.
-            if not await post_daily_reset_message():
+            # Upgrade an existing daily panel in place on deployment so its
+            # new Gamble control is available immediately without reposting.
+            if not await post_daily_reset_message(refresh_existing=startup_refresh):
                 await asyncio.sleep(60)
                 continue
+            startup_refresh = False
             now = datetime.now(TZ)
             next_post = (now + timedelta(days=1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
