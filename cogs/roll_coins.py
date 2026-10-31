@@ -8,6 +8,15 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 UK = ZoneInfo("Europe/London")
+# Do not retroactively double previous Sunday prizes when migrating existing data.
+SUNDAY_DOUBLE_START = date(2026, 11, 1)
+
+
+def daily_coin_prize(roll_day):
+    """One winner per day. Sundays on/after launch award two coins."""
+    roll_day = date.fromisoformat(roll_day) if isinstance(roll_day, str) else roll_day
+    return 2 if roll_day >= SUNDAY_DOUBLE_START and roll_day.weekday() == 6 else 1
+
 
 
 def ensure_coin_schema(con):
@@ -24,8 +33,30 @@ def ensure_coin_schema(con):
             PRIMARY KEY(guild_id, roll_date)
         )
     """)
+    # Keep all historical awards at one coin. Only future Sunday winners
+    # receive two; never rewrite old ledger rows in a migration.
+    award_columns = {row[1] for row in con.execute("PRAGMA table_info(roll_coin_awards)")}
+    if "coins_awarded" not in award_columns:
+        con.execute(
+            "ALTER TABLE roll_coin_awards ADD COLUMN "
+            "coins_awarded INTEGER NOT NULL DEFAULT 1 CHECK(coins_awarded IN (1, 2))"
+        )
     con.execute("""CREATE INDEX IF NOT EXISTS idx_coin_awards_user
                    ON roll_coin_awards(guild_id, user_id)""")
+    # Atomic, once-a-day gamble outcomes. A returned stake never generates
+    # another coin; a lost stake subtracts from the currently held balance.
+    con.execute("""CREATE TABLE IF NOT EXISTS roll_coin_gambles (
+        guild_id INTEGER NOT NULL,
+        roll_date TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        base_roll INTEGER NOT NULL CHECK(base_roll BETWEEN 1 AND 100),
+        gamble_roll INTEGER NOT NULL CHECK(gamble_roll BETWEEN 1 AND 100),
+        stake_returned INTEGER NOT NULL CHECK(stake_returned IN (0, 1)),
+        played_at INTEGER NOT NULL,
+        PRIMARY KEY(guild_id, roll_date, user_id)
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_roll_coin_gambles_user
+                   ON roll_coin_gambles(guild_id, user_id)""")
     # Durable UK-day gate shared by the leaderboard button and /leaderboard.
     # A single successful INSERT reserves the day's one public display.
     con.execute("""
@@ -75,7 +106,7 @@ def settle_completed_days(con, guild_id, now=None):
     # rowid breaks ties between rolls recorded in the very same second.
     rows = con.execute("""
         SELECT user_id, username, value, rolled_at FROM rolls
-        WHERE actor_type IN ('user', 'bot') AND rolled_at < ? AND value BETWEEN 1 AND 100
+        WHERE actor_type IN ('user', 'gamble', 'bot') AND rolled_at < ? AND value BETWEEN 1 AND 100
         ORDER BY value DESC, rolled_at ASC, rowid ASC
     """, (cutoff,))
     winners = {}
@@ -88,9 +119,11 @@ def settle_completed_days(con, guild_id, now=None):
         for day, (user_id, username, value) in sorted(winners.items()):
             result = con.execute("""
                 INSERT OR IGNORE INTO roll_coin_awards
-                (guild_id, roll_date, user_id, username, winning_roll, source, awarded_at)
-                VALUES (?, ?, ?, ?, ?, 'rolls', ?)
-            """, (guild_id, day, user_id, username, value, int(now.timestamp())))
+                (guild_id, roll_date, user_id, username, winning_roll, source, awarded_at,
+                 coins_awarded)
+                VALUES (?, ?, ?, ?, ?, 'rolls', ?, ?)
+            """, (guild_id, day, user_id, username, value, int(now.timestamp()),
+                  daily_coin_prize(day)))
             added += result.rowcount
         con.execute("RELEASE settle_coins")
     except Exception:
@@ -101,25 +134,46 @@ def settle_completed_days(con, guild_id, now=None):
 
 
 def coin_total(con, guild_id, user_id):
-    return con.execute("""SELECT COUNT(*) FROM roll_coin_awards
-                          WHERE guild_id=? AND user_id=?""",
-                       (guild_id, user_id)).fetchone()[0]
+    """Spendable coin balance, never destructive edits to earned award rows."""
+    earned = con.execute("""
+        SELECT COALESCE(SUM(coins_awarded), 0)
+        FROM roll_coin_awards WHERE guild_id=? AND user_id=?
+    """, (guild_id, user_id)).fetchone()[0]
+    lost = con.execute("""
+        SELECT COUNT(*) FROM roll_coin_gambles
+        WHERE guild_id=? AND user_id=? AND stake_returned=0
+    """, (guild_id, user_id)).fetchone()[0]
+    return earned - lost
 
 
 def day_award(con, guild_id, day):
-    row = con.execute("""SELECT user_id, username, winning_roll, source
-                         FROM roll_coin_awards WHERE guild_id=? AND roll_date=?""",
-                      (guild_id, day)).fetchone()
+    row = con.execute("""
+        SELECT user_id, username, winning_roll, source, coins_awarded
+        FROM roll_coin_awards WHERE guild_id=? AND roll_date=?
+    """, (guild_id, day)).fetchone()
     if row is None:
         return None
-    return dict(zip(("user_id", "username", "winning_roll", "source"), row))
+    return dict(zip(
+        ("user_id", "username", "winning_roll", "source", "coins_awarded"), row
+    ))
 
 
 def coin_standings(con, guild_id):
     rows = con.execute("""
-        SELECT user_id, COUNT(*) AS coins FROM roll_coin_awards
-        WHERE guild_id=? GROUP BY user_id ORDER BY coins DESC, user_id ASC
-    """, (guild_id,)).fetchall()
+        WITH earned AS (
+            SELECT user_id, SUM(coins_awarded) AS total
+            FROM roll_coin_awards WHERE guild_id=? GROUP BY user_id
+        ), spent AS (
+            SELECT user_id, COUNT(*) AS lost
+            FROM roll_coin_gambles
+            WHERE guild_id=? AND stake_returned=0 GROUP BY user_id
+        )
+        SELECT earned.user_id,
+               earned.total - COALESCE(spent.lost, 0) AS coins
+        FROM earned LEFT JOIN spent ON spent.user_id=earned.user_id
+        WHERE earned.total > COALESCE(spent.lost, 0)
+        ORDER BY coins DESC, earned.user_id ASC
+    """, (guild_id, guild_id)).fetchall()
     ranked = []
     previous, rank = None, 0
     for position, (user_id, coins) in enumerate(rows, 1):
@@ -147,8 +201,9 @@ def award_missing_day(con, guild_id, day, user_id, username, value, owner_id, no
     settle_completed_days(con, guild_id, now)
     result = con.execute("""
         INSERT OR IGNORE INTO roll_coin_awards
-        (guild_id, roll_date, user_id, username, winning_roll, source, awarded_at, awarded_by)
-        VALUES (?, ?, ?, ?, ?, 'manual', ?, ?)
+        (guild_id, roll_date, user_id, username, winning_roll, source, awarded_at, awarded_by,
+         coins_awarded)
+        VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, ?)
     """, (guild_id, parsed.isoformat(), user_id, username, value,
-          int(now.timestamp()), owner_id))
+          int(now.timestamp()), owner_id, daily_coin_prize(parsed)))
     return result.rowcount == 1
