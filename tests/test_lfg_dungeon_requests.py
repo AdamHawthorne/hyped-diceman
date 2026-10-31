@@ -34,11 +34,11 @@ class DungeonRequestTests(unittest.TestCase):
         original_members = raid.member_characters
         original_race = raid.character_race
         patcher = patch.object(raid, "member_characters",
-                               side_effect=lambda user: original_members(user, self.char_path))
+                               side_effect=lambda user, path=None: original_members(user, path or self.char_path))
         patcher.start()
         self.addCleanup(patcher.stop)
         patcher = patch.object(raid, "character_race",
-                               side_effect=lambda user, cid: original_race(user, cid, self.char_path))
+                               side_effect=lambda user, cid, path=None: original_race(user, cid, path or self.char_path))
         patcher.start()
         self.addCleanup(patcher.stop)
 
