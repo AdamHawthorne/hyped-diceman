@@ -194,6 +194,37 @@ class DungeonRequestTests(unittest.TestCase):
             self.assertIsNotNone(db.execute(
                 "SELECT 1 FROM lfg_listings WHERE user_id=123").fetchone())
 
+    def test_legacy_pvp_requests_stay_saved_but_are_hidden_from_dungeon_board(self):
+        with lfg.connect() as db:
+            for user_id, activities in (
+                (123, "Blackrock Depths, Warsong Gulch"),
+                (456, "Warsong Gulch"),
+            ):
+                db.execute(
+                    "INSERT INTO lfg_dungeon_requests "
+                    "(channel_id,user_id,character_id,dungeons,availability) "
+                    "VALUES (111,?,? ,?,'Evenings')",
+                    (user_id, self.character_id, activities),
+                )
+
+        entries = lfg.board_entries(111)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["dungeons"], "Blackrock Depths")
+        self.assertEqual(
+            lfg.DungeonState(None, 111, 123).dungeons,
+            ("Blackrock Depths",),
+        )
+        self.assertNotIn("Warsong Gulch", json.dumps(
+            lfg.BoardLayout(SimpleNamespace(), 111).to_components()
+        ))
+        with lfg.connect() as db:
+            records = dungeon.list_requests(db, 111)
+            self.assertEqual(len(records), 2)
+            self.assertEqual(
+                {row["dungeons"] for row in records},
+                {"Blackrock Depths, Warsong Gulch", "Warsong Gulch"},
+            )
+
     def test_board_uses_latest_canonical_character_and_plain_text_items(self):
         self.save()
         board = lfg.BoardLayout(SimpleNamespace(), 111, guild=None)
