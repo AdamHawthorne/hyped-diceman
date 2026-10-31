@@ -52,9 +52,9 @@ class LFGVisualTests(unittest.TestCase):
     def test_role_emojis_are_only_used_when_requested(self):
         self.assertEqual(CONTEXT["format_roles"]("Tank, Healer, DPS"), "Tank / Healer / DPS")
         decorated = CONTEXT["format_roles"]("Tank, Healer, DPS", icons=True)
-        self.assertIn("<:Tank:1565477012322132099> Tank", decorated)
-        self.assertIn("<:Healer:1565477112951996456> Healer", decorated)
-        self.assertIn("<:Melee:1565477048305197207> DPS", decorated)
+        self.assertIn("Tank <:Tank:1565477012322132099>", decorated)
+        self.assertIn("Healer <:Healer:1565477112951996456>", decorated)
+        self.assertIn("DPS <:Melee:1565477048305197207>", decorated)
 
     def test_open_marker_after_plan_not_starting_zone(self):
         source = SOURCE.read_text(encoding="utf-8")
