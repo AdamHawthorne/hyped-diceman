@@ -23,9 +23,10 @@ from cogs.roll_reactions import RollReactions
 from cogs.roll_coins import (
     UK, ensure_coin_schema, settle_completed_days, coin_total, day_award,
     coin_standings, award_missing_day, claim_public_coin_leaderboard,
-    release_public_coin_leaderboard,
+    release_public_coin_leaderboard, daily_coin_prize,
 )
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
+from cogs.roll_gamble import gamble_once, GambleError
 from cogs.ogre_voice import pick as ogre_say
 from cogs.emojis import markup as guild_emoji
 import logging
@@ -73,6 +74,7 @@ LOG_RETENTION_DAYS = 30
 DAILY_ROLL_TASK = None
 CROWN_RESET_TASK = None
 DAILY_POST_TASK = None
+SUNDAY_BONUS_TASK = None
 DAILY_POST_LOCK = asyncio.Lock()
 # Serialise reaction updates so the same source cannot be posted twice concurrently.
 FLAMEBOARD_SYNC_LOCK = asyncio.Lock()
@@ -467,6 +469,11 @@ def ensure_indexes():
         ON rolls(user_id, roll_date)
         WHERE actor_type='user'
         """)
+        con.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_one_gamble_roll_per_day
+        ON rolls(user_id, roll_date)
+        WHERE actor_type='gamble'
+        """)
 
         con.execute("""
         CREATE INDEX IF NOT EXISTS idx_daily_scores_date
@@ -564,9 +571,9 @@ def upsert_user(user_id: int, username: str):
             (user_id, username, now)
         )
 
-def insert_roll(user_id, username, value, actor_type):
+def insert_roll(user_id, username, value, actor_type, *, timestamp=None):
 
-    ts = int(time.time())
+    ts = int(time.time()) if timestamp is None else int(timestamp)
     roll_date = datetime.fromtimestamp(ts, TZ).date().isoformat()
     con = db()
 
@@ -608,7 +615,7 @@ def insert_roll(user_id, username, value, actor_type):
                 con.execute("RELEASE insert_roll")
                 return False
 
-        if actor_type == 'user':
+        if actor_type in ('user', 'gamble'):
             con.execute("""
             INSERT INTO user_scores (user_id, score, rolls, best)
             VALUES (?, ?, 1, ?)
