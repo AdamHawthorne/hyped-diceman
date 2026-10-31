@@ -8,7 +8,7 @@ class Message:
     def __init__(self, user):
         self.id = user
         self.author = SimpleNamespace(id=999)
-        self.content = f'<@{user}> rolled **50** <:ogredice:1566126699043880992>'
+        self.content = f'<@{user}> rolled **50** <:ogredice:1565477510651846767>'
         self.reactions = []
 
     async def add_reaction(self, emoji):
@@ -165,16 +165,16 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         await self.tracker.sync()
         self.assertTrue(self.has(old, '💩'))
         self.assertTrue(self.has(higher, '<:ogrecoin:1564336079430099035>'))
-        self.assertIn('<:ogredice:1566126699043880992>', old.content)
+        self.assertIn('<:ogredice:1565477510651846767>', old.content)
         await self.tracker.sync()
         self.assertEqual(self.errors, [])
 
     async def test_restore_literal_custom_emoji_to_unicode(self):
         message = self.add(1, 11, 1)
-        message.content = '<@1> rolled **11** <:ogredice:1566126699043880992>'
+        message.content = '<@1> rolled **11** <:ogredice:1565477510651846767>'
         self.add(2, 92, 2)
         await self.tracker.sync()
-        self.assertEqual(message.content, '<@1> rolled **11** <:ogredice:1566126699043880992>')
+        self.assertEqual(message.content, '<@1> rolled **11** <:ogredice:1565477510651846767>')
         self.assertTrue(self.has(message, '💩'))
         await self.tracker.sync()
         self.assertEqual(self.errors, [])
