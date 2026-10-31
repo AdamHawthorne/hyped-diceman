@@ -1611,7 +1611,7 @@ async def refresh_historical_roll_dice():
             continue
         updated = message.content.replace("🎲", "<:ogredice:1565477510651846767>")
         updated = updated.replace("<:ogredice:1566126699043880992>", "<:ogredice:1565477510651846767>")
-        updated = updated.replace("<:ogredice:1566126699043880992>", "<:ogredice:1565477510651846767>")\n        updated = updated.replace(":ogredice:", "<:ogredice:1565477510651846767>") if "<:ogredice:" not in updated else updated
+        updated = updated.replace(":ogredice:", "<:ogredice:1565477510651846767>") if "<:ogredice:" not in updated else updated
         if updated == message.content:
             continue
         try:
