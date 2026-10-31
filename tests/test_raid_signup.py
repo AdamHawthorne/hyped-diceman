@@ -201,10 +201,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                  if isinstance(button, discord.ui.Button)],
                 ["Attend", None, "Characters", "SimC", "Absent"],
             )
-            self.assertLess(
-                json.dumps(rendered).index("Roster confirmed:"),
-                json.dumps(rendered).index("y6bCxy.png"),
-            )
+            self.assertIn("Roster confirmed:", json.dumps(rendered))
+            self.assertNotIn("y6bCxy.png", json.dumps(rendered))
 
             # Old A/B sheet values are still accepted for the two Barrows teams.
             self.assertEqual(raid_schedule._split_from_tokens({"group a"}), "🔸")
@@ -393,6 +391,12 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 8, "2026-12-09 21:00", "Hyjal (20m)",
             )
             self.assertIsNone(event["banner_url"])
+            self.assertIn("**Bottom banner:** None (optional)",
+                          raid_poster.RaidPosterView(
+                              SimpleNamespace(raid_db_path=lambda: path,
+                                              allowed=lambda interaction: True),
+                              42, raid_poster.draft_from_event(event)
+                          ).description())
             self.assertNotIn("y6bCxy.png", json.dumps(
                 raid_schedule.RaidEventPanel(event).to_components()
             ))
@@ -404,9 +408,11 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 banner_url=selected,
             )
             self.assertEqual(event["banner_url"], selected)
-            self.assertIn(selected, json.dumps(
-                raid_schedule.RaidEventPanel(event).to_components()
-            ))
+            custom_components = raid_schedule.RaidEventPanel(event).to_components()
+            self.assertIn(selected, json.dumps(custom_components))
+            self.assertEqual(
+                custom_components[0]["components"][-1]["type"], 12
+            )  # Explicitly chosen image stays in the raid panel.
             self.assertNotIn("y6bCxy.png", json.dumps(
                 raid_schedule.RaidEventPanel(event).to_components()
             ))
