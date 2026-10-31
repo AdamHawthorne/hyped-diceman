@@ -1,11 +1,14 @@
 """Dungeon board, migration and shared-character regression tests."""
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+os.environ.setdefault("HYPED_GUILD_ID", "123456789012345678")
 
 from cogs import lfg_dungeons as dungeon, lfg_preview as lfg
 from cogs import raid_signup as raid
