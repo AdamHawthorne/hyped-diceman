@@ -18,27 +18,13 @@ from .lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
 from .lfg_pagination import PAGE_SIZE, page_count, clamp_page, page_rows
 from .lfg_demo import demo_entries, display_race, display_uk_times
 from . import raid_signup, lfg_dungeons
+from .forever_races import RACES, RACE_CLASSES, STARTING_ZONES
 
 PATH = os.getenv(
     "LFG_DB_PATH",
     "/data/lfg_board.db" if Path("/data").is_dir() else "lfg_board.db",
 )
 
-RACES = ("Orc", "Troll", "Tauren", "Undead", "Skyborne (Windshaper)")
-STARTING_ZONES = {
-    "Orc": "Durotar",
-    "Troll": "Durotar",
-    "Tauren": "Mulgore",
-    "Undead": "Tirisfal Glades",
-    "Skyborne (Windshaper)": "Zephras Isle",
-}
-RACE_CLASSES = {
-    "Orc": ("Hunter", "Mage", "Rogue", "Shaman", "Warlock", "Warrior"),
-    "Troll": ("Hunter", "Mage", "Priest", "Rogue", "Shaman", "Warlock", "Warrior"),
-    "Tauren": ("Druid", "Hunter", "Shaman", "Warrior"),
-    "Undead": ("Mage", "Paladin", "Priest", "Rogue", "Warlock", "Warrior"),
-    "Skyborne (Windshaper)": ("Druid", "Hunter", "Rogue", "Shaman", "Warrior"),
-}
 CLASS_ROLES = {
     "Druid": ("Tank", "Healer", "DPS"),
     "Paladin": ("Tank", "Healer", "DPS"),
