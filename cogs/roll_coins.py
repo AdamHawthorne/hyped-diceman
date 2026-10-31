@@ -149,6 +149,12 @@ def coin_total(con, guild_id, user_id):
         SELECT COUNT(*) FROM roll_coin_gambles
         WHERE guild_id=? AND user_id=? AND stake_returned=0
     """, (guild_id, user_id)).fetchone()[0]
+    if user_id == 0:
+        # Ogre receives each forfeited gamble stake; no new coin is minted.
+        earned += con.execute("""
+            SELECT COUNT(*) FROM roll_coin_gambles
+            WHERE guild_id=? AND stake_returned=0
+        """, (guild_id,)).fetchone()[0]
     return earned - lost
 
 
@@ -165,6 +171,7 @@ def day_award(con, guild_id, day):
 
 
 def coin_standings(con, guild_id):
+    """Rank spendable coins; failed gamble stakes transfer to Ogre (user 0)."""
     rows = con.execute("""
         WITH earned AS (
             SELECT user_id, SUM(coins_awarded) AS total
@@ -173,13 +180,22 @@ def coin_standings(con, guild_id):
             SELECT user_id, COUNT(*) AS lost
             FROM roll_coin_gambles
             WHERE guild_id=? AND stake_returned=0 GROUP BY user_id
+        ), ogre_stakes AS (
+            SELECT COUNT(*) AS received FROM roll_coin_gambles
+            WHERE guild_id=? AND stake_returned=0
+        ), balances AS (
+            SELECT earned.user_id,
+                   earned.total - COALESCE(spent.lost, 0)
+                     + CASE WHEN earned.user_id=0 THEN (SELECT received FROM ogre_stakes)
+                            ELSE 0 END AS coins
+            FROM earned LEFT JOIN spent ON spent.user_id=earned.user_id
+            UNION ALL
+            SELECT 0, (SELECT received FROM ogre_stakes)
+            WHERE NOT EXISTS (SELECT 1 FROM earned WHERE user_id=0)
         )
-        SELECT earned.user_id,
-               earned.total - COALESCE(spent.lost, 0) AS coins
-        FROM earned LEFT JOIN spent ON spent.user_id=earned.user_id
-        WHERE earned.total > COALESCE(spent.lost, 0)
-        ORDER BY coins DESC, earned.user_id ASC
-    """, (guild_id, guild_id)).fetchall()
+        SELECT user_id, coins FROM balances WHERE coins > 0
+        ORDER BY coins DESC, user_id ASC
+    """, (guild_id, guild_id, guild_id)).fetchall()
     ranked = []
     previous, rank = None, 0
     for position, (user_id, coins) in enumerate(rows, 1):
