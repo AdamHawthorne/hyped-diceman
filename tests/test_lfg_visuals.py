@@ -58,7 +58,13 @@ class LFGVisualTests(unittest.TestCase):
 
     def test_open_marker_after_plan_not_starting_zone(self):
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn('OPEN_LFM_MARKER = "🟢"', source)
+        self.assertIn('OPEN_LFM_MARKER = guild_emoji("MoveTo")', source)
+        self.assertEqual(guild_emoji("MoveTo"), "<:MoveTo:1565477356326617183>")
+        self.assertIn(
+            'f"{part.strip()} {guild_emoji(combat_role(part.strip(), row[\'class_name\']))}"',
+            source,
+        )
+        self.assertIn('f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""', source)
         self.assertIn('f"-# **Plan:** {open_marker}{safe(row[\'activity\'])}"', source)
         self.assertNotIn('f"-# **Starting Zone:** {zone}"', source)
         self.assertNotIn("guild_lfg_emoji", source)
