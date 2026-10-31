@@ -165,8 +165,17 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         await self.tracker.sync()
         self.assertTrue(self.has(old, '💩'))
         self.assertTrue(self.has(higher, '<:ogrecoin:1564336079430099035>'))
-        self.assertIn('<:ogredice:1566126699043880992>', old.content)
-        self.assertNotIn('🎲', old.content)
+        self.assertIn('🎲', old.content)
+        await self.tracker.sync()
+        self.assertEqual(self.errors, [])
+
+    async def test_restore_literal_custom_emoji_to_unicode(self):
+        message = self.add(1, 11, 1)
+        message.content = '<@1> rolled **11** <:ogredice:1566126699043880992>'
+        self.add(2, 92, 2)
+        await self.tracker.sync()
+        self.assertEqual(message.content, '<@1> rolled **11** 🎲')
+        self.assertTrue(self.has(message, '💩'))
         await self.tracker.sync()
         self.assertEqual(self.errors, [])
 
