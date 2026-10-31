@@ -16,7 +16,7 @@ class CoinLedgerPanelTests(unittest.TestCase):
         rows = [{"rank": 1, "user_id": 456, "coins": 1}]
         _, content = self.render(rows)
         self.assertIn("## Ogre\' Ledger", content)
-        self.assertIn("Ogre give out 1 coin.", content)
+        self.assertIn("Ogre count 1 coin still held.", content)
         self.assertNotIn("<@123> asked who has most shiny.", content)
         self.assertNotIn("<@123>", content)
         self.assertIn("<@456>", content)
@@ -31,7 +31,7 @@ class CoinLedgerPanelTests(unittest.TestCase):
             with self.subTest(count=count):
                 rows = [{"rank": 1, "user_id": 456, "coins": count}] if count else []
                 _, content = self.render(rows)
-                self.assertIn("Ogre give out " + expected + ".", content)
+                self.assertIn("Ogre count " + expected + " still held.", content)
 
     def test_multiple_pages_still_have_navigation_and_correct_lifetime_total(self):
         rows = [
@@ -40,7 +40,7 @@ class CoinLedgerPanelTests(unittest.TestCase):
         ]
         panel, content = self.render(rows, page=1)
         self.assertEqual(panel.page, 1)
-        self.assertIn("Ogre give out 16 coins.", content)
+        self.assertIn("Ogre count 16 coins still held.", content)
         self.assertIn("‹ Previous", content)
         self.assertIn("Next ›", content)
         self.assertNotIn("Page 2 of 2", content)
