@@ -14,6 +14,7 @@ import sqlite3
 import secrets
 import time
 import csv
+import re
 import io
 import os
 import discord
