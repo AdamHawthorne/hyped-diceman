@@ -334,7 +334,9 @@ class WizardState:
         self.cog = cog
         self.channel_id = channel_id
         self.owner_id = owner_id
-        self.draft = Draft(current_listing(channel_id, owner_id))
+        stored = current_listing(channel_id, owner_id)
+        self.draft = Draft(stored)
+        self.character_id = stored["character_id"] if stored else None
         start, separator, finish = self.draft.availability.partition(" - ")
         if not separator:
             start, separator, finish = self.draft.availability.partition(" + ")
@@ -415,7 +417,7 @@ def step_embed(state, stage):
 
 def next_step(state, stage):
     if stage == "race":
-        return "class"
+        return "start" if getattr(state, "character_id", None) else "class"
     if stage == "class":
         return "roles" if len(CLASS_ROLES[state.draft.class_name]) > 1 else "start"
     if stage == "roles":
@@ -433,12 +435,14 @@ def next_step(state, stage):
 
 def previous_step(state, stage):
     if stage == "race":
-        return "name"
+        return "character" if getattr(state, "character_id", None) else "name"
     if stage == "class":
         return "race"
     if stage == "roles":
         return "class"
     if stage == "start":
+        if getattr(state, "character_id", None):
+            return "race"
         return "roles" if len(CLASS_ROLES[state.draft.class_name]) > 1 else "class"
     if stage == "finish":
         return "start"
@@ -476,6 +480,8 @@ async def show_step(interaction, state, stage):
 def planned_options(state, stage):
     draft = state.draft
     if stage == "race":
+        if getattr(state, "character_id", None) and draft.class_name:
+            return tuple(r for r in RACES if draft.class_name in RACE_CLASSES[r]), {draft.race}
         return RACES, {draft.race}
     if stage == "class":
         return RACE_CLASSES[draft.race], {draft.class_name}
@@ -638,6 +644,10 @@ class WizardStepView(discord.ui.View):
 
     async def back(self, interaction):
         previous = previous_step(self.state, self.stage)
+        if previous == "character":
+            await interaction.response.edit_message(
+                content=None, embed=None, view=LaunchCharacterPicker(self.state))
+            return
         if previous == "name":
             await interaction.response.send_modal(PlannedNameModal(self.state))
             return
@@ -757,6 +767,12 @@ class ReviewView(discord.ui.View):
     @discord.ui.button(label="Save", style=discord.ButtonStyle.success)
     async def save(self, interaction, button):
         draft = self.state.draft
+        shared = shared_character(self.state.owner_id, self.state.character_id)
+        if not shared:
+            await interaction.response.send_message(
+                "Select a saved character using Add / Update first.", ephemeral=True)
+            return
+        draft.character, draft.class_name, draft.role = shared[1], shared[2], shared[4]
         required = (
             draft.race,
             draft.class_name,
@@ -777,8 +793,8 @@ class ReviewView(discord.ui.View):
             db.execute(
                 """INSERT INTO lfg_listings
                 (channel_id,user_id,character,level,level_label,level_sort,class_name,role,
-                 availability,activity,notes,avatar_url,race,starting_zone,days_off,board_day)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 availability,activity,notes,avatar_url,race,starting_zone,days_off,board_day,character_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(channel_id,user_id) DO UPDATE SET
                 character=excluded.character,
                 level=1,
@@ -793,7 +809,8 @@ class ReviewView(discord.ui.View):
                 race=excluded.race,
                 starting_zone=excluded.starting_zone,
                 days_off=excluded.days_off,
-                board_day='launch'""",
+                board_day='launch',
+                character_id=excluded.character_id""",
                 (
                     self.state.channel_id,
                     self.state.owner_id,
@@ -811,6 +828,7 @@ class ReviewView(discord.ui.View):
                     draft.starting_zone,
                     draft.days_off,
                     "launch",
+                    self.state.character_id,
                 ),
             )
 
@@ -832,7 +850,70 @@ class ReviewView(discord.ui.View):
 
     @discord.ui.button(label="Start Again", style=discord.ButtonStyle.secondary)
     async def restart(self, interaction, button):
-        await interaction.response.send_modal(PlannedNameModal(self.state))
+        await interaction.response.edit_message(
+            content=None, embed=None, view=LaunchCharacterPicker(self.state))
+
+
+class LaunchCharacterPicker(discord.ui.View):
+    """Choose the same registered character used by the raid sign-up system."""
+
+    def __init__(self, state):
+        super().__init__(timeout=600)
+        self.state = state
+        characters = raid_signup.member_characters(state.owner_id)
+        if characters:
+            select = discord.ui.Select(
+                placeholder="Select your saved character",
+                options=[
+                    discord.SelectOption(
+                        label=name[:100], value=str(character_id),
+                        description=f"{klass} / {spec} · {role}"[:100],
+                        emoji=option_emoji(klass),
+                        default=character_id == state.character_id,
+                    )
+                    for character_id, name, klass, spec, role, _ in characters[:25]
+                ],
+            )
+
+            async def chosen(interaction):
+                if not await state.check(interaction):
+                    return
+                row = shared_character(state.owner_id, int(select.values[0]))
+                if row is None:
+                    await interaction.response.send_message(
+                        "Character not found. Open Characters and try again.",
+                        ephemeral=True)
+                    return
+                state.character_id = row[0]
+                state.draft.character = row[1]
+                state.draft.class_name = row[2]
+                state.draft.role = row[4]
+                if state.draft.race not in RACE_CLASSES or (
+                        state.draft.class_name not in
+                        RACE_CLASSES.get(state.draft.race, ())):
+                    state.draft.race = ""
+                    state.draft.starting_zone = ""
+                await interaction.response.edit_message(
+                    content=None, embed=step_embed(state, "race"),
+                    view=RaceView(state))
+
+            select.callback = chosen
+            self.add_item(select)
+        manage = discord.ui.Button(
+            label="Open Characters", style=discord.ButtonStyle.secondary,
+        )
+
+        async def open_characters(interaction):
+            if not await state.check(interaction):
+                return
+            await interaction.response.edit_message(
+                content=None, embed=None,
+                view=raid_signup.CharacterActionView(
+                    state.owner_id, purpose="update"),
+            )
+
+        manage.callback = open_characters
+        self.add_item(manage)
 
 
 class AddUpdateButton(discord.ui.Button):
@@ -847,7 +928,9 @@ class AddUpdateButton(discord.ui.Button):
 
     async def callback(self, interaction):
         state = WizardState(self.cog, self.channel_id, interaction.user.id)
-        await interaction.response.send_modal(PlannedNameModal(state))
+        await interaction.response.send_message(
+            content="Choose a shared character, then set your launch plans.",
+            view=LaunchCharacterPicker(state), ephemeral=True)
 
 
 
