@@ -1200,12 +1200,12 @@ class GambleConfirmView(discord.ui.View):
 
         # The database is authoritative. Even if Discord can't post, the
         # outcome is final and will not be charged or rolled a second time.
-        stake_text = ("Ogre give coin back." if result["stake_returned"]
-                      else "Ogre keep one coin.")
+        stake_text = ("Ogre say good roll. Have coin back!" if result["stake_returned"]
+                      else "Ha! Ogre keep this one.")
         notice = (
             f"{interaction.user.mention} rolled **{result['best']}** 🎲\n"
-            f"-# Ogre gave another roll: **{result['base']}** → **{result['extra']}**. "
-            f"{stake_text}"
+            f"-# {interaction.user.display_name} risked a coin to roll again: "
+            f"**{result['base']} → {result['extra']}**. {stake_text}"
         )
         try:
             public_msg = await interaction.channel.send(
