@@ -153,7 +153,7 @@ class GambleDatabaseTests(unittest.TestCase):
         self.assertFalse(outcome["stake_returned"])
         self.assertEqual(outcome["balance"], 0)
         self.assertEqual(coin_total(self.con, 9, 101), 0)
-        self.assertEqual(coin_standings(self.con, 9), [])
+        self.assertEqual(coin_standings(self.con, 9), [{"rank": 1, "user_id": 0, "coins": 1}])
         self.assertEqual(
             self.con.execute("SELECT * FROM roll_coin_awards").fetchall(),
             original_awards)
