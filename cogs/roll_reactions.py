@@ -58,6 +58,19 @@ class RollReactions:
                 continue
             user_id = int(match.group(1))
             if user_id in scores:
+                # Upgrade today's historical bot messages in place. Reactions
+                # and message IDs stay intact, and this is idempotent.
+                if "🎲" in message.content:
+                    try:
+                        await message.edit(
+                            content=message.content.replace(
+                                "🎲", "<:ogredice:1566126699043880992>"
+                            )
+                        )
+                    except Exception as exc:
+                        self.log_error(
+                            f"ROLL DICE MESSAGE REFRESH FAILED message={message.id}: {exc!r}"
+                        )
                 messages.append((user_id, message))
                 latest_by_user[user_id] = message.id
                 messages_by_user.setdefault(user_id, []).append(message)
