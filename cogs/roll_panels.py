@@ -44,7 +44,7 @@ class DailyRollPanel(discord.ui.LayoutView):
         for label, custom_id, callback in actions:
             button = discord.ui.Button(
                 label=label, custom_id=custom_id,
-                emoji=("🎲" if label == "Roll" else
+                emoji=(discord.PartialEmoji(name="ogredice", id=1566126699043880992) if label == "Roll" else
                        option_emoji("ogrecoin") if label == "Gamble" else None),
                 style=(discord.ButtonStyle.success if label == "Roll" else
                        discord.ButtonStyle.danger if label == "Gamble" else
