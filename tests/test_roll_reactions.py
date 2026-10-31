@@ -17,6 +17,9 @@ class Message:
     async def remove_reaction(self, emoji, user):
         self.reactions = [r for r in self.reactions if not (r.emoji == emoji and r.me)]
 
+    async def edit(self, *, content):
+        self.content = content
+
 
 class ReactionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -162,6 +165,10 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         await self.tracker.sync()
         self.assertTrue(self.has(old, '💩'))
         self.assertTrue(self.has(higher, '<:ogrecoin:1564336079430099035>'))
+        self.assertIn('<:ogredice:1566126699043880992>', old.content)
+        self.assertNotIn('🎲', old.content)
+        await self.tracker.sync()
+        self.assertEqual(self.errors, [])
 
     async def test_permission_failure_is_contained(self):
         self.add(1, 50)
