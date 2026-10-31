@@ -49,7 +49,9 @@ class LFGLaunchPreviewTests(unittest.TestCase):
 
     def test_preview_edits_only_one_ephemeral_message(self):
         source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
-        self.assertIn("class BoardPageButton", source)
+        self.assertNotIn("class BoardPageButton", source)
+        self.assertIn("class BoardLayout", source)
+        self.assertIn("lfg_board_overflow", source)
         self.assertIn("await interaction.response.edit_message(", source)
         self.assertIn("view=BoardLayout(self, interaction.channel_id,", source)
         self.assertIn("preview=True", source)
