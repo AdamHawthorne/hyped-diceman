@@ -1420,7 +1420,7 @@ class BoardPageButton(discord.ui.Button):
 
         # Page changes do not insert/delete messages or touch member records.
         async with layout.cog.lock:
-            roster = entries(layout.channel_id)
+            roster = board_entries(layout.channel_id)
             page = clamp_page(layout.page_index + self.delta, len(roster))
             await interaction.response.edit_message(
                 view=BoardLayout(layout.cog, layout.channel_id,
@@ -1447,14 +1447,14 @@ class BoardLayout(discord.ui.LayoutView):
 
         # Preview never reads/writes real member records.
         if roster is None:
-            roster = demo_entries() if preview else entries(channel_id)
+            roster = demo_entries() if preview else board_entries(channel_id)
         self.page_index = clamp_page(page_index, len(roster))
         total_pages = page_count(len(roster))
 
         heading = discord.ui.Section(
             discord.ui.TextDisplay(
                 "## <Hyped> LFG-LFM Board\n"
-                "**Ogre want know launch plans.**"
+                "**Find launch groups and level 45+ dungeon farms.**"
                 + ("\n-# DEMO PREVIEW · 20 fictional players · nothing saved"
                    if preview else "")
             ),
@@ -1470,13 +1470,13 @@ class BoardLayout(discord.ui.LayoutView):
                 *[discord.ui.Button(
                     label=label, style=discord.ButtonStyle.secondary,
                     disabled=True,
-                ) for label in ("Add / Update", "Edit Race", "Edit Class", "Remove")]
+                ) for label in ("Add / Update", "Characters", "LF Dungeons", "Remove")]
             ))
         else:
             self.add_item(discord.ui.ActionRow(
                 AddUpdateButton(cog, channel_id),
-                CharacterEditButton(cog, channel_id, "race"),
-                CharacterEditButton(cog, channel_id, "class"),
+                CharactersButton(),
+                DungeonButton(cog, channel_id),
                 RemoveButton(cog, channel_id),
             ))
 
@@ -1492,21 +1492,58 @@ class BoardLayout(discord.ui.LayoutView):
 
         visible = page_rows(roster, self.page_index)
         for row in visible:
+            if isinstance(row, dict) and row.get("_kind") == "dungeon":
+                character = shared_character(row["user_id"], row["character_id"])
+                if character is None:
+                    title = "Character needs updating"
+                else:
+                    _, name, klass, spec, role, _ = character
+                    title = (f"{safe(name)} · {guild_emoji(klass)} {klass} · "
+                             f"{role} {guild_emoji(combat_role(role, klass, spec))}")
+                items = tuple(
+                    int(raw) for raw in row["item_ids"].split(",")
+                    if raw.isdecimal()
+                )
+                lines = [
+                    f"**LF Dungeons · {title}**",
+                    f"-# **Dungeons:** {safe(row['dungeons'])}",
+                    f"-# **Items:** {lfg_dungeons.item_links(items) if items else 'Not specified'}",
+                    f"-# **Available:** {safe(row['availability'])}",
+                ]
+                if row["notes"]:
+                    lines.append(f"-# **Notes:** {safe(row['notes'])}")
+                lines.append(contact_line(row, preview=preview))
+                label = character[1] if character else "Saved character"
+                container = discord.ui.Container(accent_color=ACCENT)
+                container.add_item(discord.ui.Section(
+                    discord.ui.TextDisplay("\n".join(lines)),
+                    accessory=discord.ui.Thumbnail(
+                        player_avatar_url(row, guild) or HEADER_IMAGE,
+                        description=f"{label} Discord avatar",
+                    ),
+                ))
+                self.add_item(container)
+                continue
+
             race = row["race"] or "Race not set"
             zone = row["starting_zone"] or STARTING_ZONES.get(race, "Not set")
+            profile_name, profile_class, profile_spec, profile_role = (
+                launch_profile(row) if isinstance(row, dict) and not preview
+                else (row["character"], row["class_name"], "", row["role"])
+            )
             roles = " / ".join(
-                f"{part.strip()} {guild_emoji(combat_role(part.strip(), row['class_name']))}"
-                for part in row["role"].split(",") if part.strip()
+                f"{part.strip()} {guild_emoji(combat_role(part.strip(), profile_class, profile_spec))}"
+                for part in profile_role.split(",") if part.strip()
             ) or "Role not set"
             days = row["days_off"] or "Not set"
-            character = safe(row["character"]) if row["character"] else "Name TBD"
+            character = safe(profile_name) if profile_name else "Name TBD"
             notes = safe(row["notes"]) if row["notes"] else ""
             open_marker = (
                 f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""
             )
 
             lines = [
-                f"**{character} · {display_race(race)} {guild_emoji(row['class_name'])} {row['class_name']} · {roles}**",
+                f"**{character} · {display_race(race)} {guild_emoji(profile_class)} {profile_class} · {roles}**",
             ]
             if not is_solo_or_sorted(row["activity"]):
                 lines.append(
@@ -1574,7 +1611,7 @@ class LFGPreview(commands.Cog):
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
             guild = getattr(channel, "guild", None)
-            roster = entries(channel_id)
+            roster = board_entries(channel_id)
             page = clamp_page(row["page_index"], len(roster))
 
             anchor = channel.get_partial_message(row["message_id"])
