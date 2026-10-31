@@ -58,16 +58,18 @@ class RollReactions:
                 continue
             user_id = int(match.group(1))
             if user_id in scores:
-                # Restore standard dice on older roll posts when Discord
-                # displays the custom emoji as literal text. Keep IDs/reactions.
-                if "<:ogredice:1566126699043880992>" in message.content:
+                # Convert bot-authored roll messages to the custom dice.
+                # Preserve message identity, score text and all reactions.
+                fixed = re.sub(
+                    r"(?:🎲|<:ogredice:1566126699043880992>|(?<!<):ogredice:)",
+                    "<:ogredice:1566126699043880992>", message.content,
+                )
+                if fixed != message.content:
                     try:
-                        await message.edit(content=message.content.replace(
-                            "<:ogredice:1566126699043880992>", "🎲"
-                        ))
+                        await message.edit(content=fixed)
                     except Exception as exc:
                         self.log_error(
-                            f"ROLL DICE MESSAGE RESTORE FAILED message={message.id}: {exc!r}"
+                            f"ROLL DICE MESSAGE REFRESH FAILED message={message.id}: {exc!r}"
                         )
                 messages.append((user_id, message))
                 latest_by_user[user_id] = message.id
