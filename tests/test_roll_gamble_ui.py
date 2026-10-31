@@ -79,11 +79,15 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         ensure_coin_schema(self.con)
         self.channel = SimpleNamespace(send=AsyncMock(
             return_value=SimpleNamespace(id=200, reply=AsyncMock())))
-        rolls = iter([19, 91])
+        rolls = iter([91, 77, 55])
         self.ns = dict(
             discord=discord, HYPED_GUILD_ID=9, ROLL_CHANNEL_ID=88,
             TZ=UK, datetime=FixedClock, timedelta=timedelta,
             db=lambda: self.con, coin_total=coin_total,
+            today_range=lambda: (
+                int(datetime(2026, 11, 1, 0, 0, tzinfo=UK).timestamp()),
+                int(datetime(2026, 11, 2, 0, 0, tzinfo=UK).timestamp()),
+            ),
             daily_coin_prize=daily_coin_prize,
             ogre_coin_emoji=lambda: "<:ogrecoin:789>",
             secrets=SimpleNamespace(randbelow=lambda n: next(rolls) - 1),
@@ -109,6 +113,12 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
                 (guild_id,roll_date,user_id,username,winning_roll,source,awarded_at)
             VALUES (9,'2026-10-30',?,'Gamer',90,'manual',12345)
         """, (user_id,))
+
+    def free_roll(self, value=19, user_id=101):
+        self.assertTrue(self.ns["insert_roll"](
+            user_id, "Gamer", value, "user",
+            timestamp=int(FixedClock.current.timestamp()),
+        ))
 
     def interaction(self, user_id=101):
         return SimpleNamespace(
@@ -150,13 +160,29 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.con.execute(
             "SELECT COUNT(*) FROM rolls").fetchone()[0], 0)
 
+    async def test_roll_first_gives_private_prompt_without_gamble_confirmation(self):
+        self.award()
+        i = self.interaction()
+        await self.ns["show_gamble_rules"](i)
+        response = i.response.send_message.await_args
+        self.assertIn("roll first", response.args[0])
+        self.assertIn("decide", response.args[0])
+        self.assertTrue(response.kwargs["ephemeral"])
+        self.assertIsNone(response.kwargs.get("view"))
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM rolls").fetchone()[0], 0)
+        self.assertEqual(coin_total(self.con, 9, 101), 1)
+
     async def test_explanation_private_then_confirm_posts_one_public_gamble(self):
         self.award()
+        self.free_roll(19)
         i = self.interaction()
         await self.ns["show_gamble_rules"](i)
         kwargs = i.response.send_message.await_args.kwargs
         self.assertTrue(kwargs["ephemeral"])
         self.assertIn("Higher second roll", i.response.send_message.await_args.args[0])
+        self.assertIn("Your first roll: **19**", i.response.send_message.await_args.args[0])
+        self.assertNotIn("back to back", i.response.send_message.await_args.args[0])
         self.assertIn("once per UK day", i.response.send_message.await_args.args[0])
         view = kwargs["view"]
         self.assertIsInstance(view, self.ns["GambleConfirmView"])
@@ -181,6 +207,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_gamble_daily_then_new_attempt_is_refused_privately(self):
         self.award()
+        self.free_roll(19)
         i = self.interaction()
         await self.ns["show_gamble_rules"](i)
         view = i.response.send_message.await_args.kwargs["view"]
@@ -194,6 +221,33 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
                       again.response.send_message.await_args.args[0])
         self.assertTrue(again.response.send_message.await_args.kwargs["ephemeral"])
 
+
+    async def test_stale_confirm_button_cannot_gamble_without_free_roll(self):
+        # A previously opened private confirmation must not allow a gamble
+        # if the player's free roll is absent at the point of transaction.
+        self.award()
+        stale_view = self.ns["GambleConfirmView"](101)
+        button = next(
+            child for child in stale_view.children
+            if isinstance(child, discord.ui.Button)
+            and child.label == "Gamble 1 coin"
+        )
+        i = self.interaction()
+        await button.callback(i)
+        i.response.defer.assert_awaited_once()
+        i.followup.send.assert_awaited_once()
+        self.assertIn("roll first", i.followup.send.await_args.args[0])
+        self.assertTrue(i.followup.send.await_args.kwargs["ephemeral"])
+        self.channel.send.assert_not_awaited()
+        self.assertEqual(coin_total(self.con, 9, 101), 1)
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM roll_coin_gambles").fetchone()[0],
+            0,
+        )
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM rolls").fetchone()[0],
+            0,
+        )
 
 class SundayNoticeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
