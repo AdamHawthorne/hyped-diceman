@@ -21,8 +21,9 @@ from cogs.forever_role import ForeverRoleView, ForeverRoleV2Panel
 from cogs.flameboard import FlameboardEvents
 from cogs.roll_reactions import RollReactions
 from cogs.roll_coins import (
-    ensure_coin_schema, settle_completed_days, coin_total, day_award,
-    coin_standings, award_missing_day,
+    UK, ensure_coin_schema, settle_completed_days, coin_total, day_award,
+    coin_standings, award_missing_day, claim_public_coin_leaderboard,
+    release_public_coin_leaderboard,
 )
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 from cogs.ogre_voice import pick as ogre_say
@@ -1232,18 +1233,36 @@ async def daily_roll_action(interaction):
 
 
 async def show_coin_leaderboard(interaction):
+    """One public Ledger per UK day; further views are private, not blocked."""
     if interaction.guild_id != HYPED_GUILD_ID:
         await interaction.response.send_message("Only available in Hyped.", ephemeral=True)
         return
     if interaction.channel_id != ROLL_CHANNEL_ID:
         await interaction.response.send_message("Use /leaderboard in the roll channel.", ephemeral=True)
         return
-    await interaction.response.send_message(
-        view=CoinLeaderboard(coin_standings(db(), HYPED_GUILD_ID),
-                             owner_id=interaction.user.id, coin_emoji=ogre_coin_emoji(),
-                             ogre_id=bot.user.id if bot.user else 0),
-        allowed_mentions=discord.AllowedMentions.none(),
+
+    # Both the button and /leaderboard call this function. An atomic database
+    # claim prevents concurrent requests or bot restarts from posting duplicates.
+    today = datetime.now(UK).date().isoformat()
+    is_public = claim_public_coin_leaderboard(
+        db(), HYPED_GUILD_ID, today, interaction.user.id,
     )
+    try:
+        await interaction.response.send_message(
+            view=CoinLeaderboard(coin_standings(db(), HYPED_GUILD_ID),
+                                 owner_id=interaction.user.id, coin_emoji=ogre_coin_emoji(),
+                                 ogre_id=bot.user.id if bot.user else 0),
+            allowed_mentions=discord.AllowedMentions.none(),
+            ephemeral=not is_public,
+        )
+    except discord.HTTPException:
+        # Discord rejected the response, so nobody received the public card.
+        # Permit a future request to try again, without resetting coin scores.
+        if is_public:
+            release_public_coin_leaderboard(
+                db(), HYPED_GUILD_ID, today, interaction.user.id,
+            )
+        raise
 
 
 async def show_my_stats(interaction):
