@@ -63,8 +63,7 @@ class CoinLeaderboard(discord.ui.LayoutView):
                 "## Ogre\' Ledger\n"
                 + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
                 + f"\n\n-# Ogre give out {sum(r['coins'] for r in rows)} "
-                  f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'}.\n"
-                  f"-# <@{owner_id}> asked who has most shiny."
+                  f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'}."
             ), accent_color=GOLD,
         ))
         if pages > 1:
