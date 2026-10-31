@@ -1591,6 +1591,9 @@ class LFGPreview(commands.Cog):
         self.lock = asyncio.Lock()
 
     async def cog_load(self):
+        # LFG loads before the raid cog. Ensure the shared character table and
+        # additive race migration exist before rebuilding persistent LFG cards.
+        raid_signup.create_schema(raid_signup.RAID_DB)
         init_db()
         with connect() as db:
             boards = db.execute(
