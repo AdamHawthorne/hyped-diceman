@@ -1139,13 +1139,11 @@ class DungeonState:
             current = lfg_dungeons.get_request(db, channel_id, owner_id)
         self.current = current
         self.character_id = current["character_id"] if current else None
+        # Retain the stored record but show only valid dungeon choices.
+        # Legacy PvP selections aren't offered in the dungeon-only picker.
         self.dungeons = tuple(
-            d.strip() for d in current["dungeons"].split(", ")
-        ) if current else ()
-        self.category = next(
-            (group for group, options in lfg_dungeons.ACTIVITY_GROUPS.items()
-             if any(item in options for item in self.dungeons)),
-            "Classic: High-level",
+            name for name in lfg_dungeons.DUNGEONS
+            if current and name in current["dungeons"].split(", ")
         )
         self.wanted_items = current["wanted_items"] if current else ""
         self.availability = current["availability"] if current else ""
@@ -1223,67 +1221,47 @@ class DungeonCharacterPicker(discord.ui.View):
 
 
 class DungeonSelectionView(discord.ui.View):
-    """Choose dungeons and PvP activities across Discord's 25-option limit."""
+    """One combined dungeon picker with no category or PvP selection.
+
+    Discord limits dropdowns to 25 choices each, so all dungeons appear
+    in two flat, level-ordered multiselects on the same ephemeral screen.
+    """
 
     def __init__(self, state):
         super().__init__(timeout=600)
         self.state = state
-        group = state.category
-        options = lfg_dungeons.ACTIVITY_GROUPS[group]
 
-        categories = discord.ui.Select(
-            placeholder="Choose a category: Classic, Forever or PvP",
-            options=[
-                discord.SelectOption(
-                    label=label, value=label,
-                    description=f"{len(activities)} options",
-                    default=label == group,
-                ) for label, activities in lfg_dungeons.ACTIVITY_GROUPS.items()
-            ],
-            row=0,
-        )
-
-        async def choose_category(interaction):
-            if not await state.check(interaction):
-                return
-            state.category = categories.values[0]
-            await interaction.response.edit_message(
-                content=dungeon_selection_summary(state),
-                view=DungeonSelectionView(state),
+        for index, options in enumerate(lfg_dungeons.DUNGEON_SELECT_GROUPS):
+            selection = discord.ui.Select(
+                placeholder=f"Select dungeons ({index + 1} of {len(lfg_dungeons.DUNGEON_SELECT_GROUPS)})",
+                min_values=0,
+                max_values=len(options),
+                options=[
+                    discord.SelectOption(
+                        label=name, value=name, default=name in state.dungeons,
+                        description=f"Level {lfg_dungeons.DUNGEON_LEVELS[name]}",
+                    ) for name in options
+                ],
+                row=index,
             )
 
-        categories.callback = choose_category
-        self.add_item(categories)
+            async def choose_dungeons(interaction, selection=selection, options=options):
+                if not await state.check(interaction):
+                    return
+                # A change to either dropdown leaves the other dropdown's
+                # selections intact. Rebuild defaults from the merged choices.
+                chosen = ((set(state.dungeons) - set(options))
+                          | set(selection.values))
+                state.dungeons = tuple(
+                    name for name in lfg_dungeons.DUNGEONS if name in chosen
+                )
+                await interaction.response.edit_message(
+                    content=dungeon_selection_summary(state),
+                    view=DungeonSelectionView(state),
+                )
 
-        selection = discord.ui.Select(
-            placeholder=f"Select activities: {group}",
-            min_values=0,
-            max_values=len(options),
-            options=[
-                discord.SelectOption(
-                    label=name, value=name, default=name in state.dungeons,
-                ) for name in options
-            ],
-            row=1,
-        )
-
-        async def choose_activities(interaction):
-            if not await state.check(interaction):
-                return
-            # Only change selections from the current category.
-            # Choices from other categories must survive navigation.
-            chosen = ((set(state.dungeons) - set(options))
-                      | set(selection.values))
-            state.dungeons = tuple(
-                name for name in lfg_dungeons.ACTIVITIES if name in chosen
-            )
-            await interaction.response.edit_message(
-                content=dungeon_selection_summary(state),
-                view=DungeonSelectionView(state),
-            )
-
-        selection.callback = choose_activities
-        self.add_item(selection)
+            selection.callback = choose_dungeons
+            self.add_item(selection)
 
         back = discord.ui.Button(
             label="Back", style=discord.ButtonStyle.secondary, row=2)
@@ -1314,13 +1292,13 @@ class DungeonSelectionView(discord.ui.View):
 
 def dungeon_selection_summary(state):
     if not state.dungeons:
-        return ("Select dungeons or PvP activities in each category. "
-                "Your choices carry across categories. "
-                "Then press Next to add items needed and availability.")
+        return ("Choose any dungeons from the two dropdowns below. "
+                "Both lists are sorted by level and selections are combined. "
+                "Press Next to add items needed and availability.")
     return (
-        f"**Selected activities ({len(state.dungeons)}):** "
+        f"**Selected dungeons ({len(state.dungeons)}):** "
         + ", ".join(state.dungeons)
-        + "\nChoose another category to add more, or press Next."
+        + "\nSelect more dungeons from either dropdown, or press Next."
     )
 
 
@@ -1421,7 +1399,7 @@ class DungeonButton(discord.ui.Button):
     async def callback(self, interaction):
         state = DungeonState(self.cog, self.channel_id, interaction.user.id)
         await interaction.response.send_message(
-            content="Select a shared character for your dungeon or PvP plans. "
+            content="Select a shared character for your dungeon plans. "
                     "No launch-plan changes are required.",
             view=DungeonCharacterPicker(state), ephemeral=True,
         )
@@ -1514,7 +1492,7 @@ class BoardLayout(discord.ui.LayoutView):
             heading = discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## <Hyped> LFG-LFM Board\n"
-                    "**Ogre help find launch groups, dungeons and PvP.**"
+                    "**Ogre help find launch groups and dungeon runs.**"
                     + ("\n-# DEMO PREVIEW · First seven fictional plans only"
                        if preview and len(roster) > len(visible) else
                        "\n-# DEMO PREVIEW · Nothing saved" if preview else "")
@@ -1551,8 +1529,8 @@ class BoardLayout(discord.ui.LayoutView):
                     title = (f"{safe(name)} · {klass} {guild_emoji(klass)} · "
                              f"{role} {guild_emoji(combat_role(role, klass, spec))}")
                 lines = [
-                    f"**LF Dungeons / PvP · {title}**",
-                    f"-# **Activities:** {safe(row['dungeons'])}",
+                    f"**LF Dungeons · {title}**",
+                    f"-# **Dungeons:** {safe(row['dungeons'])}",
                     f"-# **Items needed:** {safe(row['wanted_items']) if row['wanted_items'] else 'Not specified'}",
                     f"-# **Available:** {safe(row['availability'])}",
                 ]
