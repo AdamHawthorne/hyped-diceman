@@ -1095,6 +1095,265 @@ class CharacterEditButton(discord.ui.Button):
             content=view.summary(), view=view, ephemeral=True)
 
 
+class CharactersButton(discord.ui.Button):
+    """The same player-owned character manager as the raid sign-up panel."""
+
+    def __init__(self):
+        super().__init__(label="Characters", style=discord.ButtonStyle.secondary,
+                         custom_id="hyped_lfg_characters_v1")
+
+    async def callback(self, interaction):
+        await interaction.response.send_message(
+            view=raid_signup.CharacterActionView(
+                interaction.user.id, purpose="update"),
+            ephemeral=True,
+        )
+
+
+class DungeonState:
+    def __init__(self, cog, channel_id, owner_id):
+        self.cog, self.channel_id, self.owner_id = cog, channel_id, owner_id
+        with connect() as db:
+            current = lfg_dungeons.get_request(db, channel_id, owner_id)
+        self.current = current
+        self.character_id = current["character_id"] if current else None
+        self.dungeons = tuple(
+            d.strip() for d in current["dungeons"].split(", ")
+        ) if current else ()
+        self.item_ids = current["item_ids"] if current else ""
+        self.availability = current["availability"] if current else ""
+        self.notes = current["notes"] if current else ""
+
+    async def check(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "This dungeon request belongs to another player.", ephemeral=True)
+            return False
+        return True
+
+
+class DungeonCharacterPicker(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=600)
+        self.state = state
+        characters = raid_signup.member_characters(state.owner_id)
+        if characters:
+            selection = discord.ui.Select(
+                placeholder="Which character needs dungeon runs?",
+                options=[
+                    discord.SelectOption(
+                        label=name[:100], value=str(char_id),
+                        description=f"{klass} / {spec} · {role}"[:100],
+                        emoji=option_emoji(klass),
+                        default=char_id == state.character_id,
+                    )
+                    for char_id, name, klass, spec, role, _ in characters[:25]
+                ],
+            )
+
+            async def select_character(interaction):
+                if not await state.check(interaction):
+                    return
+                character = shared_character(state.owner_id, int(selection.values[0]))
+                if character is None:
+                    await interaction.response.send_message(
+                        "Character not found. Open Characters and try again.",
+                        ephemeral=True)
+                    return
+                state.character_id = character[0]
+                await interaction.response.edit_message(
+                    content=None, view=DungeonSelectionView(state))
+
+            selection.callback = select_character
+            self.add_item(selection)
+
+        open_manager = discord.ui.Button(
+            label="Open Characters", style=discord.ButtonStyle.secondary)
+
+        async def show_characters(interaction):
+            if not await state.check(interaction):
+                return
+            await interaction.response.edit_message(
+                content=None, view=raid_signup.CharacterActionView(
+                    state.owner_id, purpose="update"))
+
+        open_manager.callback = show_characters
+        self.add_item(open_manager)
+        if state.current:
+            remove = discord.ui.Button(
+                label="Remove dungeon request", style=discord.ButtonStyle.danger)
+
+            async def ask_remove(interaction):
+                if not await state.check(interaction):
+                    return
+                await interaction.response.edit_message(
+                    content="Remove your dungeon request? Your launch plan and "
+                            "shared character will remain unchanged.",
+                    view=DungeonRemoveView(state))
+
+            remove.callback = ask_remove
+            self.add_item(remove)
+
+
+class DungeonSelectionView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=600)
+        self.state = state
+        selection = discord.ui.Select(
+            placeholder="Choose every dungeon you want to farm",
+            min_values=1,
+            max_values=len(lfg_dungeons.DUNGEONS),
+            options=[
+                discord.SelectOption(
+                    label=name, value=name,
+                    default=name in state.dungeons,
+                ) for name in lfg_dungeons.DUNGEONS
+            ],
+        )
+
+        async def choose_dungeons(interaction):
+            if not await state.check(interaction):
+                return
+            state.dungeons = lfg_dungeons.validate_dungeons(selection.values)
+            await interaction.response.edit_message(
+                content=f"**Selected dungeons ({len(state.dungeons)}):** "
+                        + ", ".join(state.dungeons)
+                        + "\nPress Next for item links, availability and notes.",
+                view=DungeonSelectionView(state),
+            )
+
+        selection.callback = choose_dungeons
+        self.add_item(selection)
+
+        next_button = discord.ui.Button(
+            label="Next", style=discord.ButtonStyle.success,
+            disabled=not bool(state.dungeons),
+        )
+
+        async def next_step(interaction):
+            if not await state.check(interaction):
+                return
+            await interaction.response.send_modal(DungeonDetailsModal(state))
+
+        next_button.callback = next_step
+        self.add_item(next_button)
+
+        back = discord.ui.Button(
+            label="Back", style=discord.ButtonStyle.secondary)
+
+        async def back_to_character(interaction):
+            if not await state.check(interaction):
+                return
+            await interaction.response.edit_message(
+                content="Choose your saved dungeon character.",
+                view=DungeonCharacterPicker(state))
+
+        back.callback = back_to_character
+        self.add_item(back)
+
+
+class DungeonDetailsModal(discord.ui.Modal, title="LF Dungeons · Farming details"):
+    def __init__(self, state):
+        super().__init__(timeout=600)
+        self.state = state
+        self.items = discord.ui.TextInput(
+            label="Wowhead item ID(s), optional",
+            placeholder="e.g. 11815, 12590 or Forever item URL",
+            default=state.item_ids or None, required=False,
+            max_length=500,
+        )
+        self.availability = discord.ui.TextInput(
+            label="Availability",
+            placeholder="e.g. Weekdays 19:00-23:00, weekends flexible",
+            default=state.availability or None,
+            required=True, max_length=120,
+        )
+        self.notes = discord.ui.TextInput(
+            label="Notes (optional)",
+            placeholder="e.g. happy to tank, happy to farm repeatedly",
+            default=state.notes or None,
+            required=False, max_length=180,
+            style=discord.TextStyle.paragraph,
+        )
+        self.add_item(self.items)
+        self.add_item(self.availability)
+        self.add_item(self.notes)
+
+    async def on_submit(self, interaction):
+        state = self.state
+        if not await state.check(interaction):
+            return
+        try:
+            character = shared_character(state.owner_id, state.character_id)
+            if character is None:
+                raise ValueError("Your selected character no longer exists.")
+            ids = lfg_dungeons.parse_item_ids(self.items.value)
+            chosen = lfg_dungeons.validate_dungeons(state.dungeons)
+            with connect() as db:
+                lfg_dungeons.save_request(
+                    db, state.channel_id, state.owner_id, character[0],
+                    chosen, ids, self.availability.value, self.notes.value,
+                    str(interaction.user.display_avatar.url),
+                )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't save dungeon request: {exc}", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Dungeon request saved for **{safe(character[1])}** "
+            f"({len(chosen)} dungeons).", ephemeral=True)
+        try:
+            await state.cog.refresh(state.channel_id)
+        except (discord.HTTPException, sqlite3.Error) as exc:
+            await interaction.followup.send(
+                "Saved, but couldn't update the public board yet. "
+                "Ask an officer to refresh it.", ephemeral=True)
+
+
+class DungeonRemoveView(discord.ui.View):
+    def __init__(self, state):
+        super().__init__(timeout=180)
+        self.state = state
+
+    @discord.ui.button(label="Confirm removal", style=discord.ButtonStyle.danger)
+    async def remove(self, interaction, button):
+        if not await self.state.check(interaction):
+            return
+        with connect() as db:
+            count = lfg_dungeons.delete_request(
+                db, self.state.channel_id, self.state.owner_id)
+        await interaction.response.edit_message(
+            content="Dungeon request removed." if count else
+                    "No dungeon request found.", view=None)
+        if count:
+            try:
+                await self.state.cog.refresh(self.state.channel_id)
+            except (discord.HTTPException, sqlite3.Error):
+                pass
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        if not await self.state.check(interaction):
+            return
+        await interaction.response.edit_message(
+            content="Removal cancelled.", view=None)
+
+
+class DungeonButton(discord.ui.Button):
+    def __init__(self, cog, channel_id):
+        super().__init__(label="LF Dungeons", style=discord.ButtonStyle.primary,
+                         custom_id="hyped_lfg_dungeons_v1")
+        self.cog, self.channel_id = cog, channel_id
+
+    async def callback(self, interaction):
+        state = DungeonState(self.cog, self.channel_id, interaction.user.id)
+        await interaction.response.send_message(
+            content="Select a shared character for your 45+ dungeon farm. "
+                    "No launch-plan changes are required.",
+            view=DungeonCharacterPicker(state), ephemeral=True,
+        )
+
+
 class RemoveButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
         super().__init__(
