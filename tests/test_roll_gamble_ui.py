@@ -202,6 +202,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.send.await_count, 1)
         self.assertIn("19", self.channel.send.await_args.args[0])
         self.assertIn("91", self.channel.send.await_args.args[0])
+        self.assertIn("<:ogredice:1566126699043880992>", self.channel.send.await_args.args[0])
         self.assertIn("Gamer risked a coin to roll again:", self.channel.send.await_args.args[0])
         self.assertIn("Ogre say good roll. Have coin back!", self.channel.send.await_args.args[0])
         self.ns["roll_reactions"].sync.assert_awaited_once()
