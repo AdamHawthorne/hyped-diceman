@@ -900,6 +900,48 @@ class CharacterActionView(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(selection))
 
 
+class CharacterRaceView(discord.ui.LayoutView):
+    """Shared race edit used by both LFG and raid character management."""
+
+    def __init__(self, owner_id, character_id, character):
+        super().__init__(timeout=300)
+        self.owner_id, self.character_id = owner_id, character_id
+        klass = character[2]
+        eligible = [race for race, classes in RACE_CLASSES.items()
+                    if klass in classes]
+        selected = character_race(owner_id, character_id)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## Choose race · {discord.utils.escape_markdown(character[1])}\n"
+                "Your raid sign-ups and LFG profile use the same character."
+            ), accent_color=ACCENT,
+        ))
+        picker = discord.ui.Select(
+            placeholder="Choose your Forever race",
+            options=[discord.SelectOption(
+                label=race, value=race, default=race == selected,
+                description=STARTING_ZONES[race]) for race in eligible],
+        )
+
+        async def chosen(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
+                return
+            try:
+                set_character_race(owner_id, character_id, picker.values[0])
+            except (ValueError, sqlite3.Error) as exc:
+                await interaction.response.send_message(
+                    f"Ogre couldn't update race: {exc}", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterManageView(owner_id, character_id, character))
+            await refresh_lfg_for_member(interaction, owner_id)
+
+        picker.callback = chosen
+        self.add_item(discord.ui.ActionRow(picker))
+
+
 class CharacterManageView(discord.ui.LayoutView):
     """Edit class/spec or select the one Main, without changing raid records."""
 
@@ -908,15 +950,17 @@ class CharacterManageView(discord.ui.LayoutView):
         self.owner_id, self.character_id = owner_id, character_id
         _, name, class_name, spec, role, _ = character
         is_main = character_id in main_character_ids(owner_id)
+        race = character_race(owner_id, character_id)
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 f"## {guild_emoji(class_name)} {discord.utils.escape_markdown(name)}\n"
                 f"{class_name} / {spec} · {guild_emoji(combat_role(role, class_name, spec))} {role}\n"
-                f"**{'Main' if is_main else 'Alt'}**"
+                f"**Race:** {race or 'Not set'} · **{'Main' if is_main else 'Alt'}**"
             ), accent_color=ACCENT,
         ))
         buttons = discord.ui.ActionRow()
         edit = discord.ui.Button(label="Edit class / spec", style=discord.ButtonStyle.secondary)
+        race_button = discord.ui.Button(label="Race", style=discord.ButtonStyle.secondary)
         main = discord.ui.Button(label="Set Main", style=discord.ButtonStyle.success, disabled=is_main)
 
         async def edit_callback(interaction):
@@ -926,6 +970,13 @@ class CharacterManageView(discord.ui.LayoutView):
             await interaction.response.edit_message(
                 view=ClassPickerView(self.owner_id, editing_character_id=self.character_id)
             )
+
+        async def race_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterRaceView(self.owner_id, self.character_id, character))
 
         async def main_callback(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
@@ -952,7 +1003,9 @@ class CharacterManageView(discord.ui.LayoutView):
 
         delete.callback = delete_callback
         edit.callback, main.callback = edit_callback, main_callback
+        race_button.callback = race_callback
         buttons.add_item(edit)
+        buttons.add_item(race_button)
         buttons.add_item(main)
         buttons.add_item(delete)
         self.add_item(buttons)
@@ -1246,6 +1299,7 @@ async def apply_profile_update(interaction, owner_id, character_id,
         view=ProfileUpdatedView(name, class_name, spec, role)
     )
     await refresh_character_signups(interaction, owner_id, character_id)
+    await refresh_lfg_for_member(interaction, owner_id)
 
 
 
