@@ -5,16 +5,43 @@ the canonical shared raid_signup.characters table, not another character copy.
 Do not modify the original launch-plan rows during migration.
 """
 
-# Includes Classic dungeons whose level range overlaps 45+ and the three
-# new level-48+ Forever dungeons. All options fit one Discord multiselect.
-DUNGEONS = (
-    "Uldaman", "Zul'Farrak", "Maraudon", "Alcaz Prison",
-    "Sunken Temple", "Blackrock Depths", "Dire Maul East",
-    "Blackmaw Hold", "Lower Blackrock Spire", "Dire Maul North",
-    "Dire Maul West", "Scholomance", "Stratholme Live",
-    "Stratholme Undead", "Shaper's Terrace", "Upper Blackrock Spire",
+# Discord limits a select to 25 options, so allow players to make a
+# cumulative selection across these four categories. Existing saved dungeon
+# names are retained exactly to avoid changing existing requests.
+# New Forever dungeon names follow Blizzard's 20 October 2026 overview.
+ACTIVITY_GROUPS = {
+    "Classic: Levelling": (
+        "Ragefire Chasm", "Wailing Caverns", "The Deadmines",
+        "Shadowfang Keep", "Blackfathom Deeps", "The Stockade",
+        "Razorfen Kraul", "Gnomeregan", "Scarlet Monastery Graveyard",
+        "Scarlet Monastery Library", "Scarlet Monastery Armory",
+        "Scarlet Monastery Cathedral", "Razorfen Downs", "Uldaman",
+    ),
+    "Classic: High-level": (
+        "Zul'Farrak", "Maraudon", "Sunken Temple",
+        "Blackrock Depths", "Dire Maul East", "Dire Maul West",
+        "Dire Maul North", "Lower Blackrock Spire",
+        "Upper Blackrock Spire", "Scholomance",
+        "Stratholme Live", "Stratholme Undead",
+    ),
+    "Forever": (
+        "Hall of Thanes", "Ruins of Lordaeron", "Excavation Site",
+        "City of Dalaran", "The Drowned City", "Krol'dok Stronghold",
+        "Alcaz Prison", "Blackmaw Hold", "Shaper's Terrace",
+    ),
+    "PvP": (
+        "Warsong Gulch", "Arathi Basin", "Alterac Valley",
+        "World PvP", "Battleground Premades",
+    ),
+}
+DUNGEONS = tuple(
+    name for category, options in ACTIVITY_GROUPS.items()
+    if category != "PvP" for name in options
 )
-DUNGEON_SET = frozenset(DUNGEONS)
+ACTIVITIES = tuple(
+    name for options in ACTIVITY_GROUPS.values() for name in options
+)
+DUNGEON_SET = frozenset(ACTIVITIES)
 MAX_ITEMS_TEXT = 250
 
 
@@ -22,8 +49,8 @@ def validate_dungeons(values):
     """Validate a nonempty, deduplicated selection in stable level order."""
     selected = set(values)
     if not selected or selected - DUNGEON_SET:
-        raise ValueError("Choose at least one listed level 45+ dungeon.")
-    return tuple(d for d in DUNGEONS if d in selected)
+        raise ValueError("Choose at least one listed dungeon or PvP activity.")
+    return tuple(activity for activity in ACTIVITIES if activity in selected)
 
 
 def normalise_wanted_items(value):
