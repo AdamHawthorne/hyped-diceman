@@ -36,7 +36,7 @@ def combat_role(role, klass="", spec=""):
     klass = (klass or "").strip().title()
     spec = (spec or "").strip().title()
     if klass == "Hunter":
-        return "Ranged"
+        return "Melee" if spec == "Survival" else "Ranged"
     if klass in {"Mage", "Warlock"} or (klass, spec) in {
         ("Priest", "Shadow"), ("Druid", "Balance"), ("Shaman", "Elemental")
     }:
