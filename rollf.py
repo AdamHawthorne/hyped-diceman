@@ -729,7 +729,7 @@ def get_user_stats(user_id: int):
                 SUM(CASE WHEN value = 100 THEN 1 ELSE 0 END) AS perfects
             FROM rolls
             WHERE user_id = ?
-            AND actor_type = 'user'
+            AND actor_type IN ('user', 'gamble')
             """,
             (user_id,)
         ).fetchone()
@@ -741,7 +741,7 @@ def get_user_stats(user_id: int):
                 SELECT value
                 FROM rolls
                 WHERE user_id = ?
-                  AND actor_type = 'user'
+                  AND actor_type IN ('user', 'gamble')
                 ORDER BY rolled_at DESC
                 LIMIT 10
             )
@@ -767,7 +767,7 @@ def get_user_stats(user_id: int):
             SELECT MIN(rolled_at)
             FROM rolls
             WHERE user_id = ?
-            AND actor_type = 'user'
+            AND actor_type IN ('user', 'gamble')
         """, (user_id,)).fetchone()[0]
 
     return {
@@ -788,7 +788,7 @@ def calculate_streaks(user_id: int):
             SELECT DISTINCT roll_date
             FROM rolls
             WHERE user_id = ?
-              AND actor_type = 'user'
+              AND actor_type IN ('user', 'gamble')
             ORDER BY roll_date
         """, (user_id,)).fetchall()
 
@@ -841,7 +841,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
             SELECT COUNT(*), SUM(value), MAX(value)
             FROM rolls
             WHERE user_id = ?
-              AND actor_type = 'user'
+              AND actor_type IN ('user', 'gamble')
               AND rolled_at >= ? AND rolled_at < ?
         """, (user_id, start_ts, end_ts)).fetchone()
 
@@ -850,7 +850,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
             FROM (
                 SELECT user_id, SUM(value) AS score
                 FROM rolls
-                WHERE actor_type = 'user'
+                WHERE actor_type IN ('user', 'gamble')
                   AND rolled_at >= ? AND rolled_at < ?
                 GROUP BY user_id
             )
@@ -858,7 +858,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
                 SELECT SUM(value)
                 FROM rolls
                 WHERE user_id = ?
-                  AND actor_type = 'user'
+                  AND actor_type IN ('user', 'gamble')
                   AND rolled_at >= ? AND rolled_at < ?
             )
         """, (start_ts, end_ts, user_id, start_ts, end_ts)).fetchone()[0]
@@ -1062,7 +1062,7 @@ async def sync_high_roller_role():
             """
             SELECT user_id, value
             FROM rolls
-            WHERE actor_type = 'user'
+            WHERE actor_type IN ('user', 'gamble')
               AND rolled_at >= ? AND rolled_at < ?
             ORDER BY value DESC, rolled_at ASC, rowid ASC
             LIMIT 1
@@ -1179,6 +1179,8 @@ def coin_winner_message(day):
     return (
         f"**Coin winner!** {ogre_coin_emoji()}\n"
         + line
+        + (f"\n**{winner['coins_awarded']} coins awarded** for Sunday's double-coin win."
+           if winner['coins_awarded'] == 2 else "")
         + f"\n**{total} {'coin' if total == 1 else 'coins'}** now."
     )
 
@@ -1190,7 +1192,8 @@ def build_daily_roll_panel(*, preview=False, day=None):
         day=day.isoformat(), winner_text="", tagline=daily_ogre_tagline(day),
         top_five=coin_standings(db(), HYPED_GUILD_ID)[:5],
         coin_emoji=ogre_coin_emoji(), ogre_id=bot.user.id if bot.user else 0,
-        on_roll=daily_roll_action, on_leaderboard=show_coin_leaderboard,
+        on_roll=daily_roll_action, on_gamble=show_gamble_rules,
+        on_leaderboard=show_coin_leaderboard,
         on_stats=show_my_stats, preview=preview,
     )
 
@@ -2182,7 +2185,7 @@ async def reply_if_tied_for_highest(interaction, value, roll_message=None):
     with db() as con:
         top = con.execute(
             """SELECT user_id, value FROM rolls
-               WHERE actor_type IN ('user', 'bot')
+               WHERE actor_type IN ('user', 'gamble', 'bot')
                  AND rolled_at >= ? AND rolled_at < ?
                ORDER BY value DESC, rolled_at ASC, rowid ASC LIMIT 1""",
             (start, end),
