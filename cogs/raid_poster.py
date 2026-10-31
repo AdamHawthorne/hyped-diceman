@@ -303,7 +303,7 @@ class RaidPosterView(discord.ui.LayoutView):
             raid_date = f'{d["day"] or "Choose date"} · {d["time"]} UK'
             announce_date = ANNOUNCEMENTS[d["announce"]]
         softres = "Set" if d["softres_url"] else "Not set (optional)"
-        banner = "Custom image" if d.get("banner_url") else "Default image"
+        banner = "Custom image" if d.get("banner_url") else "None (optional)"
         custom_title = " ".join((d.get("custom_title") or "").split())
         display_title = f"<Hyped> Raid #{d['number']}"
         if custom_title:
