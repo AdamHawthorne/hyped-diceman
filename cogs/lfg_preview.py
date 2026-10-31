@@ -1241,7 +1241,7 @@ class DungeonSelectionView(discord.ui.View):
             await interaction.response.edit_message(
                 content=f"**Selected dungeons ({len(state.dungeons)}):** "
                         + ", ".join(state.dungeons)
-                        + "\nPress Next for item links, availability and notes.",
+                        + "\nPress Next to add items needed, availability and notes.",
                 view=DungeonSelectionView(state),
             )
 
