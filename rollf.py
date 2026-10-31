@@ -1138,7 +1138,7 @@ class DailyRollView(discord.ui.View):
 
     @discord.ui.button(
         label="Roll",
-        emoji=discord.PartialEmoji(name="ogredice", id=1566126699043880992),
+        emoji=discord.PartialEmoji(name="ogredice", id=1565477510651846767),
         style=discord.ButtonStyle.primary,
         custom_id="hyped_diceman_daily_roll"
     )
@@ -1204,7 +1204,7 @@ class GambleConfirmView(discord.ui.View):
         stake_text = ("Ogre say good roll. Have coin back!" if result["stake_returned"]
                       else "Ha! Ogre keep this one.")
         notice = (
-            f"{interaction.user.mention} rolled **{result['best']}** <:ogredice:1566126699043880992>\n"
+            f"{interaction.user.mention} rolled **{result['best']}** <:ogredice:1565477510651846767>\n"
             f"-# {interaction.user.name} risked a coin to roll again: "
             f"**{result['base']} → {result['extra']}**. {stake_text}"
         )
@@ -1609,8 +1609,9 @@ async def refresh_historical_roll_dice():
         # Touch only Ogre's roll announcements, not member conversations.
         if not re.match(r"^(?:<@!?\d+> rolled |Me rolled )", message.content):
             continue
-        updated = message.content.replace("🎲", "<:ogredice:1566126699043880992>")
-        updated = updated.replace(":ogredice:", "<:ogredice:1566126699043880992>") if "<:ogredice:" not in updated else updated
+        updated = message.content.replace("🎲", "<:ogredice:1565477510651846767>")
+        updated = updated.replace("<:ogredice:1566126699043880992>", "<:ogredice:1565477510651846767>")
+        updated = updated.replace("<:ogredice:1566126699043880992>", "<:ogredice:1565477510651846767>")\n        updated = updated.replace(":ogredice:", "<:ogredice:1565477510651846767>") if "<:ogredice:" not in updated else updated
         if updated == message.content:
             continue
         try:
@@ -2128,9 +2129,9 @@ async def bot_daily_roll():
 
             try:
                 if value == 100:
-                    await channel.send(f"Me rolled 💯 <:ogredice:1566126699043880992>")
+                    await channel.send(f"Me rolled 💯 <:ogredice:1565477510651846767>")
                 else:
-                    await channel.send(f"Me rolled **{value}** <:ogredice:1566126699043880992>")
+                    await channel.send(f"Me rolled **{value}** <:ogredice:1565477510651846767>")
             except discord.Forbidden:
                 try:
                     guild = bot.get_guild(guild_id)
@@ -2443,14 +2444,14 @@ async def help_cmd(interaction: discord.Interaction):
         title=BOT_NAME,
         description=(
             "**Daily Roll**\n"
-            "Use the daily **<:ogredice:1566126699043880992> Roll** button or `/roll` once per day. "
+            "Use the daily **<:ogredice:1565477510651846767> Roll** button or `/roll` once per day. "
             "Rolls reset at midnight UK time. The highest roll earns one gold coin.\n\n"
             "**Commands**\n"
             "• `/roll` — Roll your daily number\n"
             "• `/leaderboard` — View gold coin totals\n"
             "• `/stats` — View detailed statistics\n\n"
             "The current daily leader automatically receives the "
-            "**<:ogredice:1566126699043880992> Highest Daily Roller** role. A tied roll does not take the crown."
+            "**<:ogredice:1565477510651846767> Highest Daily Roller** role. A tied roll does not take the crown."
         ),
         color=discord.Color.dark_grey()
     )
@@ -2562,11 +2563,11 @@ async def perform_roll(interaction: discord.Interaction):
 
         if value == 100:
             await interaction.response.send_message(
-                f"{interaction.user.mention} rolled 💯 <:ogredice:1566126699043880992>"
+                f"{interaction.user.mention} rolled 💯 <:ogredice:1565477510651846767>"
             )
         else:
             await interaction.response.send_message(
-                f"{interaction.user.mention} rolled **{value}** <:ogredice:1566126699043880992>"
+                f"{interaction.user.mention} rolled **{value}** <:ogredice:1565477510651846767>"
             )
 
         await reply_if_tied_for_highest(interaction, value)
@@ -2642,18 +2643,18 @@ async def perform_roll(interaction: discord.Interaction):
     if current_streak in milestones:
         await msg.edit(
             content=(
-                f"{interaction.user.mention} rolled **{display_value:,}** <:ogredice:1566126699043880992>\n"
+                f"{interaction.user.mention} rolled **{display_value:,}** <:ogredice:1565477510651846767>\n"
                 f"🔥 {current_streak}-day streak achieved."
             )
         )
     else:
         if value == 100:
             await msg.edit(
-                content=f"{interaction.user.mention} rolled 💯 <:ogredice:1566126699043880992>"
+                content=f"{interaction.user.mention} rolled 💯 <:ogredice:1565477510651846767>"
             )
         else:
             await msg.edit(
-                content=f"{interaction.user.mention} rolled **{display_value:,}** <:ogredice:1566126699043880992>"
+                content=f"{interaction.user.mention} rolled **{display_value:,}** <:ogredice:1565477510651846767>"
             )
 
     await reply_if_tied_for_highest(interaction, value, msg)
@@ -2670,7 +2671,7 @@ async def roll(interaction: discord.Interaction):
 
     if interaction.channel_id != ROLL_CHANNEL_ID:
         await interaction.response.send_message(
-            f"Use `/roll` in <#{ROLL_CHANNEL_ID}> <:ogredice:1566126699043880992>",
+            f"Use `/roll` in <#{ROLL_CHANNEL_ID}> <:ogredice:1565477510651846767>",
             ephemeral=True
         )
         return
