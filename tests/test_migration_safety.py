@@ -76,7 +76,8 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn("discord.ui.Separator", source)
         self.assertIn("discord.ui.Section", source)
         self.assertIn("https://i.vgy.me/2Jt4oi.png", source)
-        self.assertIn("Skyborne (Windshaper)", source)
+        self.assertIn("Skyborne (Windshaper)",
+                      (ROOT / "cogs/forever_races.py").read_text(encoding="utf-8"))
         self.assertIn("STARTING_ZONES", source)
         self.assertIn("CLASS_ROLES", source)
         self.assertIn("class StartTimeView", source)
@@ -84,7 +85,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("class LaunchDaysView", source)
         self.assertIn("Group Questing + Dungeons (LFM)", source)
         self.assertIn("Grinding (Dungeons, grind spots etc)", source)
-        self.assertIn("Ogre want know launch plans.", source)
+        self.assertIn("Find launch groups and level 45+ dungeon farms.", source)
         self.assertIn('label="Character name"', source)
         self.assertIn('placeholder="Forename Surname"', source)
         self.assertIn("START_TIMES", source)
