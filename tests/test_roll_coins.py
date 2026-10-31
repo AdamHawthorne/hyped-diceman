@@ -9,6 +9,7 @@ from pathlib import Path
 from cogs.roll_coins import (
     UK, ensure_coin_schema, settle_completed_days, coin_total,
     coin_standings, day_award, award_missing_day,
+    claim_public_coin_leaderboard, release_public_coin_leaderboard,
 )
 
 
@@ -29,6 +30,43 @@ class CoinAccountingTests(unittest.TestCase):
     def roll(self, uid, score, when, actor='user'):
         self.con.execute('INSERT INTO rolls VALUES (?, ?, ?, ?, ?, ?)',
                          (uid, str(uid), score, int(clock(when).timestamp()), actor, 'wrong-legacy-date'))
+
+    def test_ledger_only_one_public_display_per_guild_uk_day(self):
+        self.assertTrue(claim_public_coin_leaderboard(
+            self.con, 9, "2026-10-31", 101, self.now))
+        self.assertFalse(claim_public_coin_leaderboard(
+            self.con, 9, "2026-10-31", 102, self.now))
+        self.assertEqual(self.con.execute(
+            "SELECT requested_by FROM roll_public_leaderboards "
+            "WHERE guild_id=9 AND roll_date='2026-10-31'"
+        ).fetchone()[0], 101)
+        # Both a new day and a different guild have an independent allowance.
+        self.assertTrue(claim_public_coin_leaderboard(
+            self.con, 9, "2026-11-01", 102, self.now))
+        self.assertTrue(claim_public_coin_leaderboard(
+            self.con, 10, "2026-10-31", 202, self.now))
+        ensure_coin_schema(self.con)  # Restart-style schema reinitialisation.
+        self.assertFalse(claim_public_coin_leaderboard(
+            self.con, 9, "2026-10-31", 103, self.now))
+        self.assertEqual(coin_standings(self.con, 9), [])
+
+    def test_public_ledger_reservation_survives_reconnect_and_can_release_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "ledger.db"
+            with closing(sqlite3.connect(path, isolation_level=None)) as con:
+                ensure_coin_schema(con)
+                self.assertTrue(claim_public_coin_leaderboard(
+                    con, 9, "2026-10-31", 101, self.now))
+            with closing(sqlite3.connect(path, isolation_level=None)) as con:
+                ensure_coin_schema(con)
+                self.assertFalse(claim_public_coin_leaderboard(
+                    con, 9, "2026-10-31", 102, self.now))
+                self.assertFalse(release_public_coin_leaderboard(
+                    con, 9, "2026-10-31", 102))
+                self.assertTrue(release_public_coin_leaderboard(
+                    con, 9, "2026-10-31", 101))
+                self.assertTrue(claim_public_coin_leaderboard(
+                    con, 9, "2026-10-31", 102, self.now))
 
     def test_backfill_and_repeated_restart_are_idempotent(self):
         self.roll(1, 46, '2026-10-24T01:00:00')
