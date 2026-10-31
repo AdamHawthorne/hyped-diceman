@@ -16,6 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from cogs import raid_sheets, raid_sheets_v3
 from cogs.emojis import markup as guild_emoji, option_emoji, combat_role, EMOJI_IDS
+from cogs.forever_races import RACE_CLASSES, STARTING_ZONES
 from cogs.countdown import toggle_raid_dm
 from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
@@ -154,6 +155,10 @@ def create_schema(path=RAID_DB):
             PRIMARY KEY(raid_id, discord_id)
         );
         """)
+
+        # Race belongs to the shared character, not to a separate LFG copy.
+        if "race" not in {row[1] for row in con.execute("PRAGMA table_info(characters)")}:
+            con.execute("ALTER TABLE characters ADD COLUMN race TEXT NOT NULL DEFAULT ''")
 
         # Historic registrations allowed separate realm/casing variants of
         # one character. Consolidate those on startup without losing any
@@ -340,6 +345,44 @@ def member_characters(discord_id, path=RAID_DB):
         ).fetchall()
 
 
+def character_race(discord_id, character_id, path=RAID_DB):
+    with database(path) as con:
+        row = con.execute(
+            "SELECT race FROM characters WHERE discord_id=? AND character_id=?",
+            (discord_id, character_id),
+        ).fetchone()
+    return row[0] if row else ""
+
+
+def set_character_race(discord_id, character_id, race, path=RAID_DB):
+    with database(path) as con:
+        row = con.execute(
+            "SELECT class_name FROM characters WHERE discord_id=? AND character_id=?",
+            (discord_id, character_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("That character isn't yours.")
+        if row[0] not in RACE_CLASSES.get(race, ()):
+            raise ValueError("This race cannot play that class in Forever.")
+        con.execute(
+            "UPDATE characters SET race=? WHERE discord_id=? AND character_id=?",
+            (race, discord_id, character_id),
+        )
+
+
+async def refresh_lfg_for_member(interaction, owner_id):
+    """Keep LFG entries current when the shared character profile changes."""
+    bot = getattr(interaction, "client", None)
+    getter = getattr(bot, "get_cog", None)
+    cog = getter("LFGPreview") if callable(getter) else None
+    if cog is not None:
+        try:
+            await cog.refresh_member_boards(owner_id)
+        except (sqlite3.Error, discord.HTTPException) as exc:
+            LOGGER.warning("Couldn't refresh LFG characters for %s: %s",
+                           owner_id, exc)
+
+
 def set_main_character(discord_id, character_id, path=RAID_DB):
     """Mark exactly one owned character Main; leave all raid/SimC records intact."""
     with database(path) as con:
@@ -452,15 +495,18 @@ def update_character_profile(discord_id, character_id, class_name, spec, role, p
         raise ValueError("Choose a valid class, spec and raid role.")
     with database(path) as con:
         row = con.execute(
-            "SELECT name FROM characters WHERE character_id=? AND discord_id=?",
+            "SELECT name,race FROM characters WHERE character_id=? AND discord_id=?",
             (character_id, discord_id),
         ).fetchone()
         if not row:
             raise ValueError("Ogre cannot edit someone else's character.")
+        # A class change may invalidate the old race; clear it so a player
+        # can choose a compatible race again from Characters.
+        race = row[1] if class_name in RACE_CLASSES.get(row[1], ()) else ""
         con.execute(
-            "UPDATE characters SET class_name=?, spec=?, role=? "
+            "UPDATE characters SET class_name=?, spec=?, role=?, race=? "
             "WHERE character_id=? AND discord_id=?",
-            (class_name, spec, role, character_id, discord_id),
+            (class_name, spec, role, race, character_id, discord_id),
         )
     return row[0]
 
