@@ -112,7 +112,7 @@ class DungeonRequestTests(unittest.TestCase):
             123, self.character_id, "Warrior", "Fury", "DPS", self.char_path)
         updated = json.dumps(
             lfg.BoardLayout(SimpleNamespace(), 111, guild=None).to_components())
-        self.assertIn("Fury", updated) if "Fury" in updated else self.assertIn("DPS", updated)
+        self.assertIn("DPS", updated)
 
     def test_legacy_launch_rows_survive_additive_migration(self):
         with lfg.connect() as db:
@@ -133,10 +133,10 @@ class DungeonRequestTests(unittest.TestCase):
         raid.set_character_race(123, self.character_id, "Orc", self.char_path)
         self.assertEqual(raid.character_race(123, self.character_id, self.char_path),
                          "Orc")
-        with self.assertRaises(ValueError):
-            raid.set_character_race(123, self.character_id, "Tauren", self.char_path) if False else raid.set_character_race(123, self.character_id, "Undead", self.char_path)
         raid.update_character_profile(
             123, self.character_id, "Mage", "Frost", "DPS", self.char_path)
+        with self.assertRaises(ValueError):
+            raid.set_character_race(123, self.character_id, "Tauren", self.char_path)
         self.assertEqual(raid.character_race(123, self.character_id, self.char_path), "Orc")
         self.assertEqual(len(raid.member_characters(123, self.char_path)), 1)
 
