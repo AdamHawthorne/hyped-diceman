@@ -162,6 +162,26 @@ class GambleDatabaseTests(unittest.TestCase):
         self.assertEqual(
             self.con.execute("SELECT COUNT(*) FROM rolls").fetchone()[0], 2)
 
+    def test_lost_gamble_transfers_coin_to_ogre_without_minting(self):
+        self.award()
+        self.assertTrue(self.free_roll(90))
+        self.gamble(extra=20)
+        self.assertEqual(coin_total(self.con, 9, 101), 0)
+        self.assertEqual(coin_total(self.con, 9, 0), 1)
+        self.assertEqual(coin_standings(self.con, 9), [
+            {"rank": 1, "user_id": 0, "coins": 1}
+        ])
+        self.assertEqual(sum(row["coins"] for row in coin_standings(self.con, 9)), 1)
+
+    def test_winning_gamble_does_not_credit_ogre(self):
+        self.award()
+        self.assertTrue(self.free_roll(20))
+        self.gamble(extra=80)
+        self.assertEqual(coin_total(self.con, 9, 0), 0)
+        self.assertEqual(coin_standings(self.con, 9), [
+            {"rank": 1, "user_id": 101, "coins": 1}
+        ])
+
     def test_tie_loses_stake_and_cannot_roll_more_than_twice(self):
         self.award()
         self.assertTrue(self.free_roll(55))
