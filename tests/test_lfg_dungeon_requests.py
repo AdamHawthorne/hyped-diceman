@@ -82,7 +82,7 @@ class DungeonRequestTests(unittest.TestCase):
             ("Blackmaw Hold", "Alcaz Prison", "Blackmaw Hold")),
             ("Alcaz Prison", "Blackmaw Hold"))
         with self.assertRaises(ValueError):
-            dungeon.validate_dungeons(("Shadowfang Keep",))
+            dungeon.validate_dungeons(("Shadowfang Cavern",))
         with self.assertRaises(ValueError):
             dungeon.validate_dungeons(())
 
