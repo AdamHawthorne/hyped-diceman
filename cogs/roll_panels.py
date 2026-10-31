@@ -1,6 +1,8 @@
 """Components V2 daily roll and all-time coin leaderboard."""
 import discord
 
+from .emojis import option_emoji
+
 COIN_IMAGE = "https://i.vgy.me/agW53e.png"
 OGRE_IMAGE = "https://i.vgy.me/zJXBXg.png"
 GOLD = 0xD19A3B
@@ -42,7 +44,8 @@ class DailyRollPanel(discord.ui.LayoutView):
         for label, custom_id, callback in actions:
             button = discord.ui.Button(
                 label=label, custom_id=custom_id,
-                emoji="🎲" if label == "Roll" else None,
+                emoji=("🎲" if label == "Roll" else
+                       option_emoji("ogrecoin") if label == "Gamble" else None),
                 style=(discord.ButtonStyle.success if label == "Roll" else
                        discord.ButtonStyle.danger if label == "Gamble" else
                        discord.ButtonStyle.secondary),
