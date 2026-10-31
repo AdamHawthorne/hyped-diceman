@@ -17,6 +17,7 @@ from discord.ext import commands
 from .lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
 from .lfg_pagination import PAGE_SIZE, page_count, clamp_page, page_rows
 from .lfg_demo import demo_entries, display_race, display_uk_times
+from . import raid_signup, lfg_dungeons
 
 PATH = os.getenv(
     "LFG_DB_PATH",
@@ -163,6 +164,10 @@ def init_db():
             if name not in columns:
                 db.execute(f"ALTER TABLE lfg_listings ADD COLUMN {name} {declaration}")
 
+        if "character_id" not in columns:
+            db.execute("ALTER TABLE lfg_listings ADD COLUMN character_id INTEGER")
+        lfg_dungeons.init_requests(db)
+
         # Pre-launch plans persist until a member updates or removes them.
         db.execute("UPDATE lfg_listings SET board_day='launch'")
         db.execute("UPDATE lfg_boards SET board_day='launch'")
@@ -192,6 +197,33 @@ def entries(channel_id):
         ).fetchall()
     # Recompute after every save/update; the board uses entries() on refresh.
     return sorted(roster, key=listing_board_key)
+
+
+def board_entries(channel_id):
+    """One public board, independent dungeon posts ahead of legacy launch plans."""
+    with connect() as db:
+        requests = lfg_dungeons.list_requests(db, channel_id)
+    return [dict(row, _kind="dungeon") for row in requests] + [
+        dict(row, _kind="launch") for row in entries(channel_id)
+    ]
+
+
+def shared_character(member_id, character_id):
+    """Resolve current, owned character data; never trust a copied LFG class."""
+    if not character_id:
+        return None
+    return next(
+        (row for row in raid_signup.member_characters(member_id)
+         if row[0] == character_id), None
+    )
+
+
+def launch_profile(row):
+    """New and migrated plans follow canonical class/spec/role changes."""
+    character = shared_character(row["user_id"], row["character_id"])
+    if character:
+        return character[1], character[2], character[3], character[4]
+    return row["character"], row["class_name"], "", row["role"]
 
 
 def safe(value):
