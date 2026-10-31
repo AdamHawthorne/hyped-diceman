@@ -1204,7 +1204,7 @@ class GambleConfirmView(discord.ui.View):
                       else "Ha! Ogre keep this one.")
         notice = (
             f"{interaction.user.mention} rolled **{result['best']}** 🎲\n"
-            f"-# {interaction.user.display_name} risked a coin to roll again: "
+            f"-# {interaction.user.name} risked a coin to roll again: "
             f"**{result['base']} → {result['extra']}**. {stake_text}"
         )
         try:
