@@ -1502,7 +1502,7 @@ class BoardLayout(discord.ui.LayoutView):
             ))
             self.add_item(discord.ui.TextDisplay(
                 f"-# Page {self.page_index + 1} of {total_pages} · "
-                f"{len(roster)} member plan(s)"
+                f"{len(roster)} listing(s)"
             ))
 
         visible = page_rows(roster, self.page_index)
