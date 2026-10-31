@@ -27,13 +27,13 @@ class RollReactions:
         start, end = self.today_range()
         with self.db() as con:
             rows = con.execute(
-                "SELECT user_id, value FROM rolls WHERE actor_type IN ('user', 'gamble', 'bot') "
+                "SELECT user_id, value, actor_type FROM rolls WHERE actor_type IN ('user', 'gamble', 'bot') "
                 "AND rolled_at >= ? AND rolled_at < ? ORDER BY rolled_at ASC, rowid ASC",
                 (start, end),
             ).fetchall()
         # A lower gamble roll must never replace the member's existing best.
         all_scores = {}
-        for user_id, value in rows:
+        for user_id, value, actor_type in rows:
             all_scores[user_id] = max(value, all_scores.get(user_id, 0))
         scores = {uid: value for uid, value in all_scores.items() if uid != 0}
         if not scores:
@@ -46,6 +46,7 @@ class RollReactions:
         # This also recovers today's rolls posted before this feature was deployed.
         messages = []
         latest_by_user = {}
+        messages_by_user = {}
         async for message in channel.history(
             limit=None, after=datetime.fromtimestamp(start, timezone.utc),
             before=datetime.fromtimestamp(end + 1, timezone.utc), oldest_first=True,
@@ -59,6 +60,7 @@ class RollReactions:
             if user_id in scores:
                 messages.append((user_id, message))
                 latest_by_user[user_id] = message.id
+                messages_by_user.setdefault(user_id, []).append(message)
 
         # Only visible human roll messages count for reaction ranking.
         # Keep Ogre's saved roll even though his message has no user mention.
@@ -69,13 +71,24 @@ class RollReactions:
         if not scores:
             return
         high = max(scores, key=scores.get)
-        # Ogre participates in the low-roll comparison, but never gets poop.
-        # If Ogre is lowest (including a tie), remove poop from all humans.
-        lowest_value = min(all_scores.values())
-        human_low = min(scores, key=scores.get)
-        low = human_low if scores[human_low] == lowest_value and (
-            0 not in all_scores or all_scores[0] > lowest_value
-        ) else None
+        # Rank poop by individual free/gamble rolls, not personal bests.
+        # Ogre can block poop, but never receives it; ties favour the first roll.
+        eligible = [(uid, value, kind) for uid, value, kind in rows
+                    if uid == 0 or uid in scores]
+        lowest_value = min(value for _, value, _ in eligible)
+        lowest_roll = next((entry for entry in eligible if entry[1] == lowest_value))
+        low = (lowest_roll[0] if lowest_roll[0] != 0
+               and lowest_value < max(all_scores.values()) else None)
+        low_message_id = None
+        if low is not None:
+            # Match the chronologically ordered DB rolls to visible messages.
+            user_rolls = [(value, kind) for uid, value, kind in rows
+                          if uid == low and kind in ('user', 'gamble')]
+            target_index = next((i for i, (value, _) in enumerate(user_rolls)
+                                 if value == lowest_value), None)
+            posts = messages_by_user.get(low, [])
+            if target_index is not None and target_index < len(posts):
+                low_message_id = posts[target_index].id
         guild = self.bot.get_guild(self.guild_id) if self.guild_id and hasattr(self.bot, 'get_guild') else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
         high_emoji = coin or "<:ogrecoin:1564336079430099035>"
@@ -90,8 +103,7 @@ class RollReactions:
             for emoji, wanted in (
                 (high_emoji, user_id == high and message.id == latest_by_user[user_id]),
                 ("💩", low is not None and user_id == low
-                 and scores[low] < max(all_scores.values())
-                 and message.id == latest_by_user[user_id]),
+                 and message.id == low_message_id),
             ):
                 present = any(str(r.emoji) == str(emoji) and r.me for r in message.reactions)
                 try:
