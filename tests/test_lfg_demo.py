@@ -56,7 +56,8 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         self.assertIn("view=BoardLayout(self, interaction.channel_id,", source)
         self.assertIn("preview=True", source)
         self.assertNotIn("await interaction.followup.send(view=FooterLayout()", source)
-        self.assertIn("gallery.add_item(media=BOTTOM_IMAGE", source)
+        self.assertNotIn("gallery.add_item(media=BOTTOM_IMAGE", source)
+        self.assertNotIn("BOTTOM_IMAGE", source)
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
 
