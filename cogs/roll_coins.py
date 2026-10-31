@@ -57,6 +57,12 @@ def ensure_coin_schema(con):
     )""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_roll_coin_gambles_user
                    ON roll_coin_gambles(guild_id, user_id)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS roll_sunday_bonus_notices (
+        guild_id INTEGER NOT NULL,
+        roll_date TEXT NOT NULL,
+        message_id INTEGER NOT NULL,
+        PRIMARY KEY(guild_id, roll_date)
+    )""")
     # Durable UK-day gate shared by the leaderboard button and /leaderboard.
     # A single successful INSERT reserves the day's one public display.
     con.execute("""
