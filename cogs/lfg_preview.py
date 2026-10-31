@@ -83,7 +83,6 @@ LAUNCH_DAYS = (
 )
 
 HEADER_IMAGE = "https://i.vgy.me/2Jt4oi.png"
-BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"
 # Use the guild's fixed custom emojis for LFM and combat roles.
 OPEN_LFM_MARKER = guild_emoji("MoveTo")
 ROLE_EMOJIS = {role: guild_emoji(role) for role in ("Tank", "Healer", "Melee", "Ranged", "Caster")}
@@ -251,7 +250,7 @@ def format_roles(value, *, icons=False):
     roles = [part.strip() for part in value.split(",") if part.strip()]
     if icons:
         return " / ".join(
-            f"{guild_emoji(combat_role(role))} {role}" if guild_emoji(combat_role(role)) else role
+            f"{role} {guild_emoji(combat_role(role))}" if guild_emoji(combat_role(role)) else role
             for role in roles
         )
     return " / ".join(roles)
@@ -1510,14 +1509,12 @@ class BoardLayout(discord.ui.LayoutView):
             roster = demo_entries() if preview else board_entries(channel_id)
         chunks = board_chunks(roster)
         visible = chunks[0]
-        if show_footer is None:
-            show_footer = len(chunks) == 1
 
         if not continuation:
             heading = discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## <Hyped> LFG-LFM Board\n"
-                    "**Ogre help find launch groups and dungeon runs (45+).**"
+                    "**Ogre help find launch groups, dungeons and PvP.**"
                     + ("\n-# DEMO PREVIEW · First seven fictional plans only"
                        if preview and len(roster) > len(visible) else
                        "\n-# DEMO PREVIEW · Nothing saved" if preview else "")
@@ -1551,11 +1548,11 @@ class BoardLayout(discord.ui.LayoutView):
                     title = "Character needs updating"
                 else:
                     _, name, klass, spec, role, _ = character
-                    title = (f"{safe(name)} · {guild_emoji(klass)} {klass} · "
-                             f"{guild_emoji(combat_role(role, klass, spec))} {role}")
+                    title = (f"{safe(name)} · {klass} {guild_emoji(klass)} · "
+                             f"{role} {guild_emoji(combat_role(role, klass, spec))}")
                 lines = [
-                    f"**LF Dungeons · {title}**",
-                    f"-# **Dungeons:** {safe(row['dungeons'])}",
+                    f"**LF Dungeons / PvP · {title}**",
+                    f"-# **Activities:** {safe(row['dungeons'])}",
                     f"-# **Items needed:** {safe(row['wanted_items']) if row['wanted_items'] else 'Not specified'}",
                     f"-# **Available:** {safe(row['availability'])}",
                 ]
@@ -1582,7 +1579,7 @@ class BoardLayout(discord.ui.LayoutView):
                 else (row["character"], row["class_name"], "", row["role"])
             )
             roles = " / ".join(
-                f"{guild_emoji(combat_role(part.strip(), profile_class, profile_spec))} {part.strip()}"
+                f"{part.strip()} {guild_emoji(combat_role(part.strip(), profile_class, profile_spec))}"
                 for part in profile_role.split(",") if part.strip()
             ) or "Role not set"
             days = row["days_off"] or "Not set"
@@ -1593,7 +1590,7 @@ class BoardLayout(discord.ui.LayoutView):
             )
 
             lines = [
-                f"**{character} · {display_race(race)} {guild_emoji(profile_class)} {profile_class} · {roles}**",
+                f"**{character} · {display_race(race)} {profile_class} {guild_emoji(profile_class)} · {roles}**",
             ]
             if not is_solo_or_sorted(row["activity"]):
                 lines.append(
@@ -1621,11 +1618,6 @@ class BoardLayout(discord.ui.LayoutView):
         if not visible:
             self.add_item(discord.ui.TextDisplay("*Nobody on board yet.*"))
 
-        # Show the image once, after the final visible player card.
-        if show_footer:
-            gallery = discord.ui.MediaGallery()
-            gallery.add_item(media=BOTTOM_IMAGE, description="Hyped")
-            self.add_item(gallery)
 
 
 class LFGPreview(commands.Cog):
