@@ -22,7 +22,9 @@ class CharacterEditTests(unittest.TestCase):
         self.db.execute('CREATE TABLE lfg_listings (channel_id, user_id, race, starting_zone, class_name, role, notes, activity)')
         self.db.execute("INSERT INTO lfg_listings VALUES (1, 2, 'Orc', 'Durotar', 'Warrior', 'Tank', 'original', 'questing')")
         self.original = dict(self.row())
-        scope = {'connect': lambda: self.db}
+        from cogs.forever_races import RACE_CLASSES, STARTING_ZONES
+        scope = {'connect': lambda: self.db, 'RACE_CLASSES': RACE_CLASSES,
+                 'STARTING_ZONES': STARTING_ZONES}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), scope)
         self.save = scope['save_character_edit']
 
