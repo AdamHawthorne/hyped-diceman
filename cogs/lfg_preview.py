@@ -15,7 +15,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from .lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
-from .lfg_pagination import PAGE_SIZE, page_count, clamp_page, page_rows
+from .lfg_pagination import board_chunks
 from .lfg_demo import demo_entries, display_race, display_uk_times
 from . import raid_signup, lfg_dungeons
 from .forever_races import RACES, RACE_CLASSES, STARTING_ZONES
@@ -1434,107 +1434,58 @@ class RemoveButton(discord.ui.Button):
         await interaction.followup.send(text, ephemeral=True)
 
 
-class BoardPageButton(discord.ui.Button):
-    """Navigate among V2 containers by editing the *existing* board message."""
-
-    def __init__(self, delta, page_index, total_pages):
-        label = "‹ Previous" if delta == -1 else "Next ›"
-        super().__init__(
-            label=label,
-            style=discord.ButtonStyle.secondary,
-            custom_id=("hyped_lfg_page_prev_v1" if delta == -1
-                       else "hyped_lfg_page_next_v1"),
-            disabled=(page_index == 0 if delta == -1
-                      else page_index >= total_pages - 1),
-        )
-        self.delta = delta
-
-    async def callback(self, interaction):
-        layout = self.view
-        if layout.preview:
-            roster = demo_entries()
-            page = clamp_page(layout.page_index + self.delta, len(roster))
-            await interaction.response.edit_message(
-                view=BoardLayout(layout.cog, layout.channel_id,
-                                 interaction.guild, preview=True, page_index=page),
-            )
-            return
-
-        # Page changes do not insert/delete messages or touch member records.
-        async with layout.cog.lock:
-            roster = board_entries(layout.channel_id)
-            page = clamp_page(layout.page_index + self.delta, len(roster))
-            await interaction.response.edit_message(
-                view=BoardLayout(layout.cog, layout.channel_id,
-                                 interaction.guild, page_index=page,
-                                 roster=roster),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            with connect() as db:
-                db.execute(
-                    "UPDATE lfg_boards SET page_index=? WHERE channel_id=?",
-                    (page, layout.channel_id),
-                )
-
-
 class BoardLayout(discord.ui.LayoutView):
     """One Discord message with a V2 container for each visible member."""
 
     def __init__(self, cog, channel_id, guild=None, *, preview=False,
-                 page_index=0, roster=None):
+                 page_index=0, roster=None, continuation=False, show_footer=None):
         super().__init__(timeout=900 if preview else None)
         self.cog = cog
         self.channel_id = channel_id
         self.preview = preview
+        # The obsolete page_index argument is accepted for saved-board
+        # compatibility only. There are no public Next/Previous controls.
+        self.page_index = 0
 
         # Preview never reads/writes real member records.
         if roster is None:
             roster = demo_entries() if preview else board_entries(channel_id)
-        self.page_index = clamp_page(page_index, len(roster))
-        total_pages = page_count(len(roster))
+        chunks = board_chunks(roster)
+        visible = chunks[0]
+        if show_footer is None:
+            show_footer = len(chunks) == 1
 
-        heading = discord.ui.Section(
-            discord.ui.TextDisplay(
-                "## <Hyped> LFG-LFM Board\n"
-                "**Ogre help find launch groups and dungeon runs (45+).**"
-                + ("\n-# DEMO PREVIEW · 20 fictional players · nothing saved"
-                   if preview else "")
-            ),
-            accessory=discord.ui.Thumbnail(
-                HEADER_IMAGE, description="Hyped LFG-LFM",
-            ),
-        )
-        self.add_item(discord.ui.Container(heading, accent_color=ACCENT))
+        if not continuation:
+            heading = discord.ui.Section(
+                discord.ui.TextDisplay(
+                    "## <Hyped> LFG-LFM Board\n"
+                    "**Ogre help find launch groups and dungeon runs (45+).**"
+                    + ("\n-# DEMO PREVIEW · First seven fictional plans only"
+                       if preview and len(roster) > len(visible) else
+                       "\n-# DEMO PREVIEW · Nothing saved" if preview else "")
+                ),
+                accessory=discord.ui.Thumbnail(
+                    HEADER_IMAGE, description="Hyped LFG-LFM",
+                ),
+            )
+            self.add_item(discord.ui.Container(heading, accent_color=ACCENT))
 
-        if preview:
-            # The preview is navigable but cannot edit real member data.
-            self.add_item(discord.ui.ActionRow(
-                *[discord.ui.Button(
-                    label=label, style=discord.ButtonStyle.secondary,
-                    disabled=True,
-                ) for label in ("Add / Update", "Characters", "LF Dungeons",
-                               "Remove Dungeon", "Remove Plan")]
-            ))
-        else:
-            self.add_item(discord.ui.ActionRow(
-                AddUpdateButton(cog, channel_id),
-                CharactersButton(),
-                DungeonButton(cog, channel_id),
-                RemoveDungeonButton(cog, channel_id),
-                RemoveButton(cog, channel_id),
-            ))
-
-        if total_pages > 1:
-            self.add_item(discord.ui.ActionRow(
-                BoardPageButton(-1, self.page_index, total_pages),
-                BoardPageButton(+1, self.page_index, total_pages),
-            ))
-            self.add_item(discord.ui.TextDisplay(
-                f"-# Page {self.page_index + 1} of {total_pages} · "
-                f"{len(roster)} listing(s)"
-            ))
-
-        visible = page_rows(roster, self.page_index)
+            if preview:
+                self.add_item(discord.ui.ActionRow(
+                    *[discord.ui.Button(
+                        label=label, style=discord.ButtonStyle.secondary,
+                        disabled=True,
+                    ) for label in ("Add / Update", "Characters", "LF Dungeons",
+                                   "Remove Dungeon", "Remove Plan")]
+                ))
+            else:
+                self.add_item(discord.ui.ActionRow(
+                    AddUpdateButton(cog, channel_id),
+                    CharactersButton(),
+                    DungeonButton(cog, channel_id),
+                    RemoveDungeonButton(cog, channel_id),
+                    RemoveButton(cog, channel_id),
+                ))
         for row in visible:
             if isinstance(row, dict) and row.get("_kind") == "dungeon":
                 character = shared_character(row["user_id"], row["character_id"])
@@ -1612,8 +1563,8 @@ class BoardLayout(discord.ui.LayoutView):
         if not visible:
             self.add_item(discord.ui.TextDisplay("*Nobody on board yet.*"))
 
-        # Always the very bottom of the *last* page, not a new message.
-        if self.page_index == total_pages - 1:
+        # Show the image once, after the final visible player card.
+        if show_footer:
             gallery = discord.ui.MediaGallery()
             gallery.add_item(media=BOTTOM_IMAGE, description="Hyped")
             self.add_item(gallery)
