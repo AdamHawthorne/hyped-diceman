@@ -886,6 +886,7 @@ class LaunchCharacterPicker(discord.ui.View):
                         "Character not found. Open Characters and try again.",
                         ephemeral=True)
                     return
+                previous_character_id = state.character_id
                 state.character_id = row[0]
                 state.draft.character = row[1]
                 state.draft.class_name = row[2]
@@ -894,6 +895,9 @@ class LaunchCharacterPicker(discord.ui.View):
                 if shared_race:
                     state.draft.race = shared_race
                     state.draft.starting_zone = STARTING_ZONES[shared_race]
+                elif previous_character_id != row[0]:
+                    state.draft.race = ""
+                    state.draft.starting_zone = ""
                 if state.draft.race not in RACE_CLASSES or (
                         state.draft.class_name not in
                         RACE_CLASSES.get(state.draft.race, ())):
@@ -1363,7 +1367,7 @@ class DungeonButton(discord.ui.Button):
 class RemoveButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
         super().__init__(
-            label="Remove",
+            label="Remove Plan",
             style=discord.ButtonStyle.secondary,
             custom_id="hyped_lfg_remove_v4",
         )
@@ -1476,7 +1480,7 @@ class BoardLayout(discord.ui.LayoutView):
                 *[discord.ui.Button(
                     label=label, style=discord.ButtonStyle.secondary,
                     disabled=True,
-                ) for label in ("Add / Update", "Characters", "LF Dungeons", "Remove")]
+                ) for label in ("Add / Update", "Characters", "LF Dungeons", "Remove Plan")]
             ))
         else:
             self.add_item(discord.ui.ActionRow(
