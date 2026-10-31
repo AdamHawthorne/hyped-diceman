@@ -1,8 +1,9 @@
 """Atomic, coin-backed extra rolls for Hyped Ogre.
 
-The canonical rolls table remains unchanged. A free roll ('user') and an
-optional extra roll ('gamble') use the existing score writer, in one transaction
-with the stake ledger. Normal roll history and earlier coin awards are untouched.
+The canonical rolls table remains unchanged. A player must have their normal
+free roll ('user') already recorded before one optional extra roll ('gamble').
+The additional roll and stake ledger are committed atomically. Normal roll
+history and earlier coin awards are untouched.
 """
 from datetime import datetime, time, timedelta
 
@@ -14,23 +15,21 @@ class GambleError(ValueError):
 
 
 def gamble_once(con, guild_id, user_id, username, *,
-                first_value, extra_value, roll_writer, now=None):
+                extra_value, roll_writer, now=None):
     """Spend one coin for exactly one extra roll on this UK calendar day.
 
-    Existing user roll: add the one extra roll.
-    No user roll: add the normal free roll and extra roll back to back.
-    The stake is returned if and only if extra_value > first roll; equal
-    or lower costs one coin. The higher roll is entered in the normal daily
-    competition, with no new coin granted just for gambling.
+    The member must choose to make their free roll first. Gambling never
+    generates a free roll. The stake is returned if and only if the extra
+    roll beats their original free roll; equal or lower costs one coin.
+    The higher roll enters the normal daily competition, with no new coin
+    granted just for gambling.
 
     A BEGIN IMMEDIATE write lock serialises the balance check across processes.
     The savepoints in roll_writer are nested and rolled back with this action.
     """
     now = now or datetime.now(UK)
     now = now.astimezone(UK)
-    if (not isinstance(first_value, int) or isinstance(first_value, bool)
-            or not 1 <= first_value <= 100
-            or not isinstance(extra_value, int) or isinstance(extra_value, bool)
+    if (not isinstance(extra_value, int) or isinstance(extra_value, bool)
             or not 1 <= extra_value <= 100):
         raise GambleError("Roll values must be between 1 and 100.")
     day = now.date().isoformat()
@@ -55,12 +54,10 @@ def gamble_once(con, guild_id, user_id, username, *,
               AND rolled_at >= ? AND rolled_at < ?
             ORDER BY rolled_at ASC, rowid ASC LIMIT 1
         """, (user_id, start, end)).fetchone()
-        had_free_roll = original is not None
-        base = original[0] if had_free_roll else first_value
+        if original is None:
+            raise GambleError("Ogre say roll first. Then decide if coin worth gamble.")
+        base = original[0]
 
-        if not had_free_roll:
-            if not roll_writer(user_id, username, base, "user", timestamp=stamp):
-                raise GambleError("Your free roll was already used. Try again.")
         if not roll_writer(user_id, username, extra_value, "gamble", timestamp=stamp):
             raise GambleError("Ogre only take one gamble per day.")
 
@@ -85,6 +82,5 @@ def gamble_once(con, guild_id, user_id, username, *,
         "best": max(base, extra_value),
         "stake_returned": returned,
         "balance": balance,
-        "had_free_roll": had_free_roll,
         "date": day,
     }
