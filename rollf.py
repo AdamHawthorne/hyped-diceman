@@ -1155,6 +1155,140 @@ def ogre_coin_emoji():
     return guild_emoji("ogrecoin")
 
 
+class GambleConfirmView(discord.ui.View):
+    """Private confirmation: never debit a coin until explicitly confirmed."""
+
+    def __init__(self, owner_id):
+        super().__init__(timeout=180)
+        self.owner_id = owner_id
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "Ogre say: not your gamble.", ephemeral=True,
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Gamble 1 coin", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction, button):
+        if interaction.guild_id != HYPED_GUILD_ID or interaction.channel_id != ROLL_CHANNEL_ID:
+            await interaction.response.send_message(
+                "Gamble only in daily-roll channel.", ephemeral=True)
+            return
+
+        # Acknowledge promptly. Coin check + both roll writes then happen in
+        # a single SQLite transaction with no Discord await in between.
+        await interaction.response.defer(ephemeral=True)
+        first = secrets.randbelow(100) + 1
+        second = secrets.randbelow(100) + 1
+        try:
+            result = gamble_once(
+                db(), HYPED_GUILD_ID, interaction.user.id, interaction.user.name,
+                first_value=first, extra_value=second, roll_writer=insert_roll,
+                now=datetime.now(TZ),
+            )
+        except GambleError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        except sqlite3.Error as exc:
+            log_error(f"GAMBLE TRANSACTION FAILED user={interaction.user.id}: {exc!r}")
+            await interaction.followup.send(
+                "Ogre couldn't save gamble. No coin taken; try again.",
+                ephemeral=True,
+            )
+            return
+
+        # The database is authoritative. Even if Discord can't post, the
+        # outcome is final and will not be charged or rolled a second time.
+        stake_text = ("Ogre give coin back." if result["stake_returned"]
+                      else "Ogre keep one coin.")
+        opening = ("Ogre rolled twice" if not result["had_free_roll"]
+                   else "Ogre gave another roll")
+        notice = (
+            f"{interaction.user.mention} rolled **{result['best']}** 🎲\n"
+            f"-# {opening}: **{result['base']}** → **{result['extra']}**. "
+            f"{stake_text}"
+        )
+        try:
+            public_msg = await interaction.channel.send(
+                notice, allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"GAMBLE PUBLIC POST FAILED user={interaction.user.id}: {exc!r}")
+            await interaction.followup.send(
+                f"Gamble saved: {result['base']} → {result['extra']}. "
+                f"{stake_text} **{result['balance']} coins** remaining. "
+                "Ogre couldn't post the result; ask an officer.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.followup.send(
+            f"**Gamble:** {result['base']} → **{result['extra']}**. "
+            f"{stake_text} Best roll **{result['best']}**. "
+            f"**{result['balance']} coins** held.",
+            ephemeral=True,
+        )
+        log_event(
+            f"GAMBLE user={interaction.user.id} base={result['base']} "
+            f"extra={result['extra']} stake_returned={result['stake_returned']}"
+        )
+        await reply_if_tied_for_highest(interaction, result["best"], public_msg)
+        await roll_reactions.sync()
+        await sync_high_roller_role()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        await interaction.response.edit_message(
+            content="Ogre keep coin safe. No gamble.", view=None,
+        )
+
+
+async def show_gamble_rules(interaction):
+    """Red panel button opens rules privately; absent balance costs nothing."""
+    if interaction.guild_id != HYPED_GUILD_ID or interaction.channel_id != ROLL_CHANNEL_ID:
+        await interaction.response.send_message(
+            "Gamble only in daily-roll channel.", ephemeral=True,
+        )
+        return
+    con = db()
+    if con.execute("""
+        SELECT 1 FROM roll_coin_gambles
+        WHERE guild_id=? AND roll_date=? AND user_id=?
+    """, (HYPED_GUILD_ID, datetime.now(TZ).date().isoformat(),
+          interaction.user.id)).fetchone():
+        await interaction.response.send_message(
+            "Ogre allow one gamble per day. You already tried yours.",
+            ephemeral=True,
+        )
+        return
+    if coin_total(con, HYPED_GUILD_ID, interaction.user.id) < 1:
+        await interaction.response.send_message(
+            "Ogre need one shiny coin before gamble. Win coin from daily rolls first.",
+            ephemeral=True,
+        )
+        return
+    prize = daily_coin_prize(datetime.now(TZ).date())
+    rules = (
+        "**Ogre's Gamble**\n"
+        f"Stake: **1 {ogre_coin_emoji()} coin**, once per UK day.\n"
+        "Already rolled? Ogre gives you **one extra roll**.\n"
+        "Not rolled? Ogre rolls **twice back to back**: free roll, then gamble.\n"
+        "**Higher second roll:** Ogre return your coin. "
+        "**Tie or lower:** Ogre keep it.\n"
+        "Your best roll stays in today's competition. "
+        f"Today's highest roller gets **{prize}** "
+        f"{'coin' if prize == 1 else 'coins'}; "
+        "gambling gives no extra prize.\n"
+        "-# Choose Gamble to confirm, or Cancel. Nothing spent until confirmed."
+    )
+    await interaction.response.send_message(
+        rules, view=GambleConfirmView(interaction.user.id),
+        allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
+    )
+
+
 def daily_ogre_tagline(day=None):
     """One Ogre prompt per UK day; stable across restarts."""
     day = day or datetime.now(TZ).date()
