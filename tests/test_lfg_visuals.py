@@ -61,7 +61,7 @@ class LFGVisualTests(unittest.TestCase):
         self.assertIn('OPEN_LFM_MARKER = guild_emoji("MoveTo")', source)
         self.assertEqual(guild_emoji("MoveTo"), "<:MoveTo:1565477356326617183>")
         self.assertIn(
-            'f"{guild_emoji(combat_role(part.strip(), profile_class, profile_spec))} {part.strip()}"',
+            'f"{part.strip()} {guild_emoji(combat_role(part.strip(), profile_class, profile_spec))}"',
             source,
         )
         self.assertIn('f"{OPEN_LFM_MARKER} " if show_lfm_emoji(row["activity"]) else ""', source)
@@ -72,7 +72,8 @@ class LFGVisualTests(unittest.TestCase):
 
     def test_original_bottom_divider_asset(self):
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn('BOTTOM_IMAGE = "https://i.vgy.me/WGNGdr.png"', source)
+        self.assertNotIn('BOTTOM_IMAGE', source)
+        self.assertNotIn('discord.ui.MediaGallery()', source)
 
     def test_open_marker_is_inside_same_v2_member_container(self):
         source = SOURCE.read_text(encoding="utf-8")
