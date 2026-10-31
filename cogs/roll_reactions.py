@@ -53,7 +53,7 @@ class RollReactions:
         ):
             if message.author.id != self.bot.user.id:
                 continue
-            match = re.match(r"^<@!?(\d+)> rolled (?:💯|\*\*[\d,]+\*\*) 🎲", message.content)
+            match = re.match(r"^<@!?(\d+)> rolled (?:💯|\*\*[\d,]+\*\*) (?:🎲|<:ogredice:1566126699043880992>)", message.content)
             if not match:
                 continue
             user_id = int(match.group(1))
