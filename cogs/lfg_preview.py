@@ -635,16 +635,16 @@ class WizardStepView(discord.ui.View):
         self.state = state
         self.stage = stage
         self.add_item(selector(state))
-        forward = discord.ui.Button(
-            label="Next ›", style=discord.ButtonStyle.secondary, row=1,
-        )
-        forward.callback = self.forward
-        self.add_item(forward)
         back = discord.ui.Button(
             label="‹ Back", style=discord.ButtonStyle.secondary, row=1,
         )
         back.callback = self.back
         self.add_item(back)
+        forward = discord.ui.Button(
+            label="Next ›", style=discord.ButtonStyle.secondary, row=1,
+        )
+        forward.callback = self.forward
+        self.add_item(forward)
 
     async def interaction_check(self, interaction):
         return await self.state.check(interaction)
@@ -1248,19 +1248,6 @@ class DungeonSelectionView(discord.ui.View):
         selection.callback = choose_dungeons
         self.add_item(selection)
 
-        next_button = discord.ui.Button(
-            label="Next", style=discord.ButtonStyle.success,
-            disabled=not bool(state.dungeons),
-        )
-
-        async def next_step(interaction):
-            if not await state.check(interaction):
-                return
-            await interaction.response.send_modal(DungeonDetailsModal(state))
-
-        next_button.callback = next_step
-        self.add_item(next_button)
-
         back = discord.ui.Button(
             label="Back", style=discord.ButtonStyle.secondary)
 
@@ -1273,6 +1260,19 @@ class DungeonSelectionView(discord.ui.View):
 
         back.callback = back_to_character
         self.add_item(back)
+
+        next_button = discord.ui.Button(
+            label="Next", style=discord.ButtonStyle.success,
+            disabled=not bool(state.dungeons),
+        )
+
+        async def next_step(interaction):
+            if not await state.check(interaction):
+                return
+            await interaction.response.send_modal(DungeonDetailsModal(state))
+
+        next_button.callback = next_step
+        self.add_item(next_button)
 
 
 class DungeonDetailsModal(discord.ui.Modal, title="LF Dungeons · Farming details"):
