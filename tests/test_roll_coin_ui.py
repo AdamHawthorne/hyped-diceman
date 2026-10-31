@@ -10,7 +10,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 import discord
 
-from cogs.roll_coins import UK, ensure_coin_schema, settle_completed_days, coin_total, day_award
+from cogs.roll_coins import (
+    UK, ensure_coin_schema, settle_completed_days, coin_total, day_award,
+    coin_standings, claim_public_coin_leaderboard,
+    release_public_coin_leaderboard,
+)
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard, COIN_IMAGE
 from cogs.ogre_voice import pick as ogre_say
 
@@ -336,6 +340,108 @@ class LeaderboardRequesterTests(unittest.TestCase):
             self.assertNotIn("asked who has most shiny", contents)
             self.assertNotIn("<@42>", contents)
 
+class PublicLeaderboardLimitTests(unittest.IsolatedAsyncioTestCase):
+    """The button and slash command both call the same durable daily gate."""
+
+    async def asyncSetUp(self):
+        self.con = sqlite3.connect(":memory:", isolation_level=None)
+        ensure_coin_schema(self.con)
+        self.con.execute(
+            "INSERT INTO roll_coin_awards "
+            "(guild_id,roll_date,user_id,username,winning_roll,source,awarded_at) "
+            "VALUES (9,'2026-10-24',777,'Winner',99,'manual',123456)"
+        )
+        self.ns = dict(
+            datetime=datetime, UK=UK, discord=discord,
+            HYPED_GUILD_ID=9, ROLL_CHANNEL_ID=88,
+            bot=SimpleNamespace(user=SimpleNamespace(id=333)),
+            db=lambda: self.con,
+            coin_standings=coin_standings,
+            CoinLeaderboard=CoinLeaderboard,
+            ogre_coin_emoji=lambda: "<:ogrecoin:789>",
+            claim_public_coin_leaderboard=claim_public_coin_leaderboard,
+            release_public_coin_leaderboard=release_public_coin_leaderboard,
+        )
+        load_functions({"show_coin_leaderboard"}, self.ns)
+
+    async def asyncTearDown(self):
+        self.con.close()
+
+    @staticmethod
+    def interaction(uid, *, channel_id=88, guild_id=9):
+        return SimpleNamespace(
+            guild_id=guild_id, channel_id=channel_id,
+            user=SimpleNamespace(id=uid),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+    async def test_first_request_is_public_and_button_slash_repeats_are_private(self):
+        # Every trigger calls the same handler, regardless of button or slash.
+        first = self.interaction(101)
+        second = self.interaction(102)
+        third = self.interaction(103)
+        for item in (first, second, third):
+            await self.ns["show_coin_leaderboard"](item)
+
+        first_args = first.response.send_message.await_args.kwargs
+        second_args = second.response.send_message.await_args.kwargs
+        third_args = third.response.send_message.await_args.kwargs
+        self.assertFalse(first_args["ephemeral"])
+        self.assertTrue(second_args["ephemeral"])
+        self.assertTrue(third_args["ephemeral"])
+        for args in (first_args, second_args, third_args):
+            self.assertIsInstance(args["view"], CoinLeaderboard)
+            self.assertIn("Ogre' Ledger", json.dumps(args["view"].to_components()))
+            self.assertEqual(args["allowed_mentions"].everyone, False)
+        # Simulate a bot restart using the same SQLite DB.
+        load_functions({"show_coin_leaderboard"}, self.ns)
+        after_restart = self.interaction(104)
+        await self.ns["show_coin_leaderboard"](after_restart)
+        self.assertTrue(after_restart.response.send_message.await_args.kwargs["ephemeral"])
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM roll_public_leaderboards WHERE guild_id=9"
+        ).fetchone()[0], 1)
+
+    async def test_concurrent_requests_create_one_public_card_only(self):
+        interactions = [self.interaction(201 + i) for i in range(8)]
+        await asyncio.gather(*(
+            self.ns["show_coin_leaderboard"](interaction)
+            for interaction in interactions
+        ))
+        self.assertEqual(sum(
+            not interaction.response.send_message.await_args.kwargs["ephemeral"]
+            for interaction in interactions
+        ), 1)
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM roll_public_leaderboards"
+        ).fetchone()[0], 1)
+
+    async def test_wrong_guild_and_channel_cannot_consume_daily_allowance(self):
+        outside = self.interaction(301, channel_id=99)
+        wrong_guild = self.interaction(302, guild_id=10)
+        for interaction in (outside, wrong_guild):
+            await self.ns["show_coin_leaderboard"](interaction)
+            self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM roll_public_leaderboards"
+        ).fetchone()[0], 0)
+
+    async def test_failed_public_response_releases_claim(self):
+        response = MagicMock(status=403, reason="Forbidden")
+        failed = self.interaction(401)
+        failed.response.send_message.side_effect = discord.Forbidden(
+            response, "cannot send"
+        )
+        with self.assertRaises(discord.Forbidden):
+            await self.ns["show_coin_leaderboard"](failed)
+        self.assertEqual(self.con.execute(
+            "SELECT COUNT(*) FROM roll_public_leaderboards"
+        ).fetchone()[0], 0)
+        retry = self.interaction(402)
+        await self.ns["show_coin_leaderboard"](retry)
+        self.assertFalse(retry.response.send_message.await_args.kwargs["ephemeral"])
+
+
 class PrivateReplySafetyTests(unittest.TestCase):
     def test_stats_and_repeat_roll_replies_are_private(self):
         tree = ast.parse(SOURCE)
@@ -355,4 +461,5 @@ class PrivateReplySafetyTests(unittest.TestCase):
         self.assertIn('interaction.channel_id != ROLL_CHANNEL_ID', source)
         self.assertIn('view=CoinLeaderboard(', source)
         self.assertIn('allowed_mentions=discord.AllowedMentions.none(),', source)
-        self.assertNotIn('allowed_mentions=discord.AllowedMentions.none(), ephemeral=True', source)
+        self.assertIn('ephemeral=not is_public', source)
+        self.assertIn('claim_public_coin_leaderboard(', source)
