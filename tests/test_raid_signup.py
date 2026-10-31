@@ -279,7 +279,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(members), 1)
                 self.assertIn("<:", members[0])  # Existing class icon markup.
             collecting = raid_schedule.raid_panel_text(event, roster)
-            self.assertIn("### Sign-ups (4)", collecting)
+            self.assertIn("**Sign-ups (4)**", collecting)
+            self.assertIn("-# **Tanks (1)**", collecting)
+            self.assertIn("-# <:Warrior:", collecting)
             self.assertIn("**Tanks (1)**", collecting)
             self.assertIn("**Melee (1)**", collecting)
             self.assertIn("**Ranged (1)**", collecting)
