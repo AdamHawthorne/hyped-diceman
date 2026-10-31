@@ -90,7 +90,7 @@ class BoardScrollIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Page 2 of", combined)
         self.assertNotIn("‹ Previous", combined)
         self.assertNotIn("Next ›", combined)
-        self.assertEqual(sum("WGNGdr.png" in text for text in rendered), 1)
+        self.assertNotIn("WGNGdr.png", combined)
         self.assertEqual(len(overflow), len(self.channel.sent))
 
     async def test_updates_reuse_overflow_and_remove_unused_posts(self):
