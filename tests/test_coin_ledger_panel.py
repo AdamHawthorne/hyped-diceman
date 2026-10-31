@@ -12,12 +12,13 @@ class CoinLedgerPanelTests(unittest.TestCase):
         panel = CoinLeaderboard(rows, owner_id=owner, coin_emoji="🪙", page=page)
         return panel, json.dumps(panel.to_components(), ensure_ascii=False)
 
-    def test_ledger_has_short_singular_footer_and_one_requester_line(self):
+    def test_ledger_has_short_singular_footer_and_no_requester_line(self):
         rows = [{"rank": 1, "user_id": 456, "coins": 1}]
         _, content = self.render(rows)
         self.assertIn("## Ogre\' Ledger", content)
         self.assertIn("Ogre give out 1 coin.", content)
-        self.assertIn("<@123> asked who has most shiny.", content)
+        self.assertNotIn("<@123> asked who has most shiny.", content)
+        self.assertNotIn("<@123>", content)
         self.assertIn("<@456>", content)
         self.assertNotIn("Hyped Gold Coins", content)
         self.assertNotIn("coins across the server", content)
