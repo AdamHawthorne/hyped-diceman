@@ -193,10 +193,24 @@ def entries(channel_id):
 
 
 def board_entries(channel_id):
-    """One public board, independent dungeon posts ahead of legacy launch plans."""
+    """One public board, independent dungeon posts ahead of legacy launch plans.
+
+    Older PvP selections remain safely stored but are not advertised while
+    dungeon-farming is the only supported activity.
+    """
     with connect() as db:
         requests = lfg_dungeons.list_requests(db, channel_id)
-    return [dict(row, _kind="dungeon") for row in requests] + [
+    visible_requests = []
+    for row in requests:
+        dungeons = [
+            dungeon for dungeon in lfg_dungeons.DUNGEONS
+            if dungeon in row["dungeons"].split(", ")
+        ]
+        if dungeons:
+            visible_requests.append(dict(
+                row, dungeons=", ".join(dungeons), _kind="dungeon"
+            ))
+    return visible_requests + [
         dict(row, _kind="launch") for row in entries(channel_id)
     ]
 
